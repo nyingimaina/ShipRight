@@ -1,0 +1,181 @@
+.wizard {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 24px;
+  height: 100%;
+  overflow-y: auto;
+}
+
+/* Step indicator */
+.steps {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.stepDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.14);
+  transition: background 0.2s;
+}
+
+.stepDotActive  { background: #C9A84C; }
+.stepDotDone    { background: #3D9970; }
+.stepDotLine    { flex: 1; height: 1px; background: rgba(255,255,255,0.08); }
+
+.stepTitle {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.stepSub {
+  font-size: 13px;
+  color: #637389;
+  margin-top: 4px;
+}
+
+/* Section */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sectionTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: #A8B8CC;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Detected chips */
+.detectedList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.detectedChip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(61,153,112,0.08);
+  border: 1px solid rgba(61,153,112,0.18);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #A8B8CC;
+}
+
+.detectedIcon { color: #3D9970; flex-shrink: 0; }
+.detectedText { flex: 1; }
+.detectedPath {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: #637389;
+  margin-top: 2px;
+}
+
+/* Service card in review step */
+.serviceCard {
+  background: #131D30;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.serviceHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.serviceName {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.detectedBadge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: rgba(61,153,112,0.12);
+  color: #3D9970;
+  font-weight: 600;
+}
+
+.needsBadge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: rgba(201,168,76,0.12);
+  color: #C9A84C;
+  font-weight: 600;
+}
+
+/* Field rows */
+.fieldRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fieldLabel {
+  font-size: 11px;
+  color: #637389;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.fieldValue {
+  font-size: 12px;
+  color: #A8B8CC;
+  font-family: 'JetBrains Mono', monospace;
+  background: #1A2640;
+  padding: 6px 10px;
+  border-radius: 4px;
+  word-break: break-all;
+}
+
+/* Footer */
+.footer {
+  display: flex;
+  gap: 8px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  margin-top: auto;
+}
+
+/* Summary */
+.summaryGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.summaryRow {
+  display: flex;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.summaryLabel { color: #637389; min-width: 120px; }
+.summaryValue { color: #A8B8CC; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+
+.errorText { color: #B84040; font-size: 12px; }
+.warningBox {
+  background: rgba(201,148,58,0.08);
+  border: 1px solid rgba(201,148,58,0.2);
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 12px;
+  color: #C9943A;
+}

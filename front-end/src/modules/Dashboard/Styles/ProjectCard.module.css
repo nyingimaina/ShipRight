@@ -1,0 +1,104 @@
+.card {
+  background: #131D30;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  transition: border-color 0.15s;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.card:hover { border-color: rgba(255, 255, 255, 0.18); }
+
+.cardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.projectName {
+  font-size: 15px;
+  font-weight: 700;
+  color: #F0F2F5;
+}
+
+.buildBtn {
+  flex-shrink: 0;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  background: rgba(201, 168, 76, 0.12);
+  color: #C9A84C;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.chipUnknown { background: #1A2640; color: #637389; }
+
+.meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.metaRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #A8B8CC;
+}
+
+.metaLabel { color: #637389; min-width: 80px; }
+
+.statusBadge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.statusBuildSucceeded { background: rgba(61,153,112,0.15); color: #3D9970; }
+.statusDeployed       { background: rgba(61,153,112,0.15); color: #3D9970; }
+.statusRunning        { background: rgba(201,168,76,0.15);  color: #C9A84C; }
+.statusBuildFailed    { background: rgba(184,64,64,0.15);   color: #B84040; }
+.statusDeployFailed   { background: rgba(184,64,64,0.15);   color: #B84040; }
+.statusAborted        { background: rgba(99,115,137,0.15);  color: #637389; }
+.statusInterrupted    { background: rgba(201,148,58,0.15);  color: #C9943A; }
+.statusPending        { background: rgba(99,115,137,0.15);  color: #637389; }
+.statusDeploying      { background: rgba(201,168,76,0.15);  color: #C9A84C; }
+.statusPaused         { background: rgba(74,127,168,0.15);  color: #4A7FA8; }
+
+.successBar {
+  height: 4px;
+  background: #1A2640;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.successFill {
+  height: 100%;
+  background: #3D9970;
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+
+.tagMono {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: #637389;
+}

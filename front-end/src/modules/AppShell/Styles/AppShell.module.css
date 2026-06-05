@@ -1,0 +1,28 @@
+/* SidekickMenu renders position:fixed internally — no flex wrapper needed.
+   Content shifts right via padding to avoid the hamburger button (fixed at top:14px left:14px). */
+
+.content {
+  min-height: 100vh;
+  background: #0B1120;
+  padding: 32px 40px;
+  /* Give room for the hamburger button in the top-left */
+  padding-top: 64px;
+}
+
+.header {
+  padding: 16px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.headerTitle {
+  font-weight: 700;
+  font-size: 15px;
+  color: #C9A84C;
+  letter-spacing: -0.02em;
+}
+
+.headerSub {
+  font-size: 11px;
+  color: #637389;
+  margin-top: 2px;
+}

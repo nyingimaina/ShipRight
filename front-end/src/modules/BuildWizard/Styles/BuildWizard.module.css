@@ -1,0 +1,222 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  z-index: 40;
+}
+
+.content {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 88vh;
+  background: #131D30;
+  border-radius: 16px 16px 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  outline: none;
+}
+
+.handle {
+  width: 48px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 2px;
+  margin: 12px auto 0;
+  flex-shrink: 0;
+}
+
+.header {
+  padding: 16px 24px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.title {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.connStatus {
+  font-size: 12px;
+  color: #637389;
+}
+
+.connStatusReconnecting { color: #C9943A; }
+.connStatusDisconnected { color: #B84040; }
+
+.body {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 24px;
+  gap: 16px;
+}
+
+/* Version confirmation step */
+.versionsGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.versionRow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: #1A2640;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+
+.versionServiceName {
+  font-weight: 600;
+  min-width: 80px;
+}
+
+.versionCurrent {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: #637389;
+  min-width: 60px;
+}
+
+.versionArrow {
+  color: #637389;
+}
+
+.versionInputWrap {
+  flex: 1;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+/* Step tracker */
+.stepTracker {
+  display: flex;
+  gap: 0;
+  overflow-x: auto;
+  flex-shrink: 0;
+  padding-bottom: 4px;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #637389;
+  white-space: nowrap;
+}
+
+.step + .step::before {
+  content: '→';
+  margin: 0 4px;
+  color: rgba(255, 255, 255, 0.14);
+}
+
+.stepPending  { color: #637389; }
+.stepRunning  { color: #C9A84C; }
+.stepDone     { color: #3D9970; }
+.stepFailed   { color: #B84040; }
+
+.stepIcon { font-size: 14px; }
+
+/* Pause overlay */
+.pauseOverlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(11, 17, 32, 0.85);
+  border-radius: 16px 16px 0 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pauseCard {
+  background: #1A2640;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  padding: 28px 32px;
+  max-width: 480px;
+  width: 90%;
+}
+
+.pauseTitle {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: #C9A84C;
+}
+
+.pausePrompt {
+  color: #A8B8CC;
+  margin-bottom: 20px;
+  font-size: 14px;
+}
+
+.pauseInput {
+  margin-bottom: 16px;
+}
+
+.pauseLabel {
+  display: block;
+  font-size: 12px;
+  color: #A8B8CC;
+  margin-bottom: 4px;
+}
+
+.pauseButtons {
+  display: flex;
+  gap: 8px;
+}
+
+/* Deploy section */
+.deploySection {
+  padding: 16px;
+  background: rgba(61, 153, 112, 0.08);
+  border: 1px solid rgba(61, 153, 112, 0.2);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.deployInfo {
+  font-size: 13px;
+  color: #A8B8CC;
+}
+
+.deployTag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: #3D9970;
+}
+
+.errorBanner {
+  padding: 12px 16px;
+  background: rgba(184, 64, 64, 0.1);
+  border: 1px solid rgba(184, 64, 64, 0.2);
+  border-radius: 8px;
+  color: #B84040;
+  font-size: 13px;
+  flex-shrink: 0;
+}

@@ -1,0 +1,353 @@
+import { useState } from 'react';
+import ZestButton from 'jattac.libs.web.zest-button';
+import ZestTextbox from 'jattac.libs.web.zest-textbox';
+import { RiCheckLine, RiAlertLine } from 'react-icons/ri';
+import FilePicker from '@/modules/FilePicker/FilePicker';
+import { api } from '@/shared/ApiService';
+import { IDetectedProjectConfig } from '@/shared/types/IDetectedProject';
+import { IProject, IProjectInput, IApiError } from '@/shared/types/IProject';
+import styles from './Styles/ProjectSetupWizard.module.css';
+
+interface Props {
+  existing?: IProject;           // pre-filled when editing
+  onSaved: (project: IProject) => void;
+  onCancel: () => void;
+}
+
+type Step = 'pick' | 'review' | 'server';
+
+function uncToLinuxPath(p: string): string {
+  if (!p.startsWith('\\\\')) return p;
+  const parts = p.split('\\').filter(Boolean);
+  // \\wsl.localhost\Ubuntu\home\... → /home/...  (skip server + distro segments)
+  return parts.length >= 3 ? '/' + parts.slice(2).join('/') : p;
+}
+
+export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Props) {
+  const [step, setStep] = useState<Step>(existing ? 'review' : 'server');
+  const [rootPath, setRootPath] = useState(existing?.git.repoPath ?? '');
+  const [detected, setDetected] = useState<IDetectedProjectConfig | null>(null);
+  const [detecting, setDetecting] = useState(false);
+  const [detectError, setDetectError] = useState<string | null>(null);
+
+  // Editable fields from detection + manual
+  const [name, setName]                 = useState(existing?.name ?? '');
+  const [services, setServices]         = useState(existing
+    ? existing.services.map(s => ({ name: s.name, versionFilePath: s.versionFilePath, buildContextPath: s.buildContextPath, dockerImageName: s.dockerImageName }))
+    : [] as { name: string; versionFilePath: string; buildContextPath: string; dockerImageName: string }[]);
+  const [gitRepoPath, setGitRepoPath]   = useState(existing?.git.repoPath ?? '');
+  const [deployBranch, setDeployBranch] = useState(existing?.git.deployBranch ?? 'master');
+  const [wslWorkingDir, setWslWorkingDir] = useState(existing?.wsl.workingDir ?? '');
+  const [serverHost, setServerHost]     = useState(existing?.server.host ?? '');
+  const [serverUser, setServerUser]     = useState(existing?.server.username ?? 'ubuntu');
+  const [sshKeyPath, setSshKeyPath]     = useState(existing?.server.sshKeyPath ?? '');
+  const [remoteDir, setRemoteDir]       = useState(existing?.server.remoteWorkingDir ?? '');
+  const [rebuildScript, setRebuildScript] = useState(existing?.server.rebuildScript ?? 'rebuild.sh');
+  const [errors, setErrors]             = useState<Record<string, string>>({});
+  const [showSshPicker, setShowSshPicker] = useState(false);
+  const [showWslPicker, setShowWslPicker] = useState(false);
+  const [showRemotePicker, setShowRemotePicker] = useState(false);
+
+  // Step 1: detect from root path
+  const handleDetect = async () => {
+    if (!rootPath.trim()) { setDetectError('Enter your project root directory first.'); return; }
+    setDetecting(true);
+    setDetectError(null);
+    try {
+      const result = await api.post<IDetectedProjectConfig>('/api/projects/detect', { rootPath: rootPath.trim() });
+      setDetected(result);
+      if (result.suggestedName && !name) setName(result.suggestedName);
+      if (result.gitRepoPath)   setGitRepoPath(result.gitRepoPath);
+      if (result.deployBranch)  setDeployBranch(result.deployBranch);
+      if (result.wslWorkingDir) setWslWorkingDir(result.wslWorkingDir);
+      setServices(result.services.map(s => ({
+        name: s.suggestedName,
+        versionFilePath: s.versionFilePath,
+        buildContextPath: s.buildContextPath,
+        dockerImageName: s.dockerImageName ?? '',
+      })));
+      setStep('review');
+    } catch (e: unknown) {
+      setDetectError((e as { message?: string })?.message ?? 'Detection failed.');
+    } finally {
+      setDetecting(false);
+    }
+  };
+
+  // Save
+  const handleSave = async () => {
+    setErrors({});
+    const input: IProjectInput = {
+      name,
+      services,
+      git: { repoPath: gitRepoPath, deployBranch },
+      wsl: { workingDir: wslWorkingDir },
+      server: { host: serverHost, username: serverUser, sshKeyPath, remoteWorkingDir: remoteDir, rebuildScript },
+    };
+    try {
+      const saved = existing
+        ? await api.put<IProject>(`/api/projects/${existing.id}`, input)
+        : await api.post<IProject>('/api/projects', input);
+      onSaved(saved);
+    } catch (errs: unknown) {
+      const apiErrors: Record<string, string> = {};
+      const list = Array.isArray(errs) ? errs : [errs];
+      (list as IApiError[]).forEach(e => { if (e.field) apiErrors[e.field] = e.message; });
+      setErrors(apiErrors);
+      // If server errors, keep user on server step
+      if (Object.keys(apiErrors).some(k => k.startsWith('server'))) setStep('server');
+    }
+  };
+
+  const stepIndex = step === 'server' ? 0 : step === 'pick' ? 1 : 2;
+
+  return (
+    <div className={styles.wizard}>
+      {/* Step dots */}
+      <div className={styles.steps}>
+        {['server', 'pick', 'review'].map((s, i) => (
+          <>
+            {i > 0 && <div key={`line-${i}`} className={styles.stepDotLine} />}
+            <div key={s} className={`${styles.stepDot} ${i < stepIndex ? styles.stepDotDone : i === stepIndex ? styles.stepDotActive : ''}`} />
+          </>
+        ))}
+      </div>
+
+      {/* ── STEP 1: Pick root directory ── */}
+      {step === 'pick' && (
+        <>
+          <div>
+            <h2 className={styles.stepTitle}>Where is your project?</h2>
+            <p className={styles.stepSub}>Navigate to your source code root — ShipRight will auto-detect the rest.</p>
+          </div>
+
+          <FilePicker
+            initialPath={rootPath || undefined}
+            dirsOnly
+            label="Source code root directory"
+            onSelect={path => setRootPath(path)}
+          />
+
+          {detectError && <p className={styles.errorText}>{detectError}</p>}
+
+          <div className={styles.footer}>
+            <ZestButton onClick={() => setStep('server')} zest={{ buttonStyle: 'outline' }}>← Back</ZestButton>
+            <ZestButton onClick={handleDetect}
+              zest={{ visualOptions: { variant: 'standard' }, busyOptions: { handleInternally: true } }}>
+              {detecting ? 'Detecting…' : 'Detect & Continue'}
+            </ZestButton>
+            <ZestButton onClick={onCancel} zest={{ buttonStyle: 'outline', semanticType: 'cancel' }}>Cancel</ZestButton>
+          </div>
+        </>
+      )}
+
+      {/* ── STEP 2: Review detected + fill service gaps ── */}
+      {step === 'review' && (
+        <>
+          <div>
+            <h2 className={styles.stepTitle}>Review detected config</h2>
+            <p className={styles.stepSub}>Fields marked in gold need your input.</p>
+          </div>
+
+          {/* Project name */}
+          <div className={styles.section}>
+            <span className={styles.sectionTitle}>Project</span>
+            <div className={styles.fieldRow}>
+              <label className={styles.fieldLabel}>Name</label>
+              <ZestTextbox value={name} onChange={e => setName(e.target.value)}
+                placeholder="e.g. SMS Gateway" zest={{ stretch: true }} />
+              {errors['name'] && <p className={styles.errorText}>{errors['name']}</p>}
+            </div>
+          </div>
+
+          {/* Detected git/wsl */}
+          {detected && detected.detected.length > 0 && (
+            <div className={styles.section}>
+              <span className={styles.sectionTitle}>Auto-detected</span>
+              <div className={styles.detectedList}>
+                {detected.detected.map((d, i) => (
+                  <div key={i} className={styles.detectedChip}>
+                    <RiCheckLine className={styles.detectedIcon} />
+                    <span className={styles.detectedText}>{d}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Services */}
+          <div className={styles.section}>
+            <span className={styles.sectionTitle}>Services</span>
+            {services.length === 0 && (
+              <div className={styles.warningBox}>
+                No services detected. Ensure each service has a version.txt alongside a Dockerfile.
+              </div>
+            )}
+            {services.map((svc, i) => (
+              <div key={i} className={styles.serviceCard}>
+                <div className={styles.serviceHeader}>
+                  <span className={styles.serviceName}>{svc.name || `Service ${i + 1}`}</span>
+                  {svc.dockerImageName
+                    ? <span className={styles.detectedBadge}>image detected</span>
+                    : <span className={styles.needsBadge}>needs image name</span>}
+                </div>
+
+                <div className={styles.fieldRow}>
+                  <span className={styles.fieldLabel}>Service name</span>
+                  <ZestTextbox value={svc.name}
+                    onChange={e => setServices(prev => prev.map((s, j) => j === i ? { ...s, name: e.target.value } : s))}
+                    zest={{ stretch: true, zSize: 'sm' }} />
+                </div>
+
+                <div className={styles.fieldRow}>
+                  <span className={styles.fieldLabel}>Docker image name <span style={{ color: '#C9A84C' }}>*</span></span>
+                  <ZestTextbox value={svc.dockerImageName ?? ''}
+                    onChange={e => setServices(prev => prev.map((s, j) => j === i ? { ...s, dockerImageName: e.target.value } : s))}
+                    placeholder="e.g. nyingi/jattac-sms"
+                    zest={{ stretch: true, zSize: 'sm' }} />
+                  {errors[`services[${i}].dockerImageName`] && (
+                    <p className={styles.errorText}>{errors[`services[${i}].dockerImageName`]}</p>
+                  )}
+                </div>
+
+                <div className={styles.fieldRow}>
+                  <span className={styles.fieldLabel}>Version file</span>
+                  <div className={styles.fieldValue}>{svc.versionFilePath}</div>
+                </div>
+                <div className={styles.fieldRow}>
+                  <span className={styles.fieldLabel}>Build context</span>
+                  <div className={styles.fieldValue}>{svc.buildContextPath}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* WSL working dir */}
+          <div className={styles.section}>
+            <span className={styles.sectionTitle}>Docker Compose directory <span style={{ color: '#C9A84C' }}>*</span></span>
+            <p className={styles.stepSub}>Where is the docker-compose.yml for this project? (WSL path)</p>
+            {showWslPicker
+              ? <FilePicker dirsOnly onSelect={p => { setWslWorkingDir(uncToLinuxPath(p)); setShowWslPicker(false); }} />
+              : <div style={{ display: 'flex', gap: 8 }}>
+                  <ZestTextbox value={wslWorkingDir} onChange={e => setWslWorkingDir(e.target.value)}
+                    placeholder="/home/nyingi/work/jattac/docker/..." zest={{ stretch: true }} />
+                  <ZestButton onClick={() => setShowWslPicker(true)} zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}>Browse</ZestButton>
+                </div>
+            }
+            {errors['wsl.workingDir'] && <p className={styles.errorText}>{errors['wsl.workingDir']}</p>}
+          </div>
+
+          <div className={styles.footer}>
+            {!existing && <ZestButton onClick={() => setStep('pick')} zest={{ buttonStyle: 'outline' }}>← Back</ZestButton>}
+            {existing
+              ? <ZestButton onClick={() => setStep('server')} zest={{ visualOptions: { variant: 'standard' } }}>Server config →</ZestButton>
+              : <ZestButton onClick={handleSave} zest={{ visualOptions: { variant: 'standard' }, semanticType: 'save' }}>Create Project</ZestButton>
+            }
+            <ZestButton onClick={onCancel} zest={{ buttonStyle: 'outline', semanticType: 'cancel' }}>Cancel</ZestButton>
+          </div>
+        </>
+      )}
+
+      {/* ── STEP 3: Server details ── */}
+      {step === 'server' && (
+        <>
+          <div>
+            <h2 className={styles.stepTitle}>Server</h2>
+            <p className={styles.stepSub}>Where does this project deploy?</p>
+          </div>
+
+          {/* Name field — only on first step for new projects so the user is always asked */}
+          {!existing && (
+            <div className={styles.section}>
+              <span className={styles.sectionTitle}>Project</span>
+              <div className={styles.fieldRow}>
+                <label className={styles.fieldLabel}>Name <span style={{ color: '#C9A84C' }}>*</span></label>
+                <ZestTextbox value={name} onChange={e => setName(e.target.value)}
+                  placeholder="e.g. SMS Gateway" zest={{ stretch: true }} />
+                {errors['name'] && <p className={styles.errorText}>{errors['name']}</p>}
+              </div>
+            </div>
+          )}
+
+          <div className={styles.section}>
+            <div className={styles.fieldRow}>
+              <label className={styles.fieldLabel}>Host (IP or hostname)</label>
+              <ZestTextbox value={serverHost} onChange={e => setServerHost(e.target.value)}
+                placeholder="3.130.65.46" zest={{ stretch: true }} />
+              {errors['server.host'] && <p className={styles.errorText}>{errors['server.host']}</p>}
+            </div>
+
+            <div className={styles.fieldRow}>
+              <label className={styles.fieldLabel}>Username</label>
+              <ZestTextbox value={serverUser} onChange={e => setServerUser(e.target.value)}
+                placeholder="ubuntu" zest={{ stretch: true }} />
+              {errors['server.username'] && <p className={styles.errorText}>{errors['server.username']}</p>}
+            </div>
+
+            <div className={styles.fieldRow}>
+              <label className={styles.fieldLabel}>SSH key (.pem)</label>
+              {showSshPicker
+                ? <FilePicker
+                    onSelect={p => { setSshKeyPath(p); setShowSshPicker(false); }}
+                    label="Navigate to your .pem key file"
+                  />
+                : <div style={{ display: 'flex', gap: 8 }}>
+                    <ZestTextbox value={sshKeyPath} onChange={e => setSshKeyPath(e.target.value)}
+                      placeholder="/home/nyingi/.../.pem" zest={{ stretch: true }} />
+                    <ZestButton onClick={() => setShowSshPicker(true)} zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}>Browse</ZestButton>
+                  </div>
+              }
+              {errors['server.sshKeyPath'] && <p className={styles.errorText}>{errors['server.sshKeyPath']}</p>}
+            </div>
+
+            <div className={styles.fieldRow}>
+              <label className={styles.fieldLabel}>Remote working directory</label>
+              {showRemotePicker
+                ? <FilePicker
+                    dirsOnly
+                    sshConfig={{ host: serverHost, user: serverUser, keyPath: sshKeyPath }}
+                    initialPath={remoteDir || undefined}
+                    label={`Browsing ${serverUser}@${serverHost}`}
+                    onSelect={p => { setRemoteDir(p); setShowRemotePicker(false); }}
+                  />
+                : <div style={{ display: 'flex', gap: 8 }}>
+                    <ZestTextbox value={remoteDir} onChange={e => setRemoteDir(e.target.value)}
+                      placeholder="/home/ubuntu/jattac-sms-gateway-docker" zest={{ stretch: true }} />
+                    <ZestButton
+                      onClick={() => setShowRemotePicker(true)}
+                      zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}
+                      disabled={!serverHost || !serverUser || !sshKeyPath}>
+                      Browse
+                    </ZestButton>
+                  </div>
+              }
+              {errors['server.remoteWorkingDir'] && <p className={styles.errorText}>{errors['server.remoteWorkingDir']}</p>}
+            </div>
+
+            <div className={styles.fieldRow}>
+              <label className={styles.fieldLabel}>Rebuild script</label>
+              <ZestTextbox value={rebuildScript} onChange={e => setRebuildScript(e.target.value)}
+                placeholder="rebuild.sh" zest={{ stretch: true }} />
+              {errors['server.rebuildScript'] && <p className={styles.errorText}>{errors['server.rebuildScript']}</p>}
+            </div>
+          </div>
+
+          {Object.keys(errors).some(k => !k.startsWith('server')) && (
+            <div className={styles.warningBox}>
+              <RiAlertLine /> Some fields on the previous step also have errors — go back to fix them.
+            </div>
+          )}
+
+          <div className={styles.footer}>
+            {existing && <ZestButton onClick={() => setStep('review')} zest={{ buttonStyle: 'outline' }}>← Back</ZestButton>}
+            {existing
+              ? <ZestButton onClick={handleSave} zest={{ visualOptions: { variant: 'standard' }, semanticType: 'save' }}>Save Changes</ZestButton>
+              : <ZestButton onClick={() => setStep('pick')} zest={{ visualOptions: { variant: 'standard' } }}>Source code →</ZestButton>
+            }
+            <ZestButton onClick={onCancel} zest={{ buttonStyle: 'outline', semanticType: 'cancel' }}>Cancel</ZestButton>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

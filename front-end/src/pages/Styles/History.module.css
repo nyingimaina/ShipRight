@@ -1,0 +1,48 @@
+.heading {
+  font-size: 24px;
+  margin-bottom: 24px;
+}
+
+.filters {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.filterGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.filterLabel {
+  font-size: 11px;
+  color: #637389;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.pagination {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 20px;
+  font-size: 13px;
+  color: #A8B8CC;
+}
+
+.pageBtn {
+  background: #1A2640;
+  border: 1px solid rgba(255,255,255,0.08);
+  color: #A8B8CC;
+  padding: 4px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.pageBtn:disabled { opacity: 0.4; cursor: default; }
+.pageBtn:not(:disabled):hover { border-color: rgba(255,255,255,0.2); }

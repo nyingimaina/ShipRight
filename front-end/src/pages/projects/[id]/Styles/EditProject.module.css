@@ -1,0 +1,16 @@
+.heading {
+  font-size: 24px;
+  margin-bottom: 32px;
+}
+
+.formWrap {
+  max-width: 680px;
+}
+
+.loading {
+  color: #637389;
+}
+
+.notFound {
+  color: #B84040;
+}

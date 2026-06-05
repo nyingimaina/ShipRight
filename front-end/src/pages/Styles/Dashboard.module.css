@@ -1,0 +1,36 @@
+.heading {
+  font-size: 24px;
+  margin-bottom: 4px;
+}
+
+.tagline {
+  color: #637389;
+  margin-bottom: 32px;
+  font-size: 13px;
+}
+
+.loading { color: #637389; }
+
+.emptyState {
+  text-align: center;
+  padding: 64px 0;
+  color: #637389;
+}
+
+.emptyMessage { font-size: 16px; margin-bottom: 16px; }
+
+.emptyAction {
+  display: inline-block;
+  background: #C9A84C;
+  color: #0B1120;
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 16px;
+}
