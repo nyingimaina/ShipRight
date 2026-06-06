@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using Serilog;
+using ShipRight.Modules.Builds;
 using ShipRight.Modules.VersionFiles;
 
 namespace ShipRight.Modules.Projects;
@@ -75,10 +76,19 @@ public static class ProjectRouter
             return Results.NoContent();
         });
 
-        app.MapGet("/api/projects/{id}/current-versions", async (string id, IProjectStore store) =>
+        app.MapGet("/api/projects/{id}/current-versions", async (string id, IProjectStore store, IBuildStore buildStore) =>
         {
             var project = await store.GetByIdAsync(id);
             if (project is null) return Results.NotFound(Error($"Project '{id}' not found."));
+
+            // If the last build failed, suggest the same versions it attempted so the user
+            // can retry without a spurious increment.
+            var lastBuilds = await buildStore.QueryAsync(id, null, null, null, null, 1, 1);
+            var lastBuild = lastBuilds.FirstOrDefault();
+            var lastFailedVersions = lastBuild?.Status is
+                BuildStatus.BuildFailed or BuildStatus.PushFailed or BuildStatus.DeployFailed
+                ? lastBuild.Versions.ToDictionary(v => v.ServiceName, v => v.NewVersion)
+                : null;
 
             var results = new List<object>();
             foreach (var svc in project.Services)
@@ -86,11 +96,19 @@ public static class ProjectRouter
                 try
                 {
                     var v = await VersionFileService.ReadAsync(svc);
+                    // Suggest the same version as the failed build when it matches the file —
+                    // the file was already updated to that version, no further bump is needed.
+                    var suggestedNext =
+                        lastFailedVersions != null &&
+                        lastFailedVersions.TryGetValue(svc.Name, out var failed) &&
+                        failed == v.Version
+                            ? v.Version
+                            : VersionFileService.SuggestNext(v.Version);
                     results.Add(new
                     {
                         serviceName = v.ServiceName,
                         version = v.Version,
-                        suggestedNext = VersionFileService.SuggestNext(v.Version),
+                        suggestedNext,
                         versionFilePath = v.VersionFilePath,
                         error = (string?)null
                     });

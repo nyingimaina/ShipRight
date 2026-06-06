@@ -7,6 +7,7 @@ export interface SseHandlers {
   onStepCompleted?: (e: { buildId: string; stepNumber: number; stepName: string; success: boolean }) => void;
   onPauseRequested?: (e: { buildId: string; reason: string; prompt: string; options: string[]; fields?: string[] }) => void;
   onBuildCompleted?: (e: { buildId: string; status: string; gitTag?: string }) => void;
+  onPushCompleted?: (e: { buildId: string; status: string }) => void;
   onDeployCompleted?: (e: { buildId: string; status: string }) => void;
   onConnectionChange?: (state: 'connected' | 'reconnecting' | 'disconnected') => void;
 }
@@ -34,8 +35,9 @@ class BuildSseService {
           case 'StepStarted':    handlers.onStepStarted?.(data as Parameters<NonNullable<SseHandlers['onStepStarted']>>[0]); break;
           case 'StepCompleted':  handlers.onStepCompleted?.(data as Parameters<NonNullable<SseHandlers['onStepCompleted']>>[0]); break;
           case 'PauseRequested': handlers.onPauseRequested?.(data as Parameters<NonNullable<SseHandlers['onPauseRequested']>>[0]); break;
-          case 'BuildCompleted': handlers.onBuildCompleted?.(data as Parameters<NonNullable<SseHandlers['onBuildCompleted']>>[0]); break;
-          case 'DeployCompleted':handlers.onDeployCompleted?.(data as Parameters<NonNullable<SseHandlers['onDeployCompleted']>>[0]); break;
+          case 'BuildCompleted':  handlers.onBuildCompleted?.(data as Parameters<NonNullable<SseHandlers['onBuildCompleted']>>[0]); break;
+          case 'PushCompleted':   handlers.onPushCompleted?.(data as Parameters<NonNullable<SseHandlers['onPushCompleted']>>[0]); break;
+          case 'DeployCompleted': handlers.onDeployCompleted?.(data as Parameters<NonNullable<SseHandlers['onDeployCompleted']>>[0]); break;
         }
       } catch { /* malformed event — ignore */ }
     };

@@ -8,5 +8,6 @@ public interface IProcessRunner
         string? workingDir,
         Func<string, Task>? onOutput = null,
         Func<string, Task>? onError = null,
-        CancellationToken ct = default);
+        CancellationToken ct = default,
+        IReadOnlyDictionary<string, string>? envOverride = null);
 }

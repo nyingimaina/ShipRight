@@ -5,6 +5,7 @@ namespace ShipRight.Modules.Builds;
 public class PipelineContext
 {
     private readonly BuildEventBus _bus;
+    private DateTime _stepStartedAt;
     public BuildRecord Record { get; }
 
     public PipelineContext(BuildRecord record, BuildEventBus bus)
@@ -24,6 +25,7 @@ public class PipelineContext
 
     public async Task StepStartedAsync(int stepNumber, string stepName)
     {
+        _stepStartedAt = DateTime.UtcNow;
         Record.CurrentStepNumber = stepNumber;
         Record.CurrentStepName = stepName;
         await _bus.EmitAsync(Record.Id, "StepStarted", new
@@ -35,6 +37,8 @@ public class PipelineContext
 
     public async Task StepCompletedAsync(int stepNumber, string stepName, bool success = true)
     {
+        Record.StepDurations[stepName] = (int)(DateTime.UtcNow - _stepStartedAt).TotalSeconds;
+        if (success) Record.SucceededSteps.Add(stepName);
         await _bus.EmitAsync(Record.Id, "StepCompleted", new
         {
             buildId = Record.Id, stepNumber, stepName, success
@@ -57,6 +61,15 @@ public class PipelineContext
             buildId = Record.Id,
             status = Record.Status.ToString(),
             gitTag = Record.GitTag
+        });
+        _bus.Complete(Record.Id);
+    }
+
+    public async Task PushCompletedAsync()
+    {
+        await _bus.EmitAsync(Record.Id, "PushCompleted", new
+        {
+            buildId = Record.Id, status = Record.Status.ToString()
         });
         _bus.Complete(Record.Id);
     }

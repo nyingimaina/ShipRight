@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Newtonsoft.Json;
 using Serilog;
 using ShipRight.Shared.Store;
@@ -13,6 +14,9 @@ public class JsonBuildStore : IBuildStore
         Converters = { new Newtonsoft.Json.Converters.StringEnumConverter() }
     };
 
+    // One semaphore per build ID prevents concurrent writes to the same file
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> _locks = new();
+
     private int _count;
     public int Count => _count;
 
@@ -24,19 +28,28 @@ public class JsonBuildStore : IBuildStore
 
     public async Task SaveAsync(BuildRecord record)
     {
-        var path = FilePath(record.Id);
-        var isNew = !File.Exists(path);
-        var json = JsonConvert.SerializeObject(record, _settings);
-        await File.WriteAllTextAsync(path, json);
-        if (isNew) Interlocked.Increment(ref _count);
+        var sem = _locks.GetOrAdd(record.Id, _ => new SemaphoreSlim(1, 1));
+        await sem.WaitAsync();
+        try
+        {
+            var path = FilePath(record.Id);
+            var isNew = !File.Exists(path);
+            var tmp  = path + ".tmp";
+            var json = JsonConvert.SerializeObject(record, _settings);
+            // Write to temp first, then atomically replace — avoids conflicting
+            // with concurrent readers that have the target file open.
+            await File.WriteAllTextAsync(tmp, json);
+            File.Move(tmp, path, overwrite: true);
+            if (isNew) Interlocked.Increment(ref _count);
+        }
+        finally { sem.Release(); }
     }
 
     public async Task<BuildRecord?> GetByIdAsync(string id)
     {
         var path = FilePath(id);
         if (!File.Exists(path)) return null;
-        var json = await File.ReadAllTextAsync(path);
-        return JsonConvert.DeserializeObject<BuildRecord>(json, _settings);
+        return await ReadFileAsync(path);
     }
 
     public async Task<List<BuildRecord>> QueryAsync(
@@ -67,8 +80,7 @@ public class JsonBuildStore : IBuildStore
         {
             try
             {
-                var json = await File.ReadAllTextAsync(f);
-                var record = JsonConvert.DeserializeObject<BuildRecord>(json, _settings);
+                var record = await ReadFileAsync(f);
                 if (record is null) continue;
                 if ((record.Status == BuildStatus.Running || record.Status == BuildStatus.Deploying)
                     && record.StartedAt < cutoff)
@@ -91,13 +103,24 @@ public class JsonBuildStore : IBuildStore
         {
             try
             {
-                var json = await File.ReadAllTextAsync(f);
-                var r = JsonConvert.DeserializeObject<BuildRecord>(json, _settings);
+                var r = await ReadFileAsync(f);
                 if (r is not null) records.Add(r);
             }
             catch { /* skip corrupt */ }
         }
         return records;
+    }
+
+    // FileShare.Read | FileShare.Delete: allows concurrent reads AND allows
+    // File.Move(overwrite:true) to atomically replace the file while it is open.
+    private async Task<BuildRecord?> ReadFileAsync(string path)
+    {
+        await using var stream = new FileStream(
+            path, FileMode.Open, FileAccess.Read,
+            FileShare.Read | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+        var json = await reader.ReadToEndAsync();
+        return JsonConvert.DeserializeObject<BuildRecord>(json, _settings);
     }
 
     private static IEnumerable<BuildRecord> ApplyFilters(

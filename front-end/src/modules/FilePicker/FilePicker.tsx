@@ -226,7 +226,7 @@ export default function FilePicker({ initialPath, onSelect, dirsOnly = false, la
                 {dirsOnly ? (listing?.path ?? '—') : (selected || listing?.path || '—')}
               </span>
               <ZestButton
-                onClick={() => onSelect(dirsOnly ? (listing?.path ?? selected) : (selected || listing?.path ?? ''))}
+                onClick={() => onSelect(dirsOnly ? (listing?.path ?? selected) : (selected || (listing?.path ?? '')))}
                 zest={{ visualOptions: { variant: 'standard', size: 'sm' } }}>
                 Select
               </ZestButton>

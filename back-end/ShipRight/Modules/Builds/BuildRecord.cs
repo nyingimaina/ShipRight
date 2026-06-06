@@ -17,7 +17,9 @@ public enum BuildStatus
     Pending,
     Running,
     Paused,
-    BuildSucceeded,
+    ImageBuilt,
+    PushSucceeded,
+    PushFailed,
     BuildFailed,
     Aborted,
     Interrupted,
@@ -42,4 +44,6 @@ public class BuildRecord
     public string? CurrentStepName { get; set; }
     public string LogOutput { get; set; } = string.Empty;
     public string? ErrorSummary { get; set; }
+    public Dictionary<string, int> StepDurations { get; set; } = new();
+    public List<string> SucceededSteps { get; set; } = new();
 }

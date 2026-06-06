@@ -2,12 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Drawer } from 'vaul';
 import ZestButton from 'jattac.libs.web.zest-button';
 import ZestTextbox from 'jattac.libs.web.zest-textbox';
-import { RiCheckLine, RiCloseLine, RiLoader4Line } from 'react-icons/ri';
 import { api } from '@/shared/ApiService';
 import { buildSse } from '@/shared/SseService';
 import { IBuildRecord } from '@/shared/types/IBuildRecord';
 import { IServiceVersion } from '@/shared/types/IBuildRecord';
 import LogViewer, { LogEntry } from './LogViewer';
+import OptionPicker, { PickerOption } from './OptionPicker';
 import styles from './Styles/BuildWizard.module.css';
 
 interface Props {
@@ -21,18 +21,62 @@ interface Props {
 type Phase = 'versions' | 'pipeline' | 'done';
 type StepStatus = 'pending' | 'running' | 'done' | 'failed';
 
-const STEP_NAMES = [
+interface BuildStats {
+  sampleCount: number;
+  stageExpected: Record<string, number>;
+  totalBuildExpected: number | null;
+  totalPushExpected: number | null;
+  totalDeployExpected: number | null;
+}
+
+const BUILD_STEP_NAMES = [
   'PreconditionCheck', 'GitStatusCheck', 'BranchCheck',
-  'WriteVersionsAndTag', 'ComposeRepoSync', 'DockerLoginCheck',
-  'DockerBuildAndPush', 'BuildComplete',
+  'WriteVersionsAndTag', 'ComposeRepoSync', 'DockerBuild', 'BuildComplete',
 ];
+const PUSH_STEP_NAMES = ['DockerLoginCheck', 'DockerPush', 'PushComplete'];
+
+const OPTION_LABELS: Record<string, string> = {
+  commit_and_push: 'Commit & Push',
+  commit:          'Commit Only',
+  merge:           'Merge into Deploy Branch',
+  switch:          'Switch to Deploy Branch',
+  build_here:      'Build Current Branch',
+  abort:           'Abort',
+  login:           'Log In',
+  resume:          'Resume from Failed Step',
+  start_fresh:     'Start Fresh',
+};
+
+const OPTION_DESCS: Record<string, string> = {
+  commit_and_push: 'Stage, commit, and push to remote immediately',
+  commit:          'Stage and commit locally — push manually later',
+  merge:           'Checkout deploy branch, pull, merge current, push',
+  switch:          'Checkout deploy branch and pull latest',
+  build_here:      'Stay on current branch and build as-is',
+  abort:           'Stop this build and exit',
+  login:           'Enter Docker Hub credentials to proceed',
+  resume:          'Skip already-completed steps and continue from the failed step',
+  start_fresh:     'Run all steps from scratch',
+};
 
 interface PauseState {
   reason: string;
   prompt: string;
   options: string[];
+  selected: string | null;
   commitMessage?: string;
+  fields?: string[];
+  fieldValues?: Record<string, string>;
 }
+
+const fmtSecs = (s: number) =>
+  `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
+
+const fmtExpected = (s: number | null | undefined) => {
+  if (!s) return null;
+  if (s < 60) return `~${s}s`;
+  return `~${Math.floor(s / 60)}m${s % 60 > 0 ? `${s % 60}s` : ''}`;
+};
 
 let lineCounter = 0;
 
@@ -43,17 +87,40 @@ export default function BuildWizard({ projectId, projectName, currentVersions, i
   const [buildRecord, setBuildRecord] = useState<IBuildRecord | null>(null);
   const [lines, setLines] = useState<LogEntry[]>([]);
   const [stepStatuses, setStepStatuses] = useState<Record<string, StepStatus>>({});
+  const [currentStepName, setCurrentStepName] = useState<string | null>(null);
+  const [stepStartTimes, setStepStartTimes] = useState<Record<string, number>>({});
+  const [stepActualDurations, setStepActualDurations] = useState<Record<string, number>>({});
+  const [activePushPhase, setActivePushPhase] = useState(false);
   const [pause, setPause] = useState<PauseState | null>(null);
   const [connState, setConnState] = useState<'connected' | 'reconnecting' | 'disconnected'>('connected');
-  const [deployPending, setDeployPending] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [buildStats, setBuildStats] = useState<BuildStats | null>(null);
   const sseConnected = useRef(false);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Pre-fill versions with suggested next
   useEffect(() => {
     const map: Record<string, string> = {};
     currentVersions.forEach(v => { map[v.serviceName] = v.suggestedNext ?? v.version ?? ''; });
     setNewVersions(map);
   }, [currentVersions]);
+
+  // Fetch build stats when wizard opens
+  useEffect(() => {
+    if (isOpen && projectId) {
+      api.get<BuildStats>(`/api/projects/${projectId}/build-stats`).then(setBuildStats).catch(() => {});
+    }
+  }, [isOpen, projectId]);
+
+  // Elapsed timer — runs while pipeline phase is active
+  useEffect(() => {
+    if (phase === 'pipeline') {
+      setElapsed(0);
+      timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
+    } else {
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    }
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [phase]);
 
   const appendLine = useCallback((source: string, line: string) => {
     setLines(prev => [...prev, { id: lineCounter++, source, line }]);
@@ -65,37 +132,58 @@ export default function BuildWizard({ projectId, projectName, currentVersions, i
 
     buildSse.connect(id, {
       onLogLine:       e => appendLine(e.source, e.line),
-      onStepStarted:   e => setStepStatuses(p => ({ ...p, [e.stepName]: 'running' })),
-      onStepCompleted: e => setStepStatuses(p => ({ ...p, [e.stepName]: e.success ? 'done' : 'failed' })),
-      onPauseRequested: e => setPause({ reason: e.reason, prompt: e.prompt, options: e.options }),
+      onStepStarted: e => {
+        setStepStatuses(p => ({ ...p, [e.stepName]: 'running' }));
+        setCurrentStepName(e.stepName);
+        setStepStartTimes(p => ({ ...p, [e.stepName]: Date.now() }));
+      },
+      onStepCompleted: e => {
+        setStepStatuses(p => ({ ...p, [e.stepName]: e.success ? 'done' : 'failed' }));
+        setStepStartTimes(p => {
+          const started = p[e.stepName];
+          if (started) setStepActualDurations(d => ({ ...d, [e.stepName]: Math.round((Date.now() - started) / 1000) }));
+          return p;
+        });
+      },
+      onPauseRequested: e => setPause({ reason: e.reason, prompt: e.prompt, options: e.options, selected: null, fields: e.fields, fieldValues: {} }),
       onBuildCompleted: e => {
-        setBuildRecord(prev => prev ? { ...prev, status: e.status as IBuildRecord['status'], gitTag: e.gitTag ?? '' } : null);
-        if (e.status === 'BuildSucceeded' || e.status === 'BuildFailed' ||
+        setBuildRecord(prev => prev ? { ...prev, status: e.status as IBuildRecord['status'], gitTag: e.gitTag ?? prev.gitTag } : null);
+        if (e.status === 'ImageBuilt' || e.status === 'BuildFailed' ||
             e.status === 'Aborted' || e.status === 'Interrupted')
           setPhase('done');
+      },
+      onPushCompleted: e => {
+        setBuildRecord(prev => prev ? { ...prev, status: e.status as IBuildRecord['status'] } : null);
+        setActivePushPhase(false);
+        setPhase('done');
       },
       onDeployCompleted: e => {
         setBuildRecord(prev => prev ? { ...prev, status: e.status as IBuildRecord['status'] } : null);
       },
       onConnectionChange: s => {
         setConnState(s);
-        if (s === 'connected' && buildId)
-          buildSse.catchUp(buildId).then(r => { if (r) setBuildRecord(r); });
+        if (s === 'connected' && id)
+          buildSse.catchUp(id).then(r => {
+            if (!r) return;
+            setBuildRecord(r);
+            // If the server-side record is already in a terminal state (build finished
+            // before or during reconnect), drive the UI out of the spinning pipeline phase.
+            const terminal: string[] = [
+              'ImageBuilt', 'BuildFailed', 'Aborted', 'Interrupted',
+              'PushSucceeded', 'PushFailed', 'Deployed', 'DeployFailed',
+            ];
+            if (terminal.includes(r.status)) setPhase('done');
+          });
       },
     });
-  }, [buildId, appendLine]);
+  }, [appendLine]);
 
   const handleStartBuild = async () => {
     const serviceVersions = currentVersions.map(v => ({
       serviceName: v.serviceName,
       newVersion: newVersions[v.serviceName] ?? '',
     }));
-
-    const result = await api.post<{ buildId: string }>('/api/builds/start', {
-      projectId,
-      serviceVersions,
-    });
-
+    const result = await api.post<{ buildId: string }>('/api/builds/start', { projectId, serviceVersions });
     setBuildId(result.buildId);
     const record = await api.get<IBuildRecord>(`/api/builds/${result.buildId}`);
     setBuildRecord(record);
@@ -103,24 +191,39 @@ export default function BuildWizard({ projectId, projectName, currentVersions, i
     connectSse(result.buildId);
   };
 
-  const handlePauseRespond = async (choice: string) => {
-    if (!buildId || !pause) return;
+  const handlePauseRespond = async () => {
+    if (!buildId || !pause || !pause.selected) return;
     const data: Record<string, string> = {};
     if (pause.commitMessage) data.commitMessage = pause.commitMessage;
-    await api.post(`/api/builds/${buildId}/respond`, { reason: pause.reason, choice, data });
+    if (pause.fieldValues) Object.assign(data, pause.fieldValues);
+    await api.post(`/api/builds/${buildId}/respond`, { reason: pause.reason, choice: pause.selected, data });
     setPause(null);
+  };
+
+  const handlePush = async () => {
+    if (!buildId) return;
+    setActivePushPhase(true);
+    setStepStatuses({});
+    setCurrentStepName(null);
+    setStepStartTimes({});
+    setStepActualDurations({});
+    setElapsed(0);
+    await api.post(`/api/builds/${buildId}/push`, {});
+    sseConnected.current = false;
+    connectSse(buildId);
+  };
+
+  const handleCancel = async () => {
+    if (!buildId) return;
+    try { await api.post(`/api/builds/${buildId}/cancel`, {}); } catch { /* already done */ }
   };
 
   const handleDeploy = async () => {
     if (!buildId) return;
-    setDeployPending(true);
-    try {
-      await api.post(`/api/builds/${buildId}/deploy`, {});
-      sseConnected.current = false;
-      connectSse(buildId);
-    } finally {
-      setDeployPending(false);
-    }
+    setElapsed(0);
+    await api.post(`/api/builds/${buildId}/deploy`, {});
+    sseConnected.current = false;
+    connectSse(buildId);
   };
 
   const handleClose = () => {
@@ -129,9 +232,14 @@ export default function BuildWizard({ projectId, projectName, currentVersions, i
     setPhase('versions');
     setLines([]);
     setStepStatuses({});
+    setCurrentStepName(null);
+    setStepStartTimes({});
+    setStepActualDurations({});
+    setActivePushPhase(false);
     setPause(null);
     setBuildId(null);
     setBuildRecord(null);
+    setElapsed(0);
     onClose();
   };
 
@@ -139,8 +247,26 @@ export default function BuildWizard({ projectId, projectName, currentVersions, i
     : connState === 'disconnected' ? styles.connStatusDisconnected
     : styles.connStatus;
 
-  const isBuildSucceeded = buildRecord?.status === 'BuildSucceeded';
-  const isDeployed = buildRecord?.status === 'Deployed' || buildRecord?.status === 'DeployFailed';
+  const status = buildRecord?.status;
+  const isImageBuilt    = status === 'ImageBuilt';
+  const isPushSucceeded = status === 'PushSucceeded' || status === 'BuildSucceeded';
+  const isPushFailed    = status === 'PushFailed';
+  const isDeployed      = status === 'Deployed' || status === 'DeployFailed';
+  const activeStepNames = activePushPhase ? PUSH_STEP_NAMES : BUILD_STEP_NAMES;
+
+  // Expected duration for current step and overall
+  const stepExpected = currentStepName && buildStats ? buildStats.stageExpected[currentStepName] : null;
+  const totalExpected = activePushPhase
+    ? buildStats?.totalPushExpected
+    : buildStats?.totalBuildExpected;
+
+  // Build picker options for pause
+  const pickerOptions: PickerOption[] = pause?.options.map(opt => ({
+    value: opt,
+    label: OPTION_LABELS[opt] ?? opt,
+    desc: OPTION_DESCS[opt],
+    danger: opt === 'abort',
+  })) ?? [];
 
   return (
     <Drawer.Root open={isOpen} onOpenChange={open => { if (!open) handleClose(); }}>
@@ -179,6 +305,18 @@ export default function BuildWizard({ projectId, projectName, currentVersions, i
                     </div>
                   ))}
                 </div>
+                {buildStats && buildStats.sampleCount > 0 && buildStats.totalBuildExpected && (
+                  <div className={styles.timerBar}>
+                    <span className={styles.timerExpected}>
+                      Based on {buildStats.sampleCount} build{buildStats.sampleCount !== 1 ? 's' : ''}:
+                    </span>
+                    <span>Build {fmtExpected(buildStats.totalBuildExpected)}</span>
+                    {buildStats.totalPushExpected && <span className={styles.timerSep}>·</span>}
+                    {buildStats.totalPushExpected && <span>Push {fmtExpected(buildStats.totalPushExpected)}</span>}
+                    {buildStats.totalDeployExpected && <span className={styles.timerSep}>·</span>}
+                    {buildStats.totalDeployExpected && <span>Deploy {fmtExpected(buildStats.totalDeployExpected)}</span>}
+                  </div>
+                )}
                 <div className={styles.actions}>
                   <ZestButton onClick={handleStartBuild}
                     zest={{ visualOptions: { variant: 'standard' }, semanticType: 'submit' }}>
@@ -196,18 +334,56 @@ export default function BuildWizard({ projectId, projectName, currentVersions, i
               <>
                 {/* Step tracker */}
                 <div className={styles.stepTracker}>
-                  {STEP_NAMES.map(name => {
-                    const status = stepStatuses[name] ?? 'pending';
-                    const cls = `${styles.step} ${styles[`step${status.charAt(0).toUpperCase() + status.slice(1)}`] ?? ''}`;
-                    const icon = status === 'done' ? '✓' : status === 'failed' ? '✗' : status === 'running' ? '◎' : '○';
+                  {activeStepNames.map(name => {
+                    const s = stepStatuses[name] ?? 'pending';
+                    const cls = `${styles.step} ${styles[`step${s.charAt(0).toUpperCase() + s.slice(1)}`] ?? ''}`;
+                    const label = name.replace(/([A-Z])/g, ' $1').trim();
+                    // Duration annotation: actual for done/failed, live counter for running
+                    const durationNote = (() => {
+                      if (s === 'done' || s === 'failed') {
+                        const d = stepActualDurations[name];
+                        return d != null ? ` (${d}s)` : null;
+                      }
+                      if (s === 'running') {
+                        const started = stepStartTimes[name];
+                        const stepSec = started ? Math.round((Date.now() - started) / 1000) : 0;
+                        const exp = buildStats?.stageExpected[name];
+                        return exp ? ` ${fmtSecs(stepSec)}/${fmtExpected(exp)}` : ` ${fmtSecs(stepSec)}`;
+                      }
+                      return null;
+                    })();
                     return (
                       <span key={name} className={cls}>
-                        <span className={styles.stepIcon}>{icon}</span>
-                        {name.replace(/([A-Z])/g, ' $1').trim()}
+                        {s === 'running'
+                          ? <span className={styles.stepSpinner} />
+                          : <span className={styles.stepIcon}>{s === 'done' ? '✓' : s === 'failed' ? '✗' : '○'}</span>
+                        }
+                        {label}
+                        {durationNote && <span className={styles.stepDuration}>{durationNote}</span>}
                       </span>
                     );
                   })}
                 </div>
+
+                {/* Timer bar */}
+                {(phase === 'pipeline' || elapsed > 0) && (
+                  <div className={styles.timerBar}>
+                    <span className={styles.timerElapsed}>⏱ {fmtSecs(elapsed)}</span>
+                    {totalExpected && (
+                      <span className={styles.timerExpected}>
+                        est. {fmtExpected(totalExpected)} total
+                      </span>
+                    )}
+                    {stepExpected && currentStepName && (
+                      <>
+                        <span className={styles.timerSep}>·</span>
+                        <span className={styles.timerStep}>
+                          {currentStepName.replace(/([A-Z])/g, ' $1').trim()}: {fmtExpected(stepExpected)}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                )}
 
                 {/* Log viewer */}
                 <LogViewer lines={lines} isLive={phase === 'pipeline'} />
@@ -217,11 +393,44 @@ export default function BuildWizard({ projectId, projectName, currentVersions, i
                   <div className={styles.errorBanner}>{buildRecord.errorSummary}</div>
                 )}
 
-                {/* Deploy row — appears when build succeeded */}
-                {isBuildSucceeded && !isDeployed && (
+                {/* Cancel — visible while the pipeline is actively running */}
+                {phase === 'pipeline' && !pause && (
+                  <div className={styles.actions}>
+                    <ZestButton onClick={handleCancel}
+                      zest={{ buttonStyle: 'outline', semanticType: 'cancel',
+                              busyOptions: { handleInternally: true } }}>
+                      Cancel Build
+                    </ZestButton>
+                  </div>
+                )}
+
+                {/* Action row */}
+                {isImageBuilt && (
                   <div className={styles.deploySection}>
                     <div>
-                      <div className={styles.deployInfo}>Build succeeded — ready to deploy</div>
+                      <div className={styles.deployInfo}>Images built locally — ready to push to registry</div>
+                      <div className={styles.deployTag}>{buildRecord?.gitTag}</div>
+                    </div>
+                    <ZestButton onClick={handlePush}
+                      zest={{ visualOptions: { variant: 'standard' }, busyOptions: { handleInternally: true } }}>
+                      Push to Registry
+                    </ZestButton>
+                  </div>
+                )}
+
+                {isPushFailed && (
+                  <div className={styles.deploySection}>
+                    <span className={styles.deployInfo}>✗ Push to registry failed</span>
+                    <ZestButton onClick={handlePush} zest={{ visualOptions: { variant: 'standard' } }}>
+                      Retry Push
+                    </ZestButton>
+                  </div>
+                )}
+
+                {isPushSucceeded && !isDeployed && (
+                  <div className={styles.deploySection}>
+                    <div>
+                      <div className={styles.deployInfo}>Pushed to registry — ready to deploy</div>
                       <div className={styles.deployTag}>{buildRecord?.gitTag}</div>
                     </div>
                     <ZestButton onClick={handleDeploy}
@@ -260,14 +469,24 @@ export default function BuildWizard({ projectId, projectName, currentVersions, i
                     />
                   </div>
                 )}
-                <div className={styles.pauseButtons}>
-                  {pause.options.map(opt => (
-                    <ZestButton key={opt} onClick={() => handlePauseRespond(opt)}
-                      zest={{ visualOptions: { variant: opt === 'abort' ? 'danger' : 'standard' } }}>
-                      {opt.charAt(0).toUpperCase() + opt.slice(1)}
-                    </ZestButton>
-                  ))}
-                </div>
+                {pause.fields?.map(field => (
+                  <div key={field} className={styles.pauseInput}>
+                    <label className={styles.pauseLabel}>{field.charAt(0).toUpperCase() + field.slice(1)}</label>
+                    <ZestTextbox
+                      type={field === 'password' ? 'password' : 'text'}
+                      value={pause.fieldValues?.[field] ?? ''}
+                      onChange={e => setPause(p => p ? { ...p, fieldValues: { ...(p.fieldValues ?? {}), [field]: e.target.value } } : null)}
+                      placeholder={field}
+                      zest={{ stretch: true }}
+                    />
+                  </div>
+                ))}
+                <OptionPicker
+                  options={pickerOptions}
+                  value={pause.selected}
+                  onChange={selected => setPause(p => p ? { ...p, selected } : null)}
+                  onConfirm={handlePauseRespond}
+                />
               </div>
             </div>
           )}

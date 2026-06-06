@@ -99,12 +99,42 @@ public static class BuildRouter
             finally { eventBus.Unsubscribe(id, reader); }
         });
 
+        app.MapPost("/api/builds/{id}/cancel", async (string id, IBuildStore store, BuildOrchestrator orchestrator) =>
+        {
+            var record = await store.GetByIdAsync(id);
+            if (record is null) return Results.NotFound(new { isError = true, message = $"Build '{id}' not found." });
+            if (record.Status != BuildStatus.Running && record.Status != BuildStatus.Paused)
+                return Results.BadRequest(new { isError = true, message = "Build is not running." });
+
+            var cancelled = orchestrator.CancelBuild(id);
+            if (!cancelled)
+                return Results.BadRequest(new { isError = true, message = "No active pipeline found for this build." });
+
+            return Results.Ok(new { message = "Cancellation requested." });
+        });
+
+        app.MapPost("/api/builds/{id}/push", async (string id, IBuildStore store, BuildOrchestrator orchestrator) =>
+        {
+            var record = await store.GetByIdAsync(id);
+            if (record is null) return Results.NotFound(new { isError = true, message = $"Build '{id}' not found." });
+            if (record.Status != BuildStatus.ImageBuilt)
+                return Results.BadRequest(new { isError = true, message = "Only an image-built record can be pushed." });
+
+            _ = Task.Run(() => orchestrator.PushAsync(id));
+            return Results.Accepted($"/api/builds/{id}", new
+            {
+                buildId = id,
+                status = BuildStatus.Running.ToString(),
+                message = "Push to registry started"
+            });
+        });
+
         app.MapPost("/api/builds/{id}/deploy", async (string id, IBuildStore store, BuildOrchestrator orchestrator) =>
         {
             var record = await store.GetByIdAsync(id);
             if (record is null) return Results.NotFound(new { isError = true, message = $"Build '{id}' not found." });
-            if (record.Status != BuildStatus.BuildSucceeded)
-                return Results.BadRequest(new { isError = true, message = "Only a succeeded build can be deployed." });
+            if (record.Status != BuildStatus.PushSucceeded)
+                return Results.BadRequest(new { isError = true, message = "Only a pushed build can be deployed." });
 
             _ = Task.Run(() => orchestrator.DeployAsync(id));
             return Results.Accepted($"/api/builds/{id}", new

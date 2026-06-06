@@ -17,7 +17,9 @@ export interface IBuildServiceVersion {
 
 export type BuildStatus =
   | 'Pending' | 'Running' | 'Paused'
-  | 'BuildSucceeded' | 'BuildFailed' | 'Aborted' | 'Interrupted'
+  | 'ImageBuilt' | 'PushSucceeded' | 'PushFailed'
+  | 'BuildSucceeded'  // legacy — treated same as PushSucceeded in UI
+  | 'BuildFailed' | 'Aborted' | 'Interrupted'
   | 'Deploying' | 'Deployed' | 'DeployFailed';
 
 export interface IBuildRecord {
@@ -35,6 +37,8 @@ export interface IBuildRecord {
   currentStepName: string | null;
   logOutput: string;
   errorSummary: string | null;
+  stepDurations?: Record<string, number>;
+  succeededSteps?: string[];
 }
 
 export interface IBuildListResponse {
