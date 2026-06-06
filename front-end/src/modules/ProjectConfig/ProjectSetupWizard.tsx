@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import toast from 'react-hot-toast';
 import ZestButton from 'jattac.libs.web.zest-button';
 import ZestTextbox from 'jattac.libs.web.zest-textbox';
 import { RiCheckLine, RiAlertLine } from 'react-icons/ri';
@@ -25,7 +26,7 @@ function uncToLinuxPath(p: string): string {
 
 export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Props) {
   const [step, setStep] = useState<Step>(existing ? 'review' : 'server');
-  const [rootPath, setRootPath] = useState(existing?.git.repoPath ?? '');
+  const [rootPath, setRootPath] = useState(existing?.gitRepos[0]?.repoPath ?? '');
   const [detected, setDetected] = useState<IDetectedProjectConfig | null>(null);
   const [detecting, setDetecting] = useState(false);
   const [detectError, setDetectError] = useState<string | null>(null);
@@ -35,8 +36,7 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
   const [services, setServices]         = useState(existing
     ? existing.services.map(s => ({ name: s.name, versionFilePath: s.versionFilePath, buildContextPath: s.buildContextPath, dockerImageName: s.dockerImageName }))
     : [] as { name: string; versionFilePath: string; buildContextPath: string; dockerImageName: string }[]);
-  const [gitRepoPath, setGitRepoPath]   = useState(existing?.git.repoPath ?? '');
-  const [deployBranch, setDeployBranch] = useState(existing?.git.deployBranch ?? 'master');
+  const [gitRepos, setGitRepos]         = useState<{ repoPath: string; deployBranch: string }[]>(existing?.gitRepos ?? []);
   const [wslWorkingDir, setWslWorkingDir] = useState(existing?.wsl.workingDir ?? '');
   const [serverHost, setServerHost]     = useState(existing?.server.host ?? '');
   const [serverUser, setServerUser]     = useState(existing?.server.username ?? 'ubuntu');
@@ -57,8 +57,7 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
       const result = await api.post<IDetectedProjectConfig>('/api/projects/detect', { rootPath: rootPath.trim() });
       setDetected(result);
       if (result.suggestedName && !name) setName(result.suggestedName);
-      if (result.gitRepoPath)   setGitRepoPath(result.gitRepoPath);
-      if (result.deployBranch)  setDeployBranch(result.deployBranch);
+      setGitRepos(result.gitRepos.map(r => ({ repoPath: r.repoPath, deployBranch: r.deployBranch })));
       if (result.wslWorkingDir) setWslWorkingDir(result.wslWorkingDir);
       setServices(result.services.map(s => ({
         name: s.suggestedName,
@@ -80,7 +79,7 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
     const input: IProjectInput = {
       name,
       services,
-      git: { repoPath: gitRepoPath, deployBranch },
+      gitRepos,
       wsl: { workingDir: wslWorkingDir },
       server: { host: serverHost, username: serverUser, sshKeyPath, remoteWorkingDir: remoteDir, rebuildScript },
     };
@@ -96,6 +95,11 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
       setErrors(apiErrors);
       // If server errors, keep user on server step
       if (Object.keys(apiErrors).some(k => k.startsWith('server'))) setStep('server');
+      // If no field errors were mapped (network error, 500, etc.), surface a toast
+      if (Object.keys(apiErrors).length === 0) {
+        const msg = (errs as IApiError)?.message ?? 'Failed to save project. Please try again.';
+        toast.error(msg);
+      }
     }
   };
 
@@ -175,6 +179,34 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
             </div>
           )}
 
+          {/* Git repositories */}
+          <div className={styles.section}>
+            <span className={styles.sectionTitle}>Git Repositories</span>
+            {errors['gitRepos'] && <p className={styles.errorText}>{errors['gitRepos']}</p>}
+            {gitRepos.length === 0 && !errors['gitRepos'] && (
+              <div className={styles.warningBox}>No git repositories detected.</div>
+            )}
+            {gitRepos.map((repo, i) => (
+              <div key={i} className={styles.serviceCard}>
+                <div className={styles.fieldRow}>
+                  <span className={styles.fieldLabel}>Repository path</span>
+                  <div className={styles.fieldValue}>{repo.repoPath || <em style={{ color: '#888' }}>not detected</em>}</div>
+                  {errors[`gitRepos[${i}].repoPath`] && <p className={styles.errorText}>{errors[`gitRepos[${i}].repoPath`]}</p>}
+                </div>
+                <div className={styles.fieldRow}>
+                  <span className={styles.fieldLabel}>Deploy branch</span>
+                  <ZestTextbox
+                    value={repo.deployBranch}
+                    onChange={e => setGitRepos(prev => prev.map((r, j) => j === i ? { ...r, deployBranch: e.target.value } : r))}
+                    placeholder="e.g. master"
+                    zest={{ stretch: true, zSize: 'sm' }}
+                  />
+                  {errors[`gitRepos[${i}].deployBranch`] && <p className={styles.errorText}>{errors[`gitRepos[${i}].deployBranch`]}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+
           {/* Services */}
           <div className={styles.section}>
             <span className={styles.sectionTitle}>Services</span>
@@ -183,6 +215,7 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
                 No services detected. Ensure each service has a version.txt alongside a Dockerfile.
               </div>
             )}
+            {errors['services'] && <p className={styles.errorText}>{errors['services']}</p>}
             {services.map((svc, i) => (
               <div key={i} className={styles.serviceCard}>
                 <div className={styles.serviceHeader}>
@@ -197,6 +230,7 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
                   <ZestTextbox value={svc.name}
                     onChange={e => setServices(prev => prev.map((s, j) => j === i ? { ...s, name: e.target.value } : s))}
                     zest={{ stretch: true, zSize: 'sm' }} />
+                  {errors[`services[${i}].name`] && <p className={styles.errorText}>{errors[`services[${i}].name`]}</p>}
                 </div>
 
                 <div className={styles.fieldRow}>

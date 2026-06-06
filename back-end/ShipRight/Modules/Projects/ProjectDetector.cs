@@ -10,11 +10,12 @@ public record DetectedService(
     string? DockerImageName,    // null if not detected
     bool ImageDetected);
 
+public record DetectedGitRepo(string RepoPath, string DeployBranch);
+
 public record DetectedProjectConfig(
     string? SuggestedName,
     List<DetectedService> Services,
-    string? GitRepoPath,
-    string? DeployBranch,
+    List<DetectedGitRepo> GitRepos,
     string? WslWorkingDir,      // path to directory containing docker-compose.yml
     List<string> Detected,      // human-readable list of what was found
     List<string> Undetected);   // human-readable list of what still needs manual entry
@@ -95,22 +96,32 @@ public static class ProjectDetector
                 svcName, vf, buildContext, imageName ?? "(not found)");
         }
 
-        // ── Git detection ─────────────────────────────────────────────────────
-        string? gitRepoPath = null;
-        string? deployBranch = null;
+        // ── Git detection — find all unique .git roots ────────────────────────
+        var gitRepoPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        var gitConfigPath = FindGitRoot(rootPath);
-        if (gitConfigPath is not null)
+        // 1. Walk up from the root path itself
+        var rootGit = FindGitRoot(rootPath);
+        if (rootGit is not null) gitRepoPaths.Add(rootGit);
+
+        // 2. Walk up from each service's build context (catches per-service repos)
+        foreach (var svc in services)
         {
-            gitRepoPath = gitConfigPath;
-            deployBranch = DetectDefaultBranch(gitConfigPath) ?? "master";
-            detected.Add($"Git repo at {gitRepoPath}, branch: {deployBranch}");
-            Log.Information("Git repo detected: {Path}, branch: {Branch}", gitRepoPath, deployBranch);
+            var svcGit = FindGitRoot(svc.BuildContextPath);
+            if (svcGit is not null) gitRepoPaths.Add(svcGit);
         }
+
+        var gitRepos = new List<DetectedGitRepo>();
+        foreach (var repoPath in gitRepoPaths)
+        {
+            var branch = DetectDefaultBranch(repoPath) ?? "master";
+            gitRepos.Add(new DetectedGitRepo(repoPath, branch));
+            Log.Information("Git repo detected: {Path}, branch: {Branch}", repoPath, branch);
+        }
+
+        if (gitRepos.Count > 0)
+            detected.Add($"{gitRepos.Count} git repo(s) detected");
         else
-        {
-            undetected.Add("Git repository path");
-        }
+            undetected.Add("Git repository path(s)");
 
         // ── Summarise ────────────────────────────────────────────────────────
         if (services.Count > 0)
@@ -131,7 +142,7 @@ public static class ProjectDetector
         undetected.Add("Remote working directory");
 
         return new DetectedProjectConfig(
-            suggestedName, services, gitRepoPath, deployBranch,
+            suggestedName, services, gitRepos,
             wslWorkingDir, detected, undetected);
     }
 

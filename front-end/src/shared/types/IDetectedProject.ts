@@ -6,11 +6,15 @@ export interface IDetectedService {
   imageDetected: boolean;
 }
 
+export interface IDetectedGitRepo {
+  repoPath: string;
+  deployBranch: string;
+}
+
 export interface IDetectedProjectConfig {
   suggestedName: string | null;
   services: IDetectedService[];
-  gitRepoPath: string | null;
-  deployBranch: string | null;
+  gitRepos: IDetectedGitRepo[];
   wslWorkingDir: string | null;
   detected: string[];
   undetected: string[];

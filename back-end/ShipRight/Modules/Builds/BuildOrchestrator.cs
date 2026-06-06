@@ -140,10 +140,9 @@ public class BuildOrchestrator
                 if (!Directory.Exists(svc.BuildContextPath))
                     throw new InvalidOperationException($"Build context not found: {svc.BuildContextPath}");
             }
-            if (!Directory.Exists(project.Git.RepoPath))
-                throw new InvalidOperationException($"Git repo not found: {project.Git.RepoPath}");
-            if (!File.Exists(project.Server.SshKeyPath))
-                throw new InvalidOperationException($"SSH key not found: {project.Server.SshKeyPath}");
+            foreach (var repo in project.GitRepos)
+                if (!Directory.Exists(repo.RepoPath))
+                    throw new InvalidOperationException($"Git repo not found: {repo.RepoPath}");
 
             var dockerInfo = await _runner.RunAsync("docker", ["info"], null);
             if (!dockerInfo.Success)
@@ -155,19 +154,24 @@ public class BuildOrchestrator
 
             // ── Step 2: Git Status Check ──────────────────────────────────────
             await ctx.StepStartedAsync(2, "GitStatusCheck");
-            var gitStatus = await _runner.RunAsync("git",
-                ["-C", project.Git.RepoPath, "status", "--porcelain"],
-                null,
-                line => ctx.EmitLogAsync(line, "git"));
+            var dirtyRepos = new List<string>();
+            foreach (var repo in project.GitRepos)
+            {
+                var gitStatus = await _runner.RunAsync("git",
+                    ["-C", repo.RepoPath, "status", "--porcelain"],
+                    null,
+                    line => ctx.EmitLogAsync(line, "git"));
+                if (!gitStatus.Success)
+                    throw new InvalidOperationException($"git status failed in {repo.RepoPath}:\n{gitStatus.StdErr}");
+                if (!string.IsNullOrWhiteSpace(gitStatus.StdOut))
+                    dirtyRepos.Add(repo.RepoPath);
+            }
 
-            if (!gitStatus.Success)
-                throw new InvalidOperationException($"git status failed:\n{gitStatus.StdErr}");
-
-            if (!string.IsNullOrWhiteSpace(gitStatus.StdOut))
+            if (dirtyRepos.Count > 0)
             {
                 await ctx.PauseAsync("git_dirty",
-                    "Uncommitted changes detected. Commit before building?",
-                    ["commit", "abort"]);
+                    $"Uncommitted changes in {dirtyRepos.Count} repo(s). Commit and push, or commit only?",
+                    ["commit_and_push", "commit", "abort"]);
                 await SaveStep();
 
                 var tcs = new TaskCompletionSource<RespondRequest>();
@@ -186,17 +190,29 @@ public class BuildOrchestrator
                 var msg = response.Data?.GetValueOrDefault("commitMessage")
                     ?? "[ShipRight auto-commit] Pre-build snapshot";
 
-                var addResult = await _runner.RunAsync("git",
-                    ["-C", project.Git.RepoPath, "add", "-A"], null,
-                    line => ctx.EmitLogAsync(line, "git"));
-                if (!addResult.Success)
-                    throw new InvalidOperationException($"git add failed:\n{addResult.StdErr}");
+                foreach (var repo in project.GitRepos.Where(r => dirtyRepos.Contains(r.RepoPath)))
+                {
+                    var addResult = await _runner.RunAsync("git",
+                        ["-C", repo.RepoPath, "add", "-A"], null,
+                        line => ctx.EmitLogAsync(line, "git"));
+                    if (!addResult.Success)
+                        throw new InvalidOperationException($"git add failed in {repo.RepoPath}:\n{addResult.StdErr}");
 
-                var commitResult = await _runner.RunAsync("git",
-                    ["-C", project.Git.RepoPath, "commit", "-m", msg], null,
-                    line => ctx.EmitLogAsync(line, "git"));
-                if (!commitResult.Success)
-                    throw new InvalidOperationException($"git commit failed:\n{commitResult.StdErr}");
+                    var commitResult = await _runner.RunAsync("git",
+                        ["-C", repo.RepoPath, "commit", "-m", msg], null,
+                        line => ctx.EmitLogAsync(line, "git"));
+                    if (!commitResult.Success)
+                        throw new InvalidOperationException($"git commit failed in {repo.RepoPath}:\n{commitResult.StdErr}");
+
+                    if (response.Choice == "commit_and_push")
+                    {
+                        var pushResult = await _runner.RunAsync("git",
+                            ["-C", repo.RepoPath, "push", "origin", repo.DeployBranch], null,
+                            line => ctx.EmitLogAsync(line, "git"));
+                        if (!pushResult.Success)
+                            throw new InvalidOperationException($"git push failed in {repo.RepoPath}:\n{pushResult.StdErr}");
+                    }
+                }
 
                 record.Status = BuildStatus.Running;
             }
@@ -206,18 +222,24 @@ public class BuildOrchestrator
 
             // ── Step 3: Branch Check ──────────────────────────────────────────
             await ctx.StepStartedAsync(3, "BranchCheck");
-            var branchResult = await _runner.RunAsync("git",
-                ["-C", project.Git.RepoPath, "rev-parse", "--abbrev-ref", "HEAD"], null);
-
-            if (!branchResult.Success)
-                throw new InvalidOperationException($"Could not determine current branch:\n{branchResult.StdErr}");
-
-            var currentBranch = branchResult.StdOut.Trim();
-            if (currentBranch != project.Git.DeployBranch)
+            var wrongBranchRepos = new List<(string RepoPath, string CurrentBranch, string DeployBranch)>();
+            foreach (var repo in project.GitRepos)
             {
+                var branchResult = await _runner.RunAsync("git",
+                    ["-C", repo.RepoPath, "rev-parse", "--abbrev-ref", "HEAD"], null);
+                if (!branchResult.Success)
+                    throw new InvalidOperationException($"Could not determine branch in {repo.RepoPath}:\n{branchResult.StdErr}");
+                var currentBranch = branchResult.StdOut.Trim();
+                if (currentBranch != repo.DeployBranch)
+                    wrongBranchRepos.Add((repo.RepoPath, currentBranch, repo.DeployBranch));
+            }
+
+            if (wrongBranchRepos.Count > 0)
+            {
+                var detail = string.Join(", ", wrongBranchRepos.Select(r => $"'{r.CurrentBranch}'→'{r.DeployBranch}'"));
                 await ctx.PauseAsync("wrong_branch",
-                    $"On branch '{currentBranch}', deploy branch is '{project.Git.DeployBranch}'. Switch?",
-                    ["switch", "abort"]);
+                    $"{wrongBranchRepos.Count} repo(s) on wrong branch ({detail}). Merge into deploy branch, or just switch?",
+                    ["merge", "switch", "abort"]);
                 await SaveStep();
 
                 var tcs = new TaskCompletionSource<RespondRequest>();
@@ -232,17 +254,37 @@ public class BuildOrchestrator
                     return;
                 }
 
-                var checkout = await _runner.RunAsync("git",
-                    ["-C", project.Git.RepoPath, "checkout", project.Git.DeployBranch], null,
-                    line => ctx.EmitLogAsync(line, "git"));
-                if (!checkout.Success)
-                    throw new InvalidOperationException($"git checkout failed:\n{checkout.StdErr}");
+                foreach (var (repoPath, currentBranch, deployBranch) in wrongBranchRepos)
+                {
+                    var checkout = await _runner.RunAsync("git",
+                        ["-C", repoPath, "checkout", deployBranch], null,
+                        line => ctx.EmitLogAsync(line, "git"));
+                    if (!checkout.Success)
+                        throw new InvalidOperationException($"git checkout failed in {repoPath}:\n{checkout.StdErr}");
 
-                var pull = await _runner.RunAsync("git",
-                    ["-C", project.Git.RepoPath, "pull", "origin", project.Git.DeployBranch], null,
-                    line => ctx.EmitLogAsync(line, "git"));
-                if (!pull.Success)
-                    throw new InvalidOperationException($"git pull failed:\n{pull.StdErr}");
+                    var pull = await _runner.RunAsync("git",
+                        ["-C", repoPath, "pull", "origin", deployBranch], null,
+                        line => ctx.EmitLogAsync(line, "git"));
+                    if (!pull.Success)
+                        throw new InvalidOperationException($"git pull failed in {repoPath}:\n{pull.StdErr}");
+
+                    if (response.Choice == "merge")
+                    {
+                        await ctx.EmitLogAsync($"Merging '{currentBranch}' into '{deployBranch}' in {repoPath}…", "git");
+                        var merge = await _runner.RunAsync("git",
+                            ["-C", repoPath, "merge", "--no-ff", currentBranch, "-m",
+                                $"chore: merge '{currentBranch}' into '{deployBranch}' for deployment"],
+                            null, line => ctx.EmitLogAsync(line, "git"));
+                        if (!merge.Success)
+                            throw new InvalidOperationException($"git merge failed in {repoPath}:\n{merge.StdErr}");
+
+                        var pushMerge = await _runner.RunAsync("git",
+                            ["-C", repoPath, "push", "origin", deployBranch], null,
+                            line => ctx.EmitLogAsync(line, "git"));
+                        if (!pushMerge.Success)
+                            throw new InvalidOperationException($"git push after merge failed in {repoPath}:\n{pushMerge.StdErr}");
+                    }
+                }
 
                 record.Status = BuildStatus.Running;
             }
@@ -266,36 +308,43 @@ public class BuildOrchestrator
                 await ctx.EmitLogAsync($"Wrote {sv.NewVersion} → {svc.VersionFilePath}", "shipright");
             }
 
-            // Commit version bumps to source repo
-            var addVersions = new[] { "-C", project.Git.RepoPath, "add" }
-                .Concat(versionFilePaths).ToArray();
-            var addResult2 = await _runner.RunAsync("git", addVersions, null,
-                line => ctx.EmitLogAsync(line, "git"));
-            if (!addResult2.Success)
-                throw new InvalidOperationException($"git add versions failed:\n{addResult2.StdErr}");
-
-            var commitVersions = await _runner.RunAsync("git",
-                ["-C", project.Git.RepoPath, "commit", "-m", $"chore: bump versions — {versionSummary}"],
-                null, line => ctx.EmitLogAsync(line, "git"));
-            if (!commitVersions.Success)
-                throw new InvalidOperationException($"git commit versions failed:\n{commitVersions.StdErr}");
-
-            // Annotated tag — format: b_{apiVer}_f_{uiVer} for 2-service projects, ship_{ts} otherwise
+            // Commit version bumps per repo, then tag and push each
             var tag = BuildGitTag(record.Versions);
             record.GitTag = tag;
-            var tagResult = await _runner.RunAsync("git",
-                ["-C", project.Git.RepoPath, "tag", "-a", tag, "-m",
-                    $"Build {DateTime.UtcNow:yyyy-MM-dd}: {versionSummary}"],
-                null, line => ctx.EmitLogAsync(line, "git"));
-            if (!tagResult.Success)
-                throw new InvalidOperationException($"git tag failed:\n{tagResult.StdErr}");
 
-            // Push source repo
-            var pushSource = await _runner.RunAsync("git",
-                ["-C", project.Git.RepoPath, "push", "origin", project.Git.DeployBranch, "--follow-tags"],
-                null, line => ctx.EmitLogAsync(line, "git"));
-            if (!pushSource.Success)
-                throw new InvalidOperationException($"git push source repo failed:\n{pushSource.StdErr}");
+            foreach (var repo in project.GitRepos)
+            {
+                var repoVersionFiles = versionFilePaths
+                    .Where(vf => vf.StartsWith(repo.RepoPath, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (repoVersionFiles.Count == 0) continue;
+
+                var addVersions = new[] { "-C", repo.RepoPath, "add" }
+                    .Concat(repoVersionFiles).ToArray();
+                var addResult2 = await _runner.RunAsync("git", addVersions, null,
+                    line => ctx.EmitLogAsync(line, "git"));
+                if (!addResult2.Success)
+                    throw new InvalidOperationException($"git add versions failed in {repo.RepoPath}:\n{addResult2.StdErr}");
+
+                var commitVersions = await _runner.RunAsync("git",
+                    ["-C", repo.RepoPath, "commit", "-m", $"chore: bump versions — {versionSummary}"],
+                    null, line => ctx.EmitLogAsync(line, "git"));
+                if (!commitVersions.Success)
+                    throw new InvalidOperationException($"git commit versions failed in {repo.RepoPath}:\n{commitVersions.StdErr}");
+
+                var tagResult = await _runner.RunAsync("git",
+                    ["-C", repo.RepoPath, "tag", "-a", tag, "-m",
+                        $"Build {DateTime.UtcNow:yyyy-MM-dd}: {versionSummary}"],
+                    null, line => ctx.EmitLogAsync(line, "git"));
+                if (!tagResult.Success)
+                    throw new InvalidOperationException($"git tag failed in {repo.RepoPath}:\n{tagResult.StdErr}");
+
+                var pushSource = await _runner.RunAsync("git",
+                    ["-C", repo.RepoPath, "push", "origin", repo.DeployBranch, "--follow-tags"],
+                    null, line => ctx.EmitLogAsync(line, "git"));
+                if (!pushSource.Success)
+                    throw new InvalidOperationException($"git push failed in {repo.RepoPath}:\n{pushSource.StdErr}");
+            }
 
             await ctx.StepCompletedAsync(4, "WriteVersionsAndTag");
             await SaveStep();
@@ -303,9 +352,10 @@ public class BuildOrchestrator
             // ── Step 5: Compose Repo Sync ─────────────────────────────────────
             await ctx.StepStartedAsync(5, "ComposeRepoSync");
 
+            var composeBranch = project.GitRepos.FirstOrDefault()?.DeployBranch ?? "master";
             // Pull compose repo first (get teammates' changes before modifying)
             var composePull = await _runner.RunAsync("git",
-                ["-C", project.Wsl.WorkingDir, "pull", "origin", project.Git.DeployBranch],
+                ["-C", project.Wsl.WorkingDir, "pull", "origin", composeBranch],
                 null, line => ctx.EmitLogAsync(line, "git"));
             if (!composePull.Success)
                 throw new InvalidOperationException($"git pull compose repo failed:\n{composePull.StdErr}");
@@ -333,7 +383,7 @@ public class BuildOrchestrator
                     throw new InvalidOperationException($"git commit compose failed:\n{commitCompose.StdErr}");
 
                 var pushCompose = await _runner.RunAsync("git",
-                    ["-C", project.Wsl.WorkingDir, "push", "origin", project.Git.DeployBranch],
+                    ["-C", project.Wsl.WorkingDir, "push", "origin", composeBranch],
                     null, line => ctx.EmitLogAsync(line, "git"));
                 if (!pushCompose.Success)
                     throw new InvalidOperationException($"git push compose repo failed:\n{pushCompose.StdErr}");

@@ -22,7 +22,7 @@ public class SshRunner : ISshRunner
     {
         Log.Information("SSH connecting: {Username}@{Host}", username, host);
 
-        using var keyFile = new PrivateKeyFile(keyPath);
+        using var keyFile = await SshKeyLoader.LoadAsync(keyPath);
         using var client = new SshClient(host, username, keyFile);
         client.ConnectionInfo.Timeout = TimeSpan.FromSeconds(30);
 

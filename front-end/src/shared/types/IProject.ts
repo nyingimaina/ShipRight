@@ -26,7 +26,7 @@ export interface IProject {
   id: string;
   name: string;
   services: IServiceConfig[];
-  git: IGitConfig;
+  gitRepos: IGitConfig[];
   wsl: IWslConfig;
   server: IServerConfig;
   createdAt: string;
@@ -38,7 +38,7 @@ export type IProjectInput = Omit<IProject, 'id' | 'createdAt' | 'modifiedAt'>;
 export const emptyProjectInput = (): IProjectInput => ({
   name: '',
   services: [{ name: '', versionFilePath: '', buildContextPath: '', dockerImageName: '' }],
-  git: { repoPath: '', deployBranch: 'master' },
+  gitRepos: [],
   wsl: { workingDir: '' },
   server: { host: '', username: 'ubuntu', sshKeyPath: '', remoteWorkingDir: '', rebuildScript: 'rebuild.sh' },
 });

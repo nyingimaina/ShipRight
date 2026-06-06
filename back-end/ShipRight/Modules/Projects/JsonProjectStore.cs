@@ -1,4 +1,5 @@
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using Serilog;
 using ShipRight.Shared.Store;
 
@@ -21,6 +22,7 @@ public class JsonProjectStore : IProjectStore
             if (File.Exists(_filePath))
             {
                 var json = File.ReadAllText(_filePath);
+                json = MigrateGitToGitRepos(json);
                 _cache = JsonConvert.DeserializeObject<List<ProjectConfig>>(json) ?? new();
                 Log.Information("Loaded {Count} projects from {Path}", _cache.Count, _filePath);
             }
@@ -71,5 +73,37 @@ public class JsonProjectStore : IProjectStore
     {
         var json = JsonConvert.SerializeObject(_cache, Formatting.Indented);
         await File.WriteAllTextAsync(_filePath, json);
+    }
+
+    // Converts old single-object "Git": {...} to new array "GitRepos": [{...}]
+    private string MigrateGitToGitRepos(string json)
+    {
+        try
+        {
+            var jArray = JArray.Parse(json);
+            bool migrated = false;
+            foreach (var token in jArray)
+            {
+                if (token is not JObject item) continue;
+                if (item["GitRepos"] == null && item["Git"] is JObject oldGit)
+                {
+                    item["GitRepos"] = new JArray(oldGit);
+                    item.Remove("Git");
+                    migrated = true;
+                }
+            }
+            if (migrated)
+            {
+                var migratedJson = jArray.ToString(Formatting.Indented);
+                File.WriteAllText(_filePath, migratedJson);
+                Log.Information("Migrated projects.json: Git → GitRepos");
+                return migratedJson;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Could not apply Git→GitRepos migration — loading as-is");
+        }
+        return json;
     }
 }

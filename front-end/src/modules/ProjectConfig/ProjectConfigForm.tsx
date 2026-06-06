@@ -45,6 +45,23 @@ export default function ProjectConfigForm({ initial, onSave, onCancel }: Props) 
     ...prev, services: prev.services.filter((_, idx) => idx !== i),
   }));
 
+  const setGitRepo = (i: number, field: 'repoPath' | 'deployBranch', value: string) => {
+    setForm(prev => ({
+      ...prev,
+      gitRepos: prev.gitRepos.map((r, idx) => idx === i ? { ...r, [field]: value } : r),
+    }));
+    setErrors(prev => { const e = { ...prev }; delete e[`gitRepos[${i}].${field}`]; return e; });
+  };
+
+  const addGitRepo = () => setForm(prev => ({
+    ...prev,
+    gitRepos: [...prev.gitRepos, { repoPath: '', deployBranch: 'master' }],
+  }));
+
+  const removeGitRepo = (i: number) => setForm(prev => ({
+    ...prev, gitRepos: prev.gitRepos.filter((_, idx) => idx !== i),
+  }));
+
   const handleSave = async () => {
     setErrors({});
     try {
@@ -71,7 +88,7 @@ export default function ProjectConfigForm({ initial, onSave, onCancel }: Props) 
           {[
             { label: 'General',   keys: ['name'] },
             { label: 'Services',  keys: ['services'] },
-            { label: 'Git & WSL', keys: ['git', 'wsl'] },
+            { label: 'Git & WSL', keys: ['gitRepos', 'wsl'] },
             { label: 'Server',    keys: ['server'] },
           ].map(({ label, keys }) => (
             <Tab key={label} className={tabClass(keys)} selectedClassName={styles.tabActive}>
@@ -125,14 +142,32 @@ export default function ProjectConfigForm({ initial, onSave, onCancel }: Props) 
         </TabPanel>
 
         <TabPanel className={styles.panel} selectedClassName={styles.panelActive}>
-          <Field label="Git Repository Path" error={errors['git.repoPath']}>
-            <ZestTextbox value={form.git.repoPath} onChange={e => set('git.repoPath', e.target.value)}
-              placeholder="/mnt/d/work/nyingi/code/systems/sms-gateway" zest={{ stretch: true }} />
-          </Field>
-          <Field label="Deploy Branch" error={errors['git.deployBranch']}>
-            <ZestTextbox value={form.git.deployBranch} onChange={e => set('git.deployBranch', e.target.value)}
-              placeholder="master" maxLength={100} zest={{ stretch: true }} />
-          </Field>
+          {errors['gitRepos'] && <p className={styles.errorText}>{errors['gitRepos']}</p>}
+          {form.gitRepos.map((repo, i) => (
+            <div key={i} className={styles.serviceCard}>
+              <div className={styles.serviceCardHeader}>
+                <span className={styles.serviceLabel}>Repository {i + 1}</span>
+                {form.gitRepos.length > 1 && (
+                  <ZestButton zest={{ visualOptions: { variant: 'danger', size: 'sm' } }} onClick={() => removeGitRepo(i)}>
+                    <RiDeleteBinLine />
+                  </ZestButton>
+                )}
+              </div>
+              <Field label="Repository Path" error={errors[`gitRepos[${i}].repoPath`]}>
+                <ZestTextbox value={repo.repoPath} onChange={e => setGitRepo(i, 'repoPath', e.target.value)}
+                  placeholder="/mnt/d/work/nyingi/code/systems/sms-gateway" zest={{ stretch: true }} />
+              </Field>
+              <Field label="Deploy Branch" error={errors[`gitRepos[${i}].deployBranch`]}>
+                <ZestTextbox value={repo.deployBranch} onChange={e => setGitRepo(i, 'deployBranch', e.target.value)}
+                  placeholder="master" maxLength={100} zest={{ stretch: true }} />
+              </Field>
+            </div>
+          ))}
+          {form.gitRepos.length < 10 && (
+            <ZestButton onClick={addGitRepo} zest={{ visualOptions: { size: 'sm' }, buttonStyle: 'outline' }}>
+              <RiAddLine /> Add Repository
+            </ZestButton>
+          )}
           <Field label="WSL Working Directory" error={errors['wsl.workingDir']}>
             <ZestTextbox value={form.wsl.workingDir} onChange={e => set('wsl.workingDir', e.target.value)}
               placeholder="/home/nyingi/work/jattac/docker/..." zest={{ stretch: true }} />

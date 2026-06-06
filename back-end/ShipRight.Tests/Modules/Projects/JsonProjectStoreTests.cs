@@ -20,7 +20,7 @@ public class JsonProjectStoreTests : IDisposable
         Id = id,
         Name = name,
         Services = [new ServiceConfig { Name = "api", VersionFilePath = "/tmp/v.txt", BuildContextPath = "/tmp", DockerImageName = "test/api" }],
-        Git = new GitConfig { RepoPath = "/tmp", DeployBranch = "main" },
+        GitRepos = [new GitConfig { RepoPath = "/tmp", DeployBranch = "main" }],
         Wsl = new WslConfig { WorkingDir = "/home/test" },
         Server = new ServerConfig { Host = "1.2.3.4", Username = "ubuntu", SshKeyPath = "/tmp/k.pem", RemoteWorkingDir = "/home/ubuntu", RebuildScript = "rebuild.sh" },
         CreatedAt = DateTime.UtcNow,

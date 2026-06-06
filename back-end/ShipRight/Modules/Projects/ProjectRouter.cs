@@ -111,12 +111,12 @@ public static class ProjectRouter
         });
     }
 
-    private static object Error(string message, string? field = null) =>
+    internal static object Error(string message, string? field = null) =>
         field is null
             ? new { isError = true, message }
             : new { isError = true, message, field };
 
-    private static async Task<string> GenerateUniqueIdAsync(string name, IProjectStore store)
+    internal static async Task<string> GenerateUniqueIdAsync(string name, IProjectStore store)
     {
         var slug = new string(name.ToLowerInvariant()
             .Replace(' ', '-')
@@ -133,7 +133,7 @@ public static class ProjectRouter
         return Guid.NewGuid().ToString("N")[..8];
     }
 
-    private static async Task<List<object>> ValidateAsync(ProjectConfig p, IProjectStore store, bool isNew)
+    internal static async Task<List<object>> ValidateAsync(ProjectConfig p, IProjectStore store, bool isNew)
     {
         var errors = new List<object>();
         void Err(string field, string msg) => errors.Add(Error(msg, field));
@@ -180,20 +180,31 @@ public static class ProjectRouter
             }
         }
 
-        // Git
-        if (string.IsNullOrWhiteSpace(p.Git.RepoPath))
-            Err("git.repoPath", "Git repository path is required.");
+        // GitRepos
+        if (p.GitRepos.Count == 0)
+            Err("gitRepos", "At least one git repository is required.");
         else
         {
-            ValidatePath(p.Git.RepoPath, "git.repoPath", errors);
-            if (IsLinux() && !Directory.Exists(Path.Combine(p.Git.RepoPath, ".git")))
-                Err("git.repoPath", $"No .git directory found at '{p.Git.RepoPath}'.");
-        }
+            for (int i = 0; i < p.GitRepos.Count; i++)
+            {
+                var g = p.GitRepos[i];
+                string GF(string f) => $"gitRepos[{i}].{f}";
 
-        if (string.IsNullOrWhiteSpace(p.Git.DeployBranch))
-            Err("git.deployBranch", "Deploy branch is required.");
-        else if (p.Git.DeployBranch.Length > 100)
-            Err("git.deployBranch", "Deploy branch must be 100 characters or fewer.");
+                if (string.IsNullOrWhiteSpace(g.RepoPath))
+                    Err(GF("repoPath"), "Git repository path is required.");
+                else
+                {
+                    ValidatePath(g.RepoPath, GF("repoPath"), errors);
+                    if (IsLinux() && !Directory.Exists(Path.Combine(g.RepoPath, ".git")))
+                        Err(GF("repoPath"), $"No .git directory found at '{g.RepoPath}'.");
+                }
+
+                if (string.IsNullOrWhiteSpace(g.DeployBranch))
+                    Err(GF("deployBranch"), "Deploy branch is required.");
+                else if (g.DeployBranch.Length > 100)
+                    Err(GF("deployBranch"), "Deploy branch must be 100 characters or fewer.");
+            }
+        }
 
         // WSL
         if (string.IsNullOrWhiteSpace(p.Wsl.WorkingDir))

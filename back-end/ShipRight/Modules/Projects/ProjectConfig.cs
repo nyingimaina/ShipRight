@@ -35,7 +35,7 @@ public record ProjectConfig
     public string Id { get; init; } = string.Empty;
     public string Name { get; init; } = string.Empty;
     public List<ServiceConfig> Services { get; init; } = new();
-    public GitConfig Git { get; init; } = new();
+    public List<GitConfig> GitRepos { get; init; } = new();
     public WslConfig Wsl { get; init; } = new();
     public ServerConfig Server { get; init; } = new();
     public DateTime CreatedAt { get; init; }

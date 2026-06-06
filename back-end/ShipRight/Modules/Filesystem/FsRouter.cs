@@ -106,12 +106,9 @@ public static void MapFsRoutes(this WebApplication app)
             if (remotePath.Contains('\0'))
                 return Results.BadRequest(new { isError = true, message = "Invalid path." });
 
-            // Best-effort: restrict key file permissions before connecting.
-            await FixKeyPermissionsAsync(keyPath);
-
             try
             {
-                using var keyFile = await LoadPrivateKeyAsync(keyPath);
+                using var keyFile = await SshKeyLoader.LoadAsync(keyPath);
                 using var sftp = new SftpClient(host, user, keyFile);
 
                 sftp.ConnectionInfo.Timeout = TimeSpan.FromSeconds(SshConnectTimeoutSecs);
@@ -160,98 +157,4 @@ public static void MapFsRoutes(this WebApplication app)
         return lastSlash <= 0 ? "/" : trimmed[..lastSlash];
     }
 
-    private static async Task<PrivateKeyFile> LoadPrivateKeyAsync(string keyPath)
-    {
-        // Non-UNC path (Windows C:\... or Linux /home/...): direct load works in both cases.
-        if (!keyPath.StartsWith(@"\\"))
-            return new PrivateKeyFile(keyPath);
-
-        // WSL UNC path (\\wsl.localhost\Ubuntu\...): the Windows process identity doesn't map
-        // to the Linux file owner, so File.Open on the UNC path is denied for chmod-600 keys.
-        // Fix: use wsl cp to copy the key to a Windows temp file (runs as the Linux user who
-        // owns the file), load from the temp path, then immediately delete it.
-        var parts = keyPath.TrimStart('\\').Split('\\', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length < 3)
-            throw new InvalidOperationException($"Cannot resolve Linux path from UNC: {keyPath}");
-
-        var distroName  = parts[1].Trim();
-        var linuxPath   = "/" + string.Join("/", parts[2..]);
-        var winTempPath = Path.Combine(Path.GetTempPath(), $"sr_key_{Guid.NewGuid():N}.pem");
-        var wslTempPath = WindowsToWslPath(winTempPath);
-
-        Console.WriteLine($"[fs/remote/list] WSL key: copying {distroName}:{linuxPath} → {winTempPath}");
-
-        var psi = new ProcessStartInfo
-        {
-            FileName = "wsl",
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-        psi.ArgumentList.Add("-d");
-        psi.ArgumentList.Add(distroName);
-        psi.ArgumentList.Add("-u");
-        psi.ArgumentList.Add("root");
-        psi.ArgumentList.Add("--");
-        psi.ArgumentList.Add("cp");
-        psi.ArgumentList.Add(linuxPath);
-        psi.ArgumentList.Add(wslTempPath);
-
-        var proc = Process.Start(psi)
-            ?? throw new InvalidOperationException("Failed to start wsl process for key copy.");
-
-        var stderr = await proc.StandardError.ReadToEndAsync();
-        await proc.WaitForExitAsync();
-        if (proc.ExitCode != 0)
-            throw new InvalidOperationException($"wsl cp failed (exit {proc.ExitCode}): {stderr.Trim()}. Distro={distroName} Path={linuxPath}");
-
-        try
-        {
-            var currentUser = $"{Environment.UserDomainName}\\{Environment.UserName}";
-            await RunSilentAsync("icacls", $"\"{winTempPath}\" /inheritance:r /grant:r \"{currentUser}:(R)\"");
-            return new PrivateKeyFile(winTempPath);
-        }
-        finally
-        {
-            try { File.Delete(winTempPath); } catch { /* best-effort */ }
-            Console.WriteLine($"[fs/remote/list] temp key deleted: {winTempPath}");
-        }
-    }
-
-    private static string WindowsToWslPath(string winPath)
-    {
-        var fwd = winPath.Replace('\\', '/');
-        if (fwd.Length >= 2 && fwd[1] == ':')
-            return $"/mnt/{char.ToLower(fwd[0])}{fwd[2..]}";
-        return fwd;
-    }
-
-    private static async Task FixKeyPermissionsAsync(string keyPath)
-    {
-        // WSL UNC paths (\\wsl.localhost\...) are on the Linux filesystem where permissions
-        // are already managed by Linux. Running chmod 600 via wsl restricts Windows UNC access
-        // because the Windows process doesn't map to the Linux file owner. SSH.NET doesn't
-        // enforce client-side key permissions, so skip chmod for UNC paths.
-        if (keyPath.StartsWith(@"\\")) return;
-
-        try
-        {
-            var currentUser = $"{Environment.UserDomainName}\\{Environment.UserName}";
-            await RunSilentAsync("icacls", $"\"{keyPath}\" /inheritance:r /grant:r \"{currentUser}:(R)\"");
-        }
-        catch { /* best-effort */ }
-    }
-
-    private static async Task RunSilentAsync(string fileName, string args)
-    {
-        var proc = Process.Start(new ProcessStartInfo
-        {
-            FileName = fileName,
-            Arguments = args,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        });
-        if (proc != null) await proc.WaitForExitAsync();
-    }
 }
