@@ -15,6 +15,8 @@ export interface ProjectSummary {
   lastDeployedTag: string | null;
   buildSuccessRate: number;
   recentBuildCount: number;
+  hasDatabase?: boolean;
+  databaseName?: string;
 }
 
 interface Props {
@@ -47,13 +49,20 @@ export default function ProjectCard({ summary, onBuild, onPush, onDeploy }: Prop
         </div>
       </div>
 
-      {/* Version chips */}
+      {/* Version chips + DB chip */}
       <div className={styles.chips}>
         {summary.currentVersions.map(v => (
           <span key={v.serviceName} className={`${styles.chip} ${v.version ? '' : styles.chipUnknown}`}>
             {v.serviceName} {v.version ? `v${v.version}` : '?'}
           </span>
         ))}
+        {summary.hasDatabase && (
+          <Link href={`/projects/${summary.projectId}/#database`}
+            onClick={e => e.stopPropagation()}
+            className={styles.chipDb}>
+            DB{summary.databaseName ? ` · ${summary.databaseName}` : ''}
+          </Link>
+        )}
       </div>
 
       {/* Success rate bar */}

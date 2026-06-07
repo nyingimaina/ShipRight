@@ -48,6 +48,19 @@
 
 .chipUnknown { background: #1A2640; color: #637389; }
 
+.chipDb {
+  background: rgba(74, 127, 168, 0.15);
+  color: #4A7FA8;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+.chipDb:hover { background: rgba(74, 127, 168, 0.28); }
+
 .meta {
   display: flex;
   flex-direction: column;

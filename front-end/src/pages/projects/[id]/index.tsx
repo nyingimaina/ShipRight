@@ -169,7 +169,7 @@ export default function ProjectDetail() {
         </section>
 
         {project.database && (
-          <section className={styles.section}>
+          <section id="database" className={styles.section}>
             <h2 className={styles.sectionTitle}>Database — {project.database.databaseName}</h2>
             <div className={styles.buildActions}>
               <ZestButton

@@ -106,6 +106,8 @@ public static class ProjectSummaryRouter
                 lastDeployedTag = lastDeployed?.GitTag,
                 buildSuccessRate = successRate,
                 recentBuildCount = recentBuilds.Count,
+                hasDatabase = project.Database is not null,
+                databaseName = project.Database?.DatabaseName,
             });
         });
     }
