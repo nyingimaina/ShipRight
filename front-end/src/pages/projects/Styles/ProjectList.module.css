@@ -64,3 +64,10 @@
   text-align: center;
   padding: 48px 0;
 }
+
+/* Skeleton placeholders */
+.skeletonCard { pointer-events: none; gap: 12px; display: flex; flex-direction: column; }
+.skeletonTitle { height: 18px; width: 50%; }
+.skeletonChips { display: flex; gap: 6px; }
+.skeletonChip  { height: 20px; width: 64px; border-radius: 4px; }
+.skeletonLink  { height: 13px; width: 30%; margin-top: 8px; }

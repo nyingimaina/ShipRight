@@ -86,10 +86,18 @@ export default function ProjectList() {
             </ZestButton>
           </div>
 
-          {loading && <p className={styles.loading}>Loading…</p>}
-
           <div className={styles.grid}>
-            {projects.map(p => (
+            {loading && [0, 1, 2].map(i => (
+              <div key={i} className={`${styles.card} ${styles.skeletonCard}`}>
+                <div className={`skeleton ${styles.skeletonTitle}`} />
+                <div className={styles.skeletonChips}>
+                  <div className={`skeleton ${styles.skeletonChip}`} />
+                  <div className={`skeleton ${styles.skeletonChip}`} />
+                </div>
+                <div className={`skeleton ${styles.skeletonLink}`} />
+              </div>
+            ))}
+            {!loading && projects.map(p => (
               <div key={p.id} className={styles.card}>
                 <div className={styles.cardTop}>
                   <div>

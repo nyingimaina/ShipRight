@@ -50,7 +50,24 @@ export default function Dashboard() {
         <h1 className={styles.heading}>ShipRight</h1>
         <p className={styles.tagline}>Build. Ship. Done.</p>
 
-        {loading && <p className={styles.loading}>Loading…</p>}
+        {loading && (
+          <div className={styles.grid}>
+            {[0, 1, 2].map(i => (
+              <div key={i} className={styles.skeletonCard}>
+                <div className={`skeleton ${styles.skeletonTitle}`} />
+                <div className={styles.skeletonChips}>
+                  <div className={`skeleton ${styles.skeletonChip}`} />
+                  <div className={`skeleton ${styles.skeletonChip}`} />
+                </div>
+                <div className={`skeleton ${styles.skeletonBar}`} />
+                <div className={styles.skeletonMeta}>
+                  <div className={`skeleton ${styles.skeletonMetaLine}`} />
+                  <div className={`skeleton ${styles.skeletonMetaLine}`} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {!loading && projects.length === 0 && (
           <div className={styles.emptyState}>

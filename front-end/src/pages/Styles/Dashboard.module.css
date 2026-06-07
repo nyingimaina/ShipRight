@@ -31,6 +31,50 @@
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 16px;
+}
+
+/* Skeleton card — mirrors the real ProjectCard layout */
+.skeletonCard {
+  background: #131D30;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.skeletonTitle {
+  height: 18px;
+  width: 55%;
+}
+
+.skeletonChips {
+  display: flex;
+  gap: 6px;
+}
+
+.skeletonChip {
+  height: 20px;
+  width: 72px;
+  border-radius: 4px;
+}
+
+.skeletonBar {
+  height: 4px;
+  width: 100%;
+  border-radius: 2px;
+}
+
+.skeletonMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.skeletonMetaLine {
+  height: 13px;
+  width: 75%;
 }
