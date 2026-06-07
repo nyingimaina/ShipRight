@@ -237,15 +237,15 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
               placeholder="rebuild.sh" maxLength={100} zest={{ stretch: true }} />
           </Field>
           <Field label="Deploy Mode">
-            <select value={form.server.deployMode ?? 'Unmanaged'}
+            <select value={form.server.deployMode ?? 'GitScript'}
               onChange={e => set('server.deployMode', e.target.value as DeployMode)}
               style={{ background: '#131D30', color: '#F0F2F5', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, padding: '6px 10px', width: '100%' }}>
-              <option value="Unmanaged">Unmanaged — uses rebuild.sh (no rollback)</option>
-              <option value="SemiManaged">Semi-Managed — git pull + docker compose up (enables rollback)</option>
-              <option value="FullyManaged">Fully Managed — env var injection, no git round-trip (enables rollback)</option>
+              <option value="GitScript">Git + Script — git pull then run your script (no rollback)</option>
+              <option value="GitCompose">Git + Compose — git pull then docker compose up (enables rollback)</option>
+              <option value="EnvCompose">Env + Compose — inject image tags at deploy, docker compose up (enables rollback)</option>
             </select>
           </Field>
-          {(form.server.deployMode ?? 'Unmanaged') === 'FullyManaged' && form.services.length > 0 && (
+          {(form.server.deployMode ?? 'GitScript') === 'EnvCompose' && form.services.length > 0 && (
             <div style={{ marginTop: 8, background: '#131D30', border: '1px solid rgba(74,127,168,0.3)',
               borderRadius: 8, padding: '12px 16px' }}>
               <p style={{ margin: '0 0 8px', fontSize: 12, color: '#4A7FA8', fontWeight: 600 }}>

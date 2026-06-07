@@ -32,7 +32,12 @@ public record WslConfig
     public string WorkingDir { get; init; } = string.Empty;
 }
 
-public enum DeployMode { Unmanaged, SemiManaged, FullyManaged }
+/// <summary>
+/// GitScript  — ShipRight syncs docker-compose.yml via git; server runs git pull + your script.
+/// GitCompose — ShipRight syncs docker-compose.yml via git; server runs git pull + docker compose up.
+/// EnvCompose — ShipRight injects image tags as env vars at deploy time; no compose-repo git round-trip.
+/// </summary>
+public enum DeployMode { GitScript, GitCompose, EnvCompose }
 
 public record ServerConfig
 {
@@ -41,7 +46,7 @@ public record ServerConfig
     public string SshKeyPath { get; init; } = string.Empty;
     public string RemoteWorkingDir { get; init; } = string.Empty;
     public string RebuildScript { get; init; } = "rebuild.sh";
-    public DeployMode DeployMode { get; init; } = DeployMode.Unmanaged;
+    public DeployMode DeployMode { get; init; } = DeployMode.GitScript;
 }
 
 public record ProjectConfig

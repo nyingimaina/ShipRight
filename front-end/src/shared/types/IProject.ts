@@ -14,7 +14,7 @@ export interface IWslConfig {
   workingDir: string;
 }
 
-export type DeployMode = 'Unmanaged' | 'SemiManaged' | 'FullyManaged';
+export type DeployMode = 'GitScript' | 'GitCompose' | 'EnvCompose';
 
 export interface IServerConfig {
   host: string;
@@ -62,7 +62,7 @@ export const emptyProjectInput = (): IProjectInput => ({
   services: [{ name: '', versionFilePath: '', buildContextPath: '', dockerImageName: '' }],
   gitRepos: [],
   wsl: { workingDir: '' },
-  server: { host: '', username: 'ubuntu', sshKeyPath: '', remoteWorkingDir: '', rebuildScript: 'rebuild.sh', deployMode: 'Unmanaged' },
+  server: { host: '', username: 'ubuntu', sshKeyPath: '', remoteWorkingDir: '', rebuildScript: 'rebuild.sh', deployMode: 'GitScript' },
 });
 
 export interface IApiError {

@@ -95,9 +95,9 @@ public class BuildOrchestrator
 
             var cmd = project.Server.DeployMode switch
             {
-                DeployMode.SemiManaged  => BuildSemiManagedDeployCmd(project),
-                DeployMode.FullyManaged => BuildFullyManagedDeployCmd(project, record.Versions),
-                _                       => $"cd {project.Server.RemoteWorkingDir} && bash {project.Server.RebuildScript}"
+                DeployMode.GitCompose => BuildGitComposeDeployCmd(project),
+                DeployMode.EnvCompose => BuildEnvComposeDeployCmd(project, record.Versions),
+                _                     => BuildGitScriptDeployCmd(project),  // GitScript (default)
             };
             await ctx.EmitLogAsync($"Deploy mode: {project.Server.DeployMode}", "shipright");
             var exitCode = await _ssh.RunAsync(
@@ -110,7 +110,7 @@ public class BuildOrchestrator
             if (exitCode != 0)
             {
                 record.Status = BuildStatus.DeployFailed;
-                record.ErrorSummary = $"rebuild.sh exited with code {exitCode}. Check server state manually.";
+                record.ErrorSummary = $"Deploy exited with code {exitCode}. Check server state manually.";
                 Log.Error("Deployment {BuildId} failed: exit code {ExitCode}", buildId, exitCode);
             }
             else
@@ -478,9 +478,9 @@ public class BuildOrchestrator
             // ── Step 5: Compose Repo Sync ─────────────────────────────────────
             await ctx.StepStartedAsync(5, "ComposeRepoSync");
 
-            if (project.Server.DeployMode == DeployMode.FullyManaged)
+            if (project.Server.DeployMode == DeployMode.EnvCompose)
             {
-                await ctx.EmitLogAsync("ComposeRepoSync skipped — Fully Managed mode injects image tags at deploy time", "shipright");
+                await ctx.EmitLogAsync("ComposeRepoSync skipped — EnvCompose mode injects image tags at deploy time", "shipright");
             }
             else if (resumeFromStep > 5)
             {
@@ -882,13 +882,31 @@ public class BuildOrchestrator
         return true;
     }
 
-    private static string BuildSemiManagedDeployCmd(ProjectConfig project)
+    /// <summary>
+    /// GitScript: git pull the compose repo on the server, then run the configured script.
+    /// The script is responsible for any docker operations it needs.
+    /// </summary>
+    private static string BuildGitScriptDeployCmd(ProjectConfig project)
+    {
+        var branch = project.GitRepos.FirstOrDefault()?.DeployBranch ?? "master";
+        return $"cd {project.Server.RemoteWorkingDir} && git pull origin {branch} && bash {project.Server.RebuildScript}";
+    }
+
+    /// <summary>
+    /// GitCompose: git pull the compose repo (which has updated image tags from Step 5),
+    /// then pull and restart all services via docker compose.
+    /// </summary>
+    private static string BuildGitComposeDeployCmd(ProjectConfig project)
     {
         var branch = project.GitRepos.FirstOrDefault()?.DeployBranch ?? "master";
         return $"cd {project.Server.RemoteWorkingDir} && git pull origin {branch} && docker compose pull && docker compose up -d";
     }
 
-    private static string BuildFullyManagedDeployCmd(ProjectConfig project, List<ServiceVersion> versions)
+    /// <summary>
+    /// EnvCompose: inject image tags as env vars at deploy time so the server never needs
+    /// a git pull of the compose repo (useful when compose is not in a git-tracked dir).
+    /// </summary>
+    private static string BuildEnvComposeDeployCmd(ProjectConfig project, List<ServiceVersion> versions)
     {
         var envVars = string.Join(" ", versions.Select(v =>
         {
@@ -905,8 +923,8 @@ public class BuildOrchestrator
         var project = await _projectStore.GetByIdAsync(target.ProjectId)
             ?? throw new InvalidOperationException("Project not found.");
 
-        if (project.Server.DeployMode == DeployMode.Unmanaged)
-            throw new InvalidOperationException("Rollback requires Semi-managed or Fully Managed deploy mode.");
+        if (project.Server.DeployMode == DeployMode.GitScript)
+            throw new InvalidOperationException("Rollback requires GitCompose or EnvCompose deploy mode.");
 
         var record = new BuildRecord
         {
@@ -930,7 +948,7 @@ public class BuildOrchestrator
         var ctx = new PipelineContext(record, _bus);
         try
         {
-            if (project.Server.DeployMode == DeployMode.SemiManaged)
+            if (project.Server.DeployMode == DeployMode.GitCompose)
             {
                 var branch = project.GitRepos.FirstOrDefault()?.DeployBranch ?? "master";
                 await ctx.EmitLogAsync("Updating compose repo to rollback versions…", "shipright");
@@ -959,9 +977,9 @@ public class BuildOrchestrator
             }
 
             await ctx.EmitLogAsync($"Connecting to {project.Server.Host}…", "ssh");
-            var cmd = project.Server.DeployMode == DeployMode.FullyManaged
-                ? BuildFullyManagedDeployCmd(project, target.Versions)
-                : BuildSemiManagedDeployCmd(project);
+            var cmd = project.Server.DeployMode == DeployMode.EnvCompose
+                ? BuildEnvComposeDeployCmd(project, target.Versions)
+                : BuildGitComposeDeployCmd(project);
 
             var exit = await _ssh.RunAsync(
                 project.Server.Host, project.Server.Username,

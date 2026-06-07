@@ -515,12 +515,12 @@ export default function ProjectDetail() {
                         disabled={
                           idx === 0 ||
                           rollbackStatus === 'running' ||
-                          project.server.deployMode === 'Unmanaged'
+                          project.server.deployMode === 'GitScript'
                         }
                         title={
                           idx === 0 ? 'Currently deployed version'
-                          : project.server.deployMode === 'Unmanaged'
-                            ? 'Enable Semi-managed or Fully Managed deploy mode to use rollback'
+                          : project.server.deployMode === 'GitScript'
+                            ? 'Switch to GitCompose or EnvCompose deploy mode to enable rollback'
                             : undefined
                         }>
                         Roll back
