@@ -35,3 +35,10 @@ coverage/
 
 # ShipRight runtime data (stored in ~/.shipright, not in repo)
 # (no action needed — data dir is outside the repo)
+
+# InnoSetup build artifacts
+publish/
+installer/
+
+# Backend wwwroot (regenerated from front-end/out/ during build)
+back-end/ShipRight/wwwroot/

@@ -6,33 +6,31 @@
 #define AppVersion "1.0.0"
 #define AppPublisher "ShipRight"
 #define OutputDir "installer"
+#define S SourcePath
 
 ; ---- Pre-build steps (ISPP Exec runs during preprocessing, before compilation) ----
 
 ; Clean previous publish output
-#define CleanPublishResult = Exec("cmd.exe", "/c if exist """ + SourcePath + "\publish\win-x64"" rd /s /q """ + SourcePath + "\publish\win-x64""", "", 0, 1)
+#define CleanPublishResult = Exec("cmd.exe", "/c if exist """ + S + "\publish\win-x64"" rd /s /q """ + S + "\publish\win-x64""", "", 0, 1)
 
 ; 1. Generate icon files
-#define IconResult = Exec("cmd.exe", "/c npm run generate-icon", SourcePath + "\front-end", 0, 1)
+#define IconResult = Exec("cmd.exe", "/c cd /d """ + S + "\front-end"" && npm run generate-icon", "", 1, 1)
 #if IconResult != 0
   #error "Icon generation failed (exit code " + Str(IconResult) + ")"
 #endif
 
 ; 2. Build Next.js frontend (outputs to front-end/out/)
-#define FrontendResult = Exec("cmd.exe", "/c npm run build", SourcePath + "\front-end", 1, 1)
+#define FrontendResult = Exec("cmd.exe", "/c cd /d """ + S + "\front-end"" && npm run build", "", 1, 1)
 #if FrontendResult != 0
   #error "Frontend build failed (exit code " + Str(FrontendResult) + ")"
 #endif
 
 ; 3. Clean and copy wwwroot from front-end/out/ to back-end/ShipRight/wwwroot/
-#define CleanWwwResult = Exec("cmd.exe", "/c if exist """ + SourcePath + "\back-end\ShipRight\wwwroot"" rd /s /q """ + SourcePath + "\back-end\ShipRight\wwwroot""", "", 0, 1)
-#define CopyWwwResult = Exec("cmd.exe", "/c xcopy /e /i /y """ + SourcePath + "\front-end\out\*"" """ + SourcePath + "\back-end\ShipRight\wwwroot\\""", "", 0, 1)
-#if CopyWwwResult != 0
-  #error "Copy wwwroot failed (exit code " + Str(CopyWwwResult) + ")"
-#endif
+#define CleanWwwResult = Exec("cmd.exe", "/c if exist """ + S + "\back-end\ShipRight\wwwroot"" rd /s /q """ + S + "\back-end\ShipRight\wwwroot""", "", 0, 1)
+#define CopyWwwResult = Exec("cmd.exe", "/c xcopy /e /i /y """ + S + "\front-end\out\*"" """ + S + "\back-end\ShipRight\wwwroot\"" & exit 0", "", 0, 1)
 
 ; 4. Publish .NET backend as single-file self-contained exe
-#define PublishResult = Exec("dotnet", "publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true """ + SourcePath + "\back-end\ShipRight\ShipRight.csproj"" -o """ + SourcePath + "\publish\win-x64""", "", 1, 1)
+#define PublishResult = Exec("dotnet", "publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true """ + S + "\back-end\ShipRight\ShipRight.csproj"" -o """ + S + "\publish\win-x64""", "", 1, 1)
 #if PublishResult != 0
   #error ".NET publish failed (exit code " + Str(PublishResult) + ")"
 #endif
