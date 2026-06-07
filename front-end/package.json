@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "generate-icon": "node scripts/generate-icon.mjs"
   },
   "dependencies": {
     "@microsoft/signalr": "^10.0.0",
