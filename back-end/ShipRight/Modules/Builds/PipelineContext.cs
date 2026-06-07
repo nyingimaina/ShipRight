@@ -45,12 +45,13 @@ public class PipelineContext
         });
     }
 
-    public async Task PauseAsync(string reason, string prompt, string[] options, object? fields = null)
+    public async Task PauseAsync(string reason, string prompt, string[] options,
+        object? fields = null, string[]? checkboxes = null)
     {
         Record.Status = BuildStatus.Paused;
         await _bus.EmitAsync(Record.Id, "PauseRequested", new
         {
-            buildId = Record.Id, reason, prompt, options, fields
+            buildId = Record.Id, reason, prompt, options, fields, checkboxes
         });
     }
 

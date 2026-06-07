@@ -5,7 +5,7 @@ export interface SseHandlers {
   onLogLine?: (e: { buildId: string; source: string; line: string; timestamp: string }) => void;
   onStepStarted?: (e: { buildId: string; stepNumber: number; stepName: string }) => void;
   onStepCompleted?: (e: { buildId: string; stepNumber: number; stepName: string; success: boolean }) => void;
-  onPauseRequested?: (e: { buildId: string; reason: string; prompt: string; options: string[]; fields?: string[] }) => void;
+  onPauseRequested?: (e: { buildId: string; reason: string; prompt: string; options: string[]; fields?: string[]; checkboxes?: string[] }) => void;
   onBuildCompleted?: (e: { buildId: string; status: string; gitTag?: string }) => void;
   onPushCompleted?: (e: { buildId: string; status: string }) => void;
   onDeployCompleted?: (e: { buildId: string; status: string }) => void;

@@ -757,18 +757,21 @@ public class BuildOrchestrator
             }
         }
 
-        bool skipExisting = false;
+        var toSkip = new HashSet<string>();
         if (alreadyBuilt.Count > 0)
         {
-            var names = string.Join(", ", alreadyBuilt.Select(n => n.Split('/').Last()));
             await ctx.PauseAsync("image_exists",
-                $"{alreadyBuilt.Count} image(s) already tagged correctly ({names}). Skip rebuilding them?",
-                ["skip_existing", "rebuild_all"]);
+                $"{alreadyBuilt.Count} image(s) already exist locally with the correct tag. Choose which to skip rebuilding:",
+                [],
+                checkboxes: alreadyBuilt.ToArray());
             await save();
             var tcsImg = new TaskCompletionSource<RespondRequest>();
             _pauseWaiters[record.Id] = tcsImg;
             var imgResponse = await tcsImg.Task;
-            skipExisting = imgResponse.Choice == "skip_existing";
+            toSkip = imgResponse.Data?
+                .Where(kv => kv.Value == "true")
+                .Select(kv => kv.Key)
+                .ToHashSet() ?? new HashSet<string>();
             record.Status = BuildStatus.Running;
         }
 
@@ -776,7 +779,7 @@ public class BuildOrchestrator
         {
             var svc = project.Services.First(s => s.Name == sv.ServiceName);
 
-            if (skipExisting && alreadyBuilt.Contains(svc.DockerImageName))
+            if (toSkip.Contains(svc.DockerImageName))
             {
                 await ctx.EmitLogAsync($"Skipped {svc.DockerImageName}:{sv.NewVersion} — already built", "shipright");
                 continue;

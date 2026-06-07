@@ -58,7 +58,7 @@ export default function OptionPicker({ options, value, onChange, onConfirm, conf
       <div className={styles.optionConfirm}>
         <ZestButton
           onClick={onConfirm}
-          disabled={confirmDisabled || value === null}
+          disabled={confirmDisabled || (value === null && options.length > 0)}
           zest={{ visualOptions: { variant: 'standard' }, semanticType: 'submit' }}
         >
           Confirm

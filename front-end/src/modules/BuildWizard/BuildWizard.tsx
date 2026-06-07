@@ -45,8 +45,6 @@ const OPTION_LABELS: Record<string, string> = {
   login:           'Log In',
   resume:          'Resume from Failed Step',
   start_fresh:     'Start Fresh',
-  skip_existing:   'Use Existing Images',
-  rebuild_all:     'Rebuild All',
 };
 
 const OPTION_DESCS: Record<string, string> = {
@@ -59,8 +57,6 @@ const OPTION_DESCS: Record<string, string> = {
   login:           'Enter Docker Hub credentials to proceed',
   resume:          'Skip already-completed steps and continue from the failed step',
   start_fresh:     'Run all steps from scratch',
-  skip_existing:   'Skip images already tagged correctly in local Docker storage',
-  rebuild_all:     'Rebuild every image from scratch regardless',
 };
 
 interface PauseState {
@@ -71,6 +67,8 @@ interface PauseState {
   commitMessage?: string;
   fields?: string[];
   fieldValues?: Record<string, string>;
+  checkboxes?: string[];
+  checkboxValues?: Record<string, boolean>;
 }
 
 const fmtSecs = (s: number) =>
@@ -149,7 +147,12 @@ export default function BuildWizard({ projectId, projectName, currentVersions, i
           return p;
         });
       },
-      onPauseRequested: e => setPause({ reason: e.reason, prompt: e.prompt, options: e.options, selected: null, fields: e.fields, fieldValues: {} }),
+      onPauseRequested: e => setPause({
+        reason: e.reason, prompt: e.prompt, options: e.options, selected: null,
+        fields: e.fields, fieldValues: {},
+        checkboxes: e.checkboxes,
+        checkboxValues: e.checkboxes ? Object.fromEntries(e.checkboxes.map(c => [c, true])) : undefined,
+      }),
       onBuildCompleted: e => {
         setBuildRecord(prev => prev ? { ...prev, status: e.status as IBuildRecord['status'], gitTag: e.gitTag ?? prev.gitTag } : null);
         if (e.status === 'ImageBuilt' || e.status === 'BuildFailed' ||
@@ -196,11 +199,16 @@ export default function BuildWizard({ projectId, projectName, currentVersions, i
   };
 
   const handlePauseRespond = async () => {
-    if (!buildId || !pause || !pause.selected) return;
+    if (!buildId || !pause) return;
+    if (!pause.selected && pause.options.length > 0) return;
     const data: Record<string, string> = {};
     if (pause.commitMessage) data.commitMessage = pause.commitMessage;
     if (pause.fieldValues) Object.assign(data, pause.fieldValues);
-    await api.post(`/api/builds/${buildId}/respond`, { reason: pause.reason, choice: pause.selected, data });
+    if (pause.checkboxValues) {
+      Object.entries(pause.checkboxValues).forEach(([k, v]) => { data[k] = v ? 'true' : 'false'; });
+    }
+    const choice = pause.selected ?? 'confirm';
+    await api.post(`/api/builds/${buildId}/respond`, { reason: pause.reason, choice, data });
     setPause(null);
   };
 
@@ -485,6 +493,29 @@ export default function BuildWizard({ projectId, projectName, currentVersions, i
                     />
                   </div>
                 ))}
+                {pause.checkboxes && (
+                  <div className={styles.checkboxList}>
+                    {pause.checkboxes.map(img => {
+                      const shortName = img.split('/').pop() ?? img;
+                      const checked = pause.checkboxValues?.[img] ?? true;
+                      return (
+                        <label key={img} className={styles.checkboxRow}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={e => setPause(p => p ? {
+                              ...p, checkboxValues: { ...(p.checkboxValues ?? {}), [img]: e.target.checked }
+                            } : null)}
+                          />
+                          <span className={styles.checkboxLabel}>
+                            <span className={styles.checkboxName}>{shortName}</span>
+                            <span className={styles.checkboxHint}>{checked ? 'skip — already built' : 'rebuild'}</span>
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
                 <OptionPicker
                   options={pickerOptions}
                   value={pause.selected}

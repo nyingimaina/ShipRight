@@ -254,6 +254,19 @@
   gap: 8px;
 }
 
+.checkboxList { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+.checkboxRow {
+  display: flex; align-items: center; gap: 12px; cursor: pointer;
+  padding: 10px 14px; border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.08); background: #131D30;
+  transition: background 0.12s;
+}
+.checkboxRow:hover { background: #1A2640; }
+.checkboxRow input[type="checkbox"] { width: 16px; height: 16px; accent-color: #C9A84C; cursor: pointer; flex-shrink: 0; }
+.checkboxLabel { display: flex; flex-direction: column; }
+.checkboxName { font-size: 13px; color: #A8B8CC; font-weight: 500; font-family: 'JetBrains Mono', monospace; }
+.checkboxHint { font-size: 11px; color: #637389; margin-top: 1px; }
+
 /* Deploy section */
 .deploySection {
   padding: 16px;
