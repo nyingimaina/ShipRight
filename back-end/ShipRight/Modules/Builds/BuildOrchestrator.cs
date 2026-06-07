@@ -503,7 +503,7 @@ public class BuildOrchestrator
                 throw new InvalidOperationException($"git pull compose repo failed:\n{composePull.StdErr}");
 
             // Update docker-compose.yml image tags
-            var composePath = Path.Combine(project.Wsl.WorkingDir, "docker-compose.yml");
+            var composePath = project.Wsl.WorkingDir.TrimEnd('/', '\\') + "/docker-compose.yml";
             if (File.Exists(composePath))
             {
                 var imageMap = record.Versions.ToDictionary(
@@ -808,17 +808,17 @@ public class BuildOrchestrator
             var buildArgs = new List<string> { "build", "--progress=plain" };
             if (!string.IsNullOrEmpty(sv.PreviousVersion))
                 buildArgs.AddRange(["--cache-from", $"{svc.DockerImageName}:{sv.PreviousVersion}"]);
-            buildArgs.AddRange(["--build-arg", "BUILDKIT_INLINE_CACHE=1",
-                                 "-t", $"{svc.DockerImageName}:{sv.NewVersion}",
-                                 svc.BuildContextPath]);
+            buildArgs.AddRange(["-t", $"{svc.DockerImageName}:{sv.NewVersion}", svc.BuildContextPath]);
 
+            // DOCKER_BUILDKIT=0 forces the classic builder — avoids the buildx plugin
+            // which may be missing or compiled for a different architecture in some WSL setups.
             var buildResult = await _runner.RunAsync("docker",
                 buildArgs.ToArray(),
                 null,
                 line => ctx.EmitLogAsync(line, "docker"),
                 line => ctx.EmitLogAsync(line, "docker"),
                 ct,
-                envOverride: new Dictionary<string, string> { ["DOCKER_BUILDKIT"] = "1" });
+                envOverride: new Dictionary<string, string> { ["DOCKER_BUILDKIT"] = "0" });
 
             if (!buildResult.Success)
             {
@@ -982,7 +982,7 @@ public class BuildOrchestrator
                 await _runner.RunAsync("git",
                     ["-C", project.Wsl.WorkingDir, "pull", "origin", branch],
                     null, line => ctx.EmitLogAsync(line, "git"));
-                var composePath = Path.Combine(project.Wsl.WorkingDir, "docker-compose.yml");
+                var composePath = project.Wsl.WorkingDir.TrimEnd('/', '\\') + "/docker-compose.yml";
                 var imageMap = target.Versions.ToDictionary(v => v.DockerImageName, v => v.NewVersion);
                 await DockerComposeUpdater.UpdateAsync(composePath, imageMap);
                 await _runner.RunAsync("git",
