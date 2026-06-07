@@ -106,6 +106,7 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
   const [connState, setConnState] = useState<'connected' | 'reconnecting' | 'disconnected'>('connected');
   const [elapsed, setElapsed] = useState(0);
   const [buildStats, setBuildStats] = useState<BuildStats | null>(null);
+  const [serviceBuildProgress, setServiceBuildProgress] = useState<{ current: number; total: number; serviceName: string } | null>(null);
   const sseConnected = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -198,8 +199,13 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
         checkboxes: e.checkboxes,
         checkboxValues: e.checkboxes ? Object.fromEntries(e.checkboxes.map(c => [c, true])) : undefined,
       }),
+      onServiceBuildProgress: e => setServiceBuildProgress(e),
       onBuildCompleted: e => {
-        setBuildRecord(prev => prev ? { ...prev, status: e.status as IBuildRecord['status'], gitTag: e.gitTag ?? prev.gitTag } : null);
+        api.get<IBuildRecord>(`/api/builds/${id}`).then(fresh => {
+          if (fresh) setBuildRecord(fresh);
+        }).catch(() => {
+          setBuildRecord(prev => prev ? { ...prev, status: e.status as IBuildRecord['status'], gitTag: e.gitTag ?? prev.gitTag } : null);
+        });
         if (e.status === 'ImageBuilt' || e.status === 'BuildFailed' ||
             e.status === 'Aborted' || e.status === 'Interrupted')
           setPhase('done');
@@ -298,6 +304,7 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
       setBuildId(null);
       setBuildRecord(null);
       setElapsed(0);
+      setServiceBuildProgress(null);
     }
   }, [isOpen]);
 
@@ -424,6 +431,11 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
                         }
                         {label}
                         {durationNote && <span className={styles.stepDuration}>{durationNote}</span>}
+                        {name === 'DockerBuild' && s === 'running' && serviceBuildProgress && (
+                          <span className={styles.stepServiceProgress}>
+                            {serviceBuildProgress.serviceName} ({serviceBuildProgress.current}/{serviceBuildProgress.total})
+                          </span>
+                        )}
                       </span>
                     );
                   })}
@@ -485,9 +497,12 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
                 {isPushFailed && (
                   <div className={styles.deploySection}>
                     <span className={styles.deployInfo}>✗ Push to registry failed</span>
-                    <ZestButton onClick={handlePush} zest={{ visualOptions: { variant: 'standard' } }}>
-                      Retry Push
-                    </ZestButton>
+                    <div className={styles.actionRow}>
+                      <ZestButton onClick={handlePush} zest={{ visualOptions: { variant: 'standard' } }}>
+                        Retry Push
+                      </ZestButton>
+                      <ZestButton onClick={handleClose} zest={{ buttonStyle: 'outline' }}>Close</ZestButton>
+                    </div>
                   </div>
                 )}
 

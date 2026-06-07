@@ -9,6 +9,7 @@ export interface SseHandlers {
   onBuildCompleted?: (e: { buildId: string; status: string; gitTag?: string }) => void;
   onPushCompleted?: (e: { buildId: string; status: string }) => void;
   onDeployCompleted?: (e: { buildId: string; status: string }) => void;
+  onServiceBuildProgress?: (e: { buildId: string; current: number; total: number; serviceName: string }) => void;
   onConnectionChange?: (state: 'connected' | 'reconnecting' | 'disconnected') => void;
 }
 
@@ -38,6 +39,7 @@ class BuildSseService {
           case 'BuildCompleted':  handlers.onBuildCompleted?.(data as Parameters<NonNullable<SseHandlers['onBuildCompleted']>>[0]); break;
           case 'PushCompleted':   handlers.onPushCompleted?.(data as Parameters<NonNullable<SseHandlers['onPushCompleted']>>[0]); break;
           case 'DeployCompleted': handlers.onDeployCompleted?.(data as Parameters<NonNullable<SseHandlers['onDeployCompleted']>>[0]); break;
+          case 'ServiceBuildProgress': handlers.onServiceBuildProgress?.(data as Parameters<NonNullable<SseHandlers['onServiceBuildProgress']>>[0]); break;
         }
       } catch { /* malformed event — ignore */ }
     };
