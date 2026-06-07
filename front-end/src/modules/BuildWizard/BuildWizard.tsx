@@ -45,6 +45,8 @@ const OPTION_LABELS: Record<string, string> = {
   login:           'Log In',
   resume:          'Resume from Failed Step',
   start_fresh:     'Start Fresh',
+  skip_existing:   'Use Existing Images',
+  rebuild_all:     'Rebuild All',
 };
 
 const OPTION_DESCS: Record<string, string> = {
@@ -57,6 +59,8 @@ const OPTION_DESCS: Record<string, string> = {
   login:           'Enter Docker Hub credentials to proceed',
   resume:          'Skip already-completed steps and continue from the failed step',
   start_fresh:     'Run all steps from scratch',
+  skip_existing:   'Skip images already tagged correctly in local Docker storage',
+  rebuild_all:     'Rebuild every image from scratch regardless',
 };
 
 interface PauseState {

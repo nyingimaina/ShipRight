@@ -740,21 +740,64 @@ public class BuildOrchestrator
         // ── Step 6: Docker Build (per service) ───────────────────────────────
         await ctx.StepStartedAsync(6, "DockerBuild");
 
+        // Check which images already exist locally with the correct tag
+        var alreadyBuilt = new HashSet<string>();
+        foreach (var sv in record.Versions)
+        {
+            var svc = project.Services.First(s => s.Name == sv.ServiceName);
+            var tag = $"{svc.DockerImageName}:{sv.NewVersion}";
+            await ctx.EmitLogAsync($"Checking if {tag} exists locally…", "shipright");
+            var inspectResult = await _runner.RunAsync("docker",
+                ["image", "inspect", "--format", "{{.Id}}", tag],
+                null, null, null, ct);
+            if (inspectResult.Success)
+            {
+                alreadyBuilt.Add(svc.DockerImageName);
+                await ctx.EmitLogAsync($"  → {tag} already exists in local Docker storage", "shipright");
+            }
+        }
+
+        bool skipExisting = false;
+        if (alreadyBuilt.Count > 0)
+        {
+            var names = string.Join(", ", alreadyBuilt.Select(n => n.Split('/').Last()));
+            await ctx.PauseAsync("image_exists",
+                $"{alreadyBuilt.Count} image(s) already tagged correctly ({names}). Skip rebuilding them?",
+                ["skip_existing", "rebuild_all"]);
+            await save();
+            var tcsImg = new TaskCompletionSource<RespondRequest>();
+            _pauseWaiters[record.Id] = tcsImg;
+            var imgResponse = await tcsImg.Task;
+            skipExisting = imgResponse.Choice == "skip_existing";
+            record.Status = BuildStatus.Running;
+        }
+
         foreach (var sv in record.Versions)
         {
             var svc = project.Services.First(s => s.Name == sv.ServiceName);
 
+            if (skipExisting && alreadyBuilt.Contains(svc.DockerImageName))
+            {
+                await ctx.EmitLogAsync($"Skipped {svc.DockerImageName}:{sv.NewVersion} — already built", "shipright");
+                continue;
+            }
+
             await ctx.EmitLogAsync($"Building {svc.DockerImageName}:{sv.NewVersion}…", "shipright");
 
+            var buildArgs = new List<string> { "build", "--progress=plain" };
+            if (!string.IsNullOrEmpty(sv.PreviousVersion))
+                buildArgs.AddRange(["--cache-from", $"{svc.DockerImageName}:{sv.PreviousVersion}"]);
+            buildArgs.AddRange(["--build-arg", "BUILDKIT_INLINE_CACHE=1",
+                                 "-t", $"{svc.DockerImageName}:{sv.NewVersion}",
+                                 svc.BuildContextPath]);
+
             var buildResult = await _runner.RunAsync("docker",
-                ["build",
-                 "-t", $"{svc.DockerImageName}:{sv.NewVersion}",
-                 svc.BuildContextPath],
+                buildArgs.ToArray(),
                 null,
                 line => ctx.EmitLogAsync(line, "docker"),
                 line => ctx.EmitLogAsync(line, "docker"),
                 ct,
-                envOverride: new Dictionary<string, string> { ["DOCKER_BUILDKIT"] = "0" });
+                envOverride: new Dictionary<string, string> { ["DOCKER_BUILDKIT"] = "1" });
 
             if (!buildResult.Success)
             {
