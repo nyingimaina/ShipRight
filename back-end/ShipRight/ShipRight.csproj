@@ -6,6 +6,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(RuntimeIdentifier)'=='win-x64'">
+    <OutputType>WinExe</OutputType>
+    <ApplicationIcon>shipright.ico</ApplicationIcon>
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="ShipRight.Tests" />
   </ItemGroup>
@@ -17,6 +23,10 @@
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageReference Include="SSH.NET" Version="2025.1.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="10.2.1" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(RuntimeIdentifier)'=='win-x64'">
+    <PackageReference Include="System.Drawing.Common" Version="8.0.0" />
   </ItemGroup>
 
 </Project>
