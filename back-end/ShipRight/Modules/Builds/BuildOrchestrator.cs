@@ -188,6 +188,29 @@ public class BuildOrchestrator
             if (!dockerInfo.Success)
                 throw new InvalidOperationException("Docker daemon not running or not accessible.");
 
+            // Probe BuildKit — if buildx is healthy use it, otherwise fall back and tell the user why.
+            await ctx.EmitLogAsync("Checking Docker BuildKit (buildx)…", "shipright");
+            var buildxCheck = await _runner.RunAsync("docker", ["buildx", "version"], null);
+            bool useBuildKit;
+            if (buildxCheck.Success)
+            {
+                var ver = buildxCheck.StdOut.Trim().Split('\n')[0].Trim();
+                await ctx.EmitLogAsync($"BuildKit available ({ver}) — builds will use DOCKER_BUILDKIT=1.", "shipright");
+                useBuildKit = true;
+            }
+            else
+            {
+                await ctx.EmitLogAsync(
+                    "BuildKit (buildx) is not available or broken on this machine — " +
+                    "falling back to the classic builder (DOCKER_BUILDKIT=0). " +
+                    "Builds will still succeed but without layer caching or multi-platform support. " +
+                    "To enable BuildKit, install the correct buildx binary for your WSL architecture from " +
+                    "https://github.com/docker/buildx/releases and place it at " +
+                    "~/.docker/cli-plugins/docker-buildx (chmod +x).",
+                    "shipright");
+                useBuildKit = false;
+            }
+
             await ctx.EmitLogAsync("Preconditions satisfied.", "shipright");
             await ctx.StepCompletedAsync(1, "PreconditionCheck");
             await SaveStep();
@@ -548,7 +571,7 @@ public class BuildOrchestrator
             await SaveStep();
 
             // ── Step 6: Docker Build ──────────────────────────────────────────
-            await RunDockerBuildAsync(ctx, record, project, SaveStep, ct);
+            await RunDockerBuildAsync(ctx, record, project, SaveStep, useBuildKit, ct);
 
             // ── Step 7: Build Complete ────────────────────────────────────────
             await ctx.StepStartedAsync(7, "BuildComplete");
@@ -755,7 +778,7 @@ public class BuildOrchestrator
     }
 
     protected virtual async Task RunDockerBuildAsync(PipelineContext ctx, BuildRecord record,
-        ProjectConfig project, Func<Task> save, CancellationToken ct = default)
+        ProjectConfig project, Func<Task> save, bool useBuildKit = false, CancellationToken ct = default)
     {
         // ── Step 6: Docker Build (per service) ───────────────────────────────
         await ctx.StepStartedAsync(6, "DockerBuild");
@@ -808,19 +831,18 @@ public class BuildOrchestrator
             await ctx.EmitLogAsync($"Building {svc.DockerImageName}:{sv.NewVersion}…", "shipright");
 
             var buildArgs = new List<string> { "build", "--progress=plain" };
-            if (!string.IsNullOrEmpty(sv.PreviousVersion))
-                buildArgs.AddRange(["--cache-from", $"{svc.DockerImageName}:{sv.PreviousVersion}"]);
+            if (useBuildKit && !string.IsNullOrEmpty(sv.PreviousVersion))
+                buildArgs.AddRange(["--cache-from", $"{svc.DockerImageName}:{sv.PreviousVersion}",
+                                    "--build-arg", "BUILDKIT_INLINE_CACHE=1"]);
             buildArgs.AddRange(["-t", $"{svc.DockerImageName}:{sv.NewVersion}", svc.BuildContextPath]);
 
-            // DOCKER_BUILDKIT=0 forces the classic builder — avoids the buildx plugin
-            // which may be missing or compiled for a different architecture in some WSL setups.
             var buildResult = await _runner.RunAsync("docker",
                 buildArgs.ToArray(),
                 null,
                 line => ctx.EmitLogAsync(line, "docker"),
                 line => ctx.EmitLogAsync(line, "docker"),
                 ct,
-                envOverride: new Dictionary<string, string> { ["DOCKER_BUILDKIT"] = "0" });
+                envOverride: new Dictionary<string, string> { ["DOCKER_BUILDKIT"] = useBuildKit ? "1" : "0" });
 
             if (!buildResult.Success)
             {
