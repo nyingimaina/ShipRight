@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Text;
+using System.Text.RegularExpressions;
 using Renci.SshNet;
 using Serilog;
 using ShipRight.Modules.Database.Providers;
@@ -10,6 +12,7 @@ using ShipRight.Shared.Store;
 namespace ShipRight.Modules.Database;
 
 public record BackupFileInfo(string FileName, string FilePath, long SizeBytes, DateTime CreatedAt);
+public record InferResult(DatabaseConfig Config, string[] Detected);
 
 public class DatabaseOrchestrator
 {
@@ -51,14 +54,19 @@ public class DatabaseOrchestrator
             {
                 var content = new global::System.Text.StringBuilder();
                 var cmd = provider.BackupCommand(cfg);
-                await EmitLog(opId, $"Running: {cmd}");
+                Log.Information("Backup command for {DB}: {Cmd}", cfg.DatabaseName, cmd);
+                await EmitLog(opId, "Running backup command…");
 
-                var exit = await _ssh.RunAsync(server.Host, server.Username, server.SshKeyPath, cmd,
-                    async line =>
+                // stdout → SQL file only; stderr → Serilog + SSE log
+                var exit = await _ssh.RunAsync(
+                    server.Host, server.Username, server.SshKeyPath, cmd,
+                    onOutput: line => { content.Append(line).Append('\n'); return Task.CompletedTask; },
+                    onStderr: async line =>
                     {
-                        content.Append(line).Append('\n');
+                        Log.Warning("Backup stderr [{DB}]: {Line}", cfg.DatabaseName, line);
                         await EmitLog(opId, line);
-                    }, ct);
+                    },
+                    ct: ct);
 
                 if (exit != 0)
                     throw new InvalidOperationException($"Backup command exited with code {exit}.");
@@ -69,10 +77,11 @@ public class DatabaseOrchestrator
             {
                 var remoteFile = provider.BackupFilePath(cfg, opId);
                 var cmd = provider.BackupCommand(cfg).Replace("{{opId}}", opId);
-                await EmitLog(opId, $"Running: {cmd}");
+                Log.Information("Backup command for {DB}: {Cmd}", cfg.DatabaseName, cmd);
+                await EmitLog(opId, "Running backup command…");
 
                 var exit = await _ssh.RunAsync(server.Host, server.Username, server.SshKeyPath, cmd,
-                    line => EmitLog(opId, line), ct);
+                    line => EmitLog(opId, line), ct: ct);
                 if (exit != 0)
                     throw new InvalidOperationException($"Backup command exited with code {exit}.");
 
@@ -119,7 +128,7 @@ public class DatabaseOrchestrator
             var cmd = provider.RestoreCommand(cfg, remoteFile);
             await EmitLog(opId, $"Running restore command…");
             var exit = await _ssh.RunAsync(server.Host, server.Username, server.SshKeyPath, cmd,
-                line => EmitLog(opId, line), ct);
+                line => EmitLog(opId, line), ct: ct);
 
             await _ssh.RunAsync(server.Host, server.Username, server.SshKeyPath,
                 provider.CleanupCommand(remoteFile), ct: ct);
@@ -159,8 +168,15 @@ public class DatabaseOrchestrator
 
             var cmd = provider.QueryCommand(cfg, remoteFile);
             await EmitLog(opId, "Executing query…");
-            var exit = await _ssh.RunAsync(server.Host, server.Username, server.SshKeyPath, cmd,
-                line => EmitLog(opId, line), ct);
+            var exit = await _ssh.RunAsync(
+                server.Host, server.Username, server.SshKeyPath, cmd,
+                onOutput: line => EmitOutput(opId, line),
+                onStderr: async line =>
+                {
+                    Log.Warning("Query stderr [{ProjectId}/{DB}]: {Line}", project.Id, cfg.DatabaseName, line);
+                    await EmitLog(opId, line);
+                },
+                ct: ct);
 
             await _ssh.RunAsync(server.Host, server.Username, server.SshKeyPath,
                 provider.CleanupCommand(remoteFile), ct: ct);
@@ -179,6 +195,24 @@ public class DatabaseOrchestrator
         finally
         {
             _bus.Complete(opId);
+        }
+    }
+
+    // ── Raw query (SQL typed inline) ───────────────────────────────────────────
+
+    public async Task QueryRawAsync(ProjectConfig project, string opId, string sql, CancellationToken ct)
+    {
+        var tempDir  = Path.Combine(DataDirectory.Resolve(), "temp");
+        Directory.CreateDirectory(tempDir);
+        var tempFile = Path.Combine(tempDir, $"raw-{opId}.sql");
+        try
+        {
+            await File.WriteAllTextAsync(tempFile, sql, ct);
+            await QueryAsync(project, opId, tempFile, ct);
+        }
+        finally
+        {
+            try { File.Delete(tempFile); } catch { /* best-effort */ }
         }
     }
 
@@ -254,10 +288,227 @@ public class DatabaseOrchestrator
             .ToList();
     }
 
+    public void DeleteBackup(string projectId, string filePath)
+    {
+        var backupDir   = Path.GetFullPath(BackupDirFor(projectId));
+        var resolvedPath = Path.GetFullPath(filePath);
+
+        if (!resolvedPath.StartsWith(backupDir, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("File is not within the backup directory.");
+
+        if (!File.Exists(resolvedPath))
+            throw new InvalidOperationException($"Backup file not found: {Path.GetFileName(resolvedPath)}");
+
+        File.Delete(resolvedPath);
+        Log.Information("Backup deleted: {File}", Path.GetFileName(resolvedPath));
+    }
+
+    // ── Infer from docker-compose ──────────────────────────────────────────────
+
+    public async Task<InferResult?> InferConfigAsync(ProjectConfig project)
+    {
+        var workDir = project.Wsl?.WorkingDir;
+        if (string.IsNullOrWhiteSpace(workDir)) return null;
+
+        var composePath = workDir.TrimEnd('/') + "/docker-compose.yml";
+        var content = await ReadWslFileAsync(composePath)
+            ?? await ReadWslFileAsync(workDir.TrimEnd('/') + "/docker-compose.yaml");
+        if (content is null) return null;
+
+        var (provider, containerHint, databaseName, detected) = ParseDockerComposeForDatabase(content);
+        if (!provider.HasValue) return null;
+
+        var containerName = string.Empty;
+        if (!string.IsNullOrWhiteSpace(project.Server?.Host))
+        {
+            try
+            {
+                var containerLines = new List<string>();
+                await _ssh.RunAsync(project.Server.Host, project.Server.Username, project.Server.SshKeyPath,
+                    "docker ps --format \"{{.Names}}\\t{{.Image}}\"",
+                    line => { containerLines.Add(line); return Task.CompletedTask; });
+
+                var dbKeyword = provider.Value == DbProviderType.MariaDb ? "mariadb" : "mssql";
+                foreach (var rawLine in containerLines)
+                {
+                    if (string.IsNullOrWhiteSpace(rawLine)) continue;
+                    var parts = rawLine.Split('\t');
+                    var cName  = parts.ElementAtOrDefault(0) ?? "";
+                    var cImage = parts.ElementAtOrDefault(1) ?? "";
+
+                    var nameMatch  = !string.IsNullOrEmpty(containerHint)
+                        && cName.Contains(containerHint, StringComparison.OrdinalIgnoreCase);
+                    var imageMatch = cImage.Contains(dbKeyword, StringComparison.OrdinalIgnoreCase);
+
+                    if (nameMatch || imageMatch)
+                    {
+                        containerName = cName;
+                        detected.Add($"Running container matched: {cName} ({cImage})");
+                        break;
+                    }
+                }
+            }
+            catch { /* SSH unreachable — return partial result */ }
+        }
+
+        var config = new DatabaseConfig
+        {
+            Provider        = provider.Value,
+            ContainerName   = containerName,
+            DatabaseName    = databaseName ?? string.Empty,
+            RootUser        = provider.Value == DbProviderType.MariaDb ? "root" : "sa",
+            BackupRetainCount = 10,
+        };
+
+        return new InferResult(config, detected.ToArray());
+    }
+
+    private static async Task<string?> ReadWslFileAsync(string linuxPath)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "wsl",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+            };
+            psi.ArgumentList.Add("--");
+            psi.ArgumentList.Add("cat");
+            psi.ArgumentList.Add(linuxPath);
+
+            using var proc = Process.Start(psi);
+            if (proc is null) return null;
+            var text = await proc.StandardOutput.ReadToEndAsync();
+            await proc.WaitForExitAsync();
+            return proc.ExitCode == 0 && !string.IsNullOrWhiteSpace(text) ? text : null;
+        }
+        catch { return null; }
+    }
+
+    private static (DbProviderType? Provider, string? ContainerHint, string? DatabaseName, List<string> Detected)
+        ParseDockerComposeForDatabase(string content)
+    {
+        var lines    = content.Split('\n');
+        var detected = new List<string>();
+
+        var dbImageKeywords = new Dictionary<string, DbProviderType>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["mariadb"]                  = DbProviderType.MariaDb,
+            ["mysql"]                    = DbProviderType.MariaDb,
+            ["mssql"]                    = DbProviderType.SqlServer,
+            ["mcr.microsoft.com/mssql"]  = DbProviderType.SqlServer,
+        };
+
+        // Find first line containing image: <db-keyword>
+        int imgIdx = -1;
+        DbProviderType? provider = null;
+
+        for (int i = 0; i < lines.Length; i++)
+        {
+            var lower = lines[i].ToLowerInvariant();
+            if (!lower.Contains("image:")) continue;
+
+            foreach (var (kw, prov) in dbImageKeywords)
+            {
+                if (!lower.Contains(kw.ToLowerInvariant())) continue;
+
+                imgIdx   = i;
+                provider = prov;
+                var colonPos = lines[i].IndexOf("image:", StringComparison.OrdinalIgnoreCase);
+                var imgValue = lines[i][(colonPos + 6)..].Trim().Trim('"', '\'');
+                detected.Add($"Detected {prov} image: {imgValue}");
+                break;
+            }
+            if (imgIdx >= 0) break;
+        }
+
+        if (!provider.HasValue) return (null, null, null, detected);
+
+        var imageIndent = lines[imgIdx].Length - lines[imgIdx].TrimStart().Length;
+
+        // Find service name: look backward for first line at shallower indent ending with ':'
+        string? serviceName = null;
+        for (int i = imgIdx - 1; i >= 0; i--)
+        {
+            var l = lines[i];
+            if (string.IsNullOrWhiteSpace(l)) continue;
+            var indent = l.Length - l.TrimStart().Length;
+            if (indent < imageIndent)
+            {
+                var trimmed = l.Trim();
+                if (trimmed.EndsWith(':')) serviceName = trimmed.TrimEnd(':');
+                break;
+            }
+        }
+
+        // Scan surrounding context for container_name and env vars
+        string? containerHint = null;
+        string? databaseName  = null;
+
+        int start = Math.Max(0, imgIdx - 5);
+        int end   = Math.Min(lines.Length - 1, imgIdx + 60);
+
+        for (int i = start; i <= end; i++)
+        {
+            var l = lines[i];
+            if (string.IsNullOrWhiteSpace(l)) continue;
+
+            // Stop if we hit a new sibling service block after the image line
+            if (i > imgIdx + 2)
+            {
+                var indent = l.Length - l.TrimStart().Length;
+                if (indent < imageIndent && !l.TrimStart().StartsWith('#')) break;
+            }
+
+            // container_name: value
+            var cmMatch = Regex.Match(l, @"container_name:\s*(.+)", RegexOptions.IgnoreCase);
+            if (cmMatch.Success)
+            {
+                containerHint = cmMatch.Groups[1].Value.Trim().Trim('"', '\'').Split('#')[0].Trim();
+                continue;
+            }
+
+            // Dict style: KEY: value (at ≥4 spaces, all-uppercase key)
+            var dictMatch = Regex.Match(l, @"^\s{4,}([A-Z][A-Z0-9_]*):\s+(.+)");
+            if (dictMatch.Success)
+            {
+                ApplyEnvVar(dictMatch.Groups[1].Value, dictMatch.Groups[2].Value, ref databaseName);
+                continue;
+            }
+
+            // List style: - KEY=value
+            var listMatch = Regex.Match(l, @"^\s+-\s+([A-Z][A-Z0-9_]*)=(.+)");
+            if (listMatch.Success)
+                ApplyEnvVar(listMatch.Groups[1].Value, listMatch.Groups[2].Value, ref databaseName);
+        }
+
+        if (databaseName != null) detected.Add($"Database name: {databaseName}");
+        var hint = containerHint ?? serviceName;
+        if (hint != null) detected.Add($"Container hint: {hint}");
+
+        return (provider, hint, databaseName, detected);
+    }
+
+    private static void ApplyEnvVar(string key, string rawValue, ref string? databaseName)
+    {
+        if (key is not ("MYSQL_DATABASE" or "MARIADB_DATABASE" or "MSSQL_DB" or "MSSQL_DATABASE"))
+            return;
+        var val = rawValue.Trim().Trim('"', '\'').Split('#')[0].Trim();
+        // Skip env var placeholders like ${VAR_NAME}
+        if (!val.StartsWith('$') && !string.IsNullOrEmpty(val))
+            databaseName = val;
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────────
 
     private Task EmitLog(string opId, string message)
         => _bus.EmitAsync(opId, "log", new { message });
+
+    private Task EmitOutput(string opId, string line)
+        => _bus.EmitAsync(opId, "output", new { line });
 
     private static string BackupDirFor(string projectId)
         => Path.Combine(DataDirectory.Resolve(), "backups", projectId);

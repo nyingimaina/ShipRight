@@ -32,6 +32,8 @@ public record WslConfig
     public string WorkingDir { get; init; } = string.Empty;
 }
 
+public enum DeployMode { Unmanaged, SemiManaged, FullyManaged }
+
 public record ServerConfig
 {
     public string Host { get; init; } = string.Empty;
@@ -39,6 +41,7 @@ public record ServerConfig
     public string SshKeyPath { get; init; } = string.Empty;
     public string RemoteWorkingDir { get; init; } = string.Empty;
     public string RebuildScript { get; init; } = "rebuild.sh";
+    public DeployMode DeployMode { get; init; } = DeployMode.Unmanaged;
 }
 
 public record ProjectConfig

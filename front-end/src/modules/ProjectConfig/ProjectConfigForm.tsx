@@ -3,7 +3,7 @@ import { Tab, TabList, TabPanel, Tabs } from 'react-tabs';
 import ZestButton from 'jattac.libs.web.zest-button';
 import ZestTextbox from 'jattac.libs.web.zest-textbox';
 import { RiAddLine, RiDeleteBinLine } from 'react-icons/ri';
-import { IApiError, IDatabaseConfig, IProjectInput, DbProviderType, emptyDatabaseConfig, emptyProjectInput } from '@/shared/types/IProject';
+import { IApiError, IDatabaseConfig, IProjectInput, DbProviderType, DeployMode, emptyDatabaseConfig, emptyProjectInput } from '@/shared/types/IProject';
 import { api } from '@/shared/ApiService';
 import styles from './Styles/ProjectConfigForm.module.css';
 
@@ -236,6 +236,49 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
             <ZestTextbox value={form.server.rebuildScript} onChange={e => set('server.rebuildScript', e.target.value)}
               placeholder="rebuild.sh" maxLength={100} zest={{ stretch: true }} />
           </Field>
+          <Field label="Deploy Mode">
+            <select value={form.server.deployMode ?? 'Unmanaged'}
+              onChange={e => set('server.deployMode', e.target.value as DeployMode)}
+              style={{ background: '#131D30', color: '#F0F2F5', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, padding: '6px 10px', width: '100%' }}>
+              <option value="Unmanaged">Unmanaged — uses rebuild.sh (no rollback)</option>
+              <option value="SemiManaged">Semi-Managed — git pull + docker compose up (enables rollback)</option>
+              <option value="FullyManaged">Fully Managed — env var injection, no git round-trip (enables rollback)</option>
+            </select>
+          </Field>
+          {(form.server.deployMode ?? 'Unmanaged') === 'FullyManaged' && form.services.length > 0 && (
+            <div style={{ marginTop: 8, background: '#131D30', border: '1px solid rgba(74,127,168,0.3)',
+              borderRadius: 8, padding: '12px 16px' }}>
+              <p style={{ margin: '0 0 8px', fontSize: 12, color: '#4A7FA8', fontWeight: 600 }}>
+                Required env vars in docker-compose.yml
+              </p>
+              <p style={{ margin: '0 0 8px', fontSize: 11, color: '#637389' }}>
+                Use these substitutions for image tags so ShipRight can inject versions at deploy time:
+              </p>
+              <table style={{ borderCollapse: 'collapse', width: '100%', fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left', color: '#637389', paddingBottom: 4, fontWeight: 400 }}>Service</th>
+                    <th style={{ textAlign: 'left', color: '#637389', paddingBottom: 4, fontWeight: 400 }}>Env var</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {form.services.filter(s => s.name).map(s => (
+                    <tr key={s.name}>
+                      <td style={{ color: '#A8B8CC', padding: '2px 16px 2px 0' }}>{s.name}</td>
+                      <td style={{ color: '#C9A84C' }}>
+                        {'${' + s.name.toUpperCase().replace(/[^A-Z0-9]/g, '_') + '_TAG}'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p style={{ margin: '8px 0 0', fontSize: 11, color: '#637389' }}>
+                Example: <span style={{ color: '#A8B8CC', fontFamily: "'JetBrains Mono', monospace" }}>
+                  image: nyingi/app:{'${APP_TAG:-latest}'}
+                </span>
+              </p>
+            </div>
+          )}
         </TabPanel>
         <TabPanel className={styles.panel} selectedClassName={styles.panelActive}>
           <div className={styles.formRow} style={{ alignItems: 'center', flexDirection: 'row', gap: 12 }}>

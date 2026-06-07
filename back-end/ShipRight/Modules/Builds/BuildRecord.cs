@@ -46,4 +46,6 @@ public class BuildRecord
     public string? ErrorSummary { get; set; }
     public Dictionary<string, int> StepDurations { get; set; } = new();
     public List<string> SucceededSteps { get; set; } = new();
+    public bool IsRollback { get; set; } = false;
+    public string? RolledBackFromBuildId { get; set; }
 }

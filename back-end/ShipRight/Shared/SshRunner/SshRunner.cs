@@ -18,6 +18,7 @@ public class SshRunner : ISshRunner
         string host, string username, string keyPath,
         string command,
         Func<string, Task>? onOutput = null,
+        Func<string, Task>? onStderr = null,
         CancellationToken ct = default)
     {
         Log.Information("SSH connecting: {Username}@{Host}", username, host);
@@ -54,7 +55,7 @@ public class SshRunner : ISshRunner
             var asyncResult = cmd.BeginExecute();
 
             var stdoutTask = StreamOutputAsync(cmd.OutputStream, onOutput, ct);
-            var stderrTask = StreamOutputAsync(cmd.ExtendedOutputStream, onOutput, ct);
+            var stderrTask = StreamOutputAsync(cmd.ExtendedOutputStream, onStderr ?? onOutput, ct);
 
             await Task.WhenAll(stdoutTask, stderrTask);
             cmd.EndExecute(asyncResult);

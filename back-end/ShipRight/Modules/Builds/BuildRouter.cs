@@ -113,13 +113,14 @@ public static class BuildRouter
             return Results.Ok(new { message = "Cancellation requested." });
         });
 
-        app.MapPost("/api/builds/{id}/push", async (string id, IBuildStore store, BuildOrchestrator orchestrator) =>
+        app.MapPost("/api/builds/{id}/push", async (string id, IBuildStore store, BuildOrchestrator orchestrator, BuildEventBus bus) =>
         {
             var record = await store.GetByIdAsync(id);
             if (record is null) return Results.NotFound(new { isError = true, message = $"Build '{id}' not found." });
             if (record.Status != BuildStatus.ImageBuilt)
                 return Results.BadRequest(new { isError = true, message = "Only an image-built record can be pushed." });
 
+            bus.Register(id);
             _ = Task.Run(() => orchestrator.PushAsync(id));
             return Results.Accepted($"/api/builds/{id}", new
             {
@@ -129,13 +130,14 @@ public static class BuildRouter
             });
         });
 
-        app.MapPost("/api/builds/{id}/deploy", async (string id, IBuildStore store, BuildOrchestrator orchestrator) =>
+        app.MapPost("/api/builds/{id}/deploy", async (string id, IBuildStore store, BuildOrchestrator orchestrator, BuildEventBus bus) =>
         {
             var record = await store.GetByIdAsync(id);
             if (record is null) return Results.NotFound(new { isError = true, message = $"Build '{id}' not found." });
             if (record.Status != BuildStatus.PushSucceeded)
                 return Results.BadRequest(new { isError = true, message = "Only a pushed build can be deployed." });
 
+            bus.Register(id);
             _ = Task.Run(() => orchestrator.DeployAsync(id));
             return Results.Accepted($"/api/builds/{id}", new
             {
@@ -143,6 +145,36 @@ public static class BuildRouter
                 status = BuildStatus.Deploying.ToString(),
                 message = "Deployment started"
             });
+        });
+
+        app.MapPost("/api/builds/{id}/rollback", async (
+            string id, BuildOrchestrator orchestrator) =>
+        {
+            try
+            {
+                var opId = await orchestrator.RollbackAsync(id);
+                return Results.Accepted($"/api/builds/{opId}/stream",
+                    new { opId, message = "Rollback started." });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(new { isError = true, message = ex.Message });
+            }
+        });
+
+        app.MapGet("/api/projects/{id}/deployments", async (
+            string id, int page, int pageSize, IBuildStore store) =>
+        {
+            var records = await store.QueryAsync(
+                projectId: id, status: "Deployed",
+                from: null, to: null, gitTag: null,
+                page: page == 0 ? 1 : page,
+                pageSize: pageSize == 0 ? 10 : pageSize);
+            return Results.Ok(records.Select(r => new
+            {
+                r.Id, r.GitTag, r.DeployedAt, r.Versions,
+                r.IsRollback, r.RolledBackFromBuildId
+            }));
         });
     }
 }

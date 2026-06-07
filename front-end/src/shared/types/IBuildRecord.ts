@@ -39,6 +39,17 @@ export interface IBuildRecord {
   errorSummary: string | null;
   stepDurations?: Record<string, number>;
   succeededSteps?: string[];
+  isRollback: boolean;
+  rolledBackFromBuildId: string | null;
+}
+
+export interface IDeployment {
+  id: string;
+  gitTag: string;
+  deployedAt: string;
+  versions: IBuildServiceVersion[];
+  isRollback: boolean;
+  rolledBackFromBuildId: string | null;
 }
 
 export interface IBuildListResponse {

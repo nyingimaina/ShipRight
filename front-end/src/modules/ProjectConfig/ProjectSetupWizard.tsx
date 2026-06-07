@@ -115,7 +115,7 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
       services,
       gitRepos,
       wsl: { workingDir: wslWorkingDir },
-      server: { host: serverHost, username: serverUser, sshKeyPath, remoteWorkingDir: remoteDir, rebuildScript },
+      server: { host: serverHost, username: serverUser, sshKeyPath, remoteWorkingDir: remoteDir, rebuildScript, deployMode: existing?.server.deployMode ?? 'Unmanaged' },
       database: dbEnabled ? db : undefined,
     };
     try {

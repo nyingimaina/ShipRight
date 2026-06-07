@@ -1,17 +1,29 @@
 import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
+import dynamic from 'next/dynamic';
 import AppShell from '@/modules/AppShell/AppShell';
 import BuildWizard from '@/modules/BuildWizard/BuildWizard';
 import { ProjectSummary } from '@/modules/Dashboard/ProjectCard';
-import SqlQueryPanel from '@/modules/Database/SqlQueryPanel';
 import ZestButton from 'jattac.libs.web.zest-button';
-import { api } from '@/shared/ApiService';
-import { IProject } from '@/shared/types/IProject';
-import { IServiceVersion } from '@/shared/types/IBuildRecord';
+import ZestTabs, { ZestTabItem } from 'jattac.libs.web.zest-tabs';
+import { api, sseUrl } from '@/shared/ApiService';
+
+const SqlQueryPanel = dynamic(() => import('@/modules/Database/SqlQueryPanel'), { ssr: false });
+import { IDatabaseConfig, IProject } from '@/shared/types/IProject';
+import { IDeployment, IServiceVersion } from '@/shared/types/IBuildRecord';
 import styles from './Styles/ProjectDetail.module.css';
+
+type ProjectTab = 'overview' | 'build' | 'database' | 'logs';
+
+const PROJECT_TABS: ZestTabItem<ProjectTab>[] = [
+  { label: 'Overview',       value: 'overview'  },
+  { label: 'Build & Deploy', value: 'build'     },
+  { label: 'Database',       value: 'database'  },
+  { label: 'Logs',           value: 'logs'      },
+];
 
 export default function ProjectDetail() {
   const router = useRouter();
@@ -22,12 +34,45 @@ export default function ProjectDetail() {
   const [loading, setLoading] = useState(true);
   const [wizardBuildId, setWizardBuildId] = useState<string | undefined>(undefined);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<ProjectTab>('overview');
   const [backups, setBackups] = useState<{ fileName: string; filePath: string; sizeBytes: number; createdAt: string }[]>([]);
   const [backupRunning, setBackupRunning] = useState(false);
   const [dbOpId, setDbOpId] = useState<string | null>(null);
   const [dbLogs, setDbLogs] = useState<string[]>([]);
   const [dbStatus, setDbStatus] = useState<'idle' | 'running' | 'success' | 'error'>('idle');
   const [dbMessage, setDbMessage] = useState('');
+  const [inferring, setInferring] = useState(false);
+  const [inferResult, setInferResult] = useState<{ config: IDatabaseConfig; detected: string[] } | null>(null);
+  const [savingInfer, setSavingInfer] = useState(false);
+  const [fixingContainer, setFixingContainer] = useState(false);
+  const [containerOptions, setContainerOptions] = useState<{ name: string; image: string }[]>([]);
+  const [selectedContainer, setSelectedContainer] = useState('');
+  const [savingContainer, setSavingContainer] = useState(false);
+  const [deletingBackup, setDeletingBackup] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+  const [deleteCountdown, setDeleteCountdown] = useState(0);
+  const deleteTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Deployment history + rollback
+  const [deployments, setDeployments] = useState<IDeployment[]>([]);
+  const [rollbackStatus, setRollbackStatus] = useState<'idle' | 'running' | 'success' | 'error'>('idle');
+  const [rollbackLogs, setRollbackLogs] = useState<string[]>([]);
+  const [rollbackMessage, setRollbackMessage] = useState('');
+  const rollbackEsRef = useRef<EventSource | null>(null);
+
+  // Build log panel
+  const [showBuildLog, setShowBuildLog] = useState(false);
+  const [buildLogContent, setBuildLogContent] = useState<string | null>(null);
+  const [buildLogLoading, setBuildLogLoading] = useState(false);
+
+  // Container log stream
+  const [logContainer, setLogContainer] = useState('');
+  const [logContainers, setLogContainers] = useState<{ name: string; image: string }[]>([]);
+  const [logLoadingContainers, setLogLoadingContainers] = useState(false);
+  const [logLines, setLogLines] = useState<string[]>([]);
+  const [logActive, setLogActive] = useState(false);
+  const logEsRef = useRef<EventSource | null>(null);
+  const logEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -37,11 +82,26 @@ export default function ProjectDetail() {
       api.get<ProjectSummary>(`/api/projects/${id}/summary`).catch(() => null),
       api.get<{ fileName: string; filePath: string; sizeBytes: number; createdAt: string }[]>(
         `/api/projects/${id}/db/backups`).catch(() => []),
+      api.get<IDeployment[]>(`/api/projects/${id}/deployments?page=1&pageSize=10`).catch(() => [] as IDeployment[]),
     ])
-      .then(([p, v, s, b]) => { setProject(p); setVersions(v); setSummary(s); setBackups(b); })
+      .then(([p, v, s, b, d]) => { setProject(p); setVersions(v); setSummary(s); setBackups(b); setDeployments(d); })
       .catch(() => toast.error('Project not found.'))
       .finally(() => setLoading(false));
   }, [id]);
+
+  // Auto-scroll container log box
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [logLines]);
+
+  // Cleanup EventSource and delete countdown on unmount
+  useEffect(() => {
+    return () => {
+      logEsRef.current?.close();
+      rollbackEsRef.current?.close();
+      if (deleteTimerRef.current) clearInterval(deleteTimerRef.current);
+    };
+  }, []);
 
   if (loading) return <AppShell><p className={styles.loading}>Loading…</p></AppShell>;
   if (!project) return <AppShell><p className={styles.notFound}>Project not found.</p></AppShell>;
@@ -57,7 +117,7 @@ export default function ProjectDetail() {
       const res = await api.post<{ opId: string }>(`/api/projects/${id}/db/backup`, {});
       const opid = res.opId;
       setDbOpId(opid);
-      const es = new EventSource(`/api/projects/${id}/db/ops/${opid}/stream`);
+      const es = new EventSource(sseUrl(`/api/projects/${id}/db/ops/${opid}/stream`));
       es.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
@@ -76,11 +136,51 @@ export default function ProjectDetail() {
           }
         } catch { /* ignore */ }
       };
-      es.onerror = () => { setDbStatus('error'); setDbMessage('Connection lost.'); setBackupRunning(false); es.close(); };
+      es.onerror = () => {
+        if (es.readyState === EventSource.CLOSED) {
+          setDbStatus('error'); setDbMessage('Connection lost.'); setBackupRunning(false);
+        }
+        // readyState CONNECTING = browser is auto-retrying; do nothing
+      };
     } catch (e: unknown) {
       setDbStatus('error');
       setDbMessage((e as { message?: string })?.message ?? 'Failed to start backup.');
       setBackupRunning(false);
+    }
+  };
+
+  const startRollback = async (buildId: string) => {
+    rollbackEsRef.current?.close();
+    setRollbackLogs([]);
+    setRollbackStatus('running');
+    setRollbackMessage('');
+    try {
+      const res = await api.post<{ opId: string }>(`/api/builds/${buildId}/rollback`, {});
+      const es = new EventSource(sseUrl(`/api/builds/${res.opId}/stream`));
+      rollbackEsRef.current = es;
+      es.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'log') setRollbackLogs(prev => [...prev, data.data.message]);
+          else if (data.type === 'deployCompleted') {
+            const ok = data.data.status === 'Deployed';
+            setRollbackStatus(ok ? 'success' : 'error');
+            setRollbackMessage(ok ? 'Rollback complete.' : (data.data.error ?? 'Rollback failed.'));
+            es.close();
+            api.get<IDeployment[]>(`/api/projects/${id}/deployments?page=1&pageSize=10`)
+              .then(d => setDeployments(d)).catch(() => {});
+          }
+        } catch { /* ignore */ }
+      };
+      es.onerror = () => {
+        if (es.readyState === EventSource.CLOSED) {
+          setRollbackStatus('error');
+          setRollbackMessage('Connection lost.');
+        }
+      };
+    } catch (e: unknown) {
+      setRollbackStatus('error');
+      setRollbackMessage((e as { message?: string })?.message ?? 'Failed to start rollback.');
     }
   };
 
@@ -91,7 +191,7 @@ export default function ProjectDetail() {
     try {
       const res = await api.post<{ opId: string }>(`/api/projects/${id}/db/restore`, { backupFile: filePath });
       const opid = res.opId;
-      const es = new EventSource(`/api/projects/${id}/db/ops/${opid}/stream`);
+      const es = new EventSource(sseUrl(`/api/projects/${id}/db/ops/${opid}/stream`));
       es.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
@@ -100,11 +200,191 @@ export default function ProjectDetail() {
           else if (data.type === 'error') { setDbStatus('error'); setDbMessage(data.data.message ?? 'Restore failed.'); es.close(); }
         } catch { /* ignore */ }
       };
-      es.onerror = () => { setDbStatus('error'); setDbMessage('Connection lost.'); es.close(); };
+      es.onerror = () => {
+        if (es.readyState === EventSource.CLOSED) {
+          setDbStatus('error'); setDbMessage('Connection lost.');
+        }
+      };
     } catch (e: unknown) {
       setDbStatus('error');
       setDbMessage((e as { message?: string })?.message ?? 'Failed to start restore.');
     }
+  };
+
+  const detectFromCompose = async () => {
+    setInferring(true);
+    setInferResult(null);
+    try {
+      const res = await api.get<{ found: boolean; config: IDatabaseConfig | null; detected: string[] }>(
+        `/api/projects/${id}/db/infer`
+      );
+      if (res.found && res.config) {
+        setInferResult({ config: res.config, detected: res.detected });
+      } else {
+        toast.error('No database service found in docker-compose.yml.');
+      }
+    } catch (e: unknown) {
+      toast.error((e as { message?: string })?.message ?? 'Detection failed.');
+    } finally {
+      setInferring(false);
+    }
+  };
+
+  const saveInferredConfig = async () => {
+    if (!inferResult) return;
+    setSavingInfer(true);
+    try {
+      const updated = await api.put<IProject>(`/api/projects/${id}`, {
+        ...project,
+        database: inferResult.config,
+      });
+      setProject(updated);
+      setInferResult(null);
+      toast.success('Database configuration saved.');
+    } catch (e: unknown) {
+      toast.error((e as { message?: string })?.message ?? 'Failed to save configuration.');
+    } finally {
+      setSavingInfer(false);
+    }
+  };
+
+  const detectContainers = async () => {
+    setFixingContainer(true);
+    setContainerOptions([]);
+    setSelectedContainer(project?.database?.containerName ?? '');
+    try {
+      const list = await api.get<{ name: string; image: string }[]>(`/api/projects/${id}/db/containers`);
+      setContainerOptions(list);
+    } catch (e: unknown) {
+      toast.error((e as { message?: string })?.message ?? 'Could not reach server.');
+      setFixingContainer(false);
+    }
+  };
+
+  const saveContainer = async () => {
+    if (!project?.database || !selectedContainer) return;
+    setSavingContainer(true);
+    try {
+      const updated = await api.put<IProject>(`/api/projects/${id}`, {
+        ...project,
+        database: { ...project.database, containerName: selectedContainer },
+      });
+      setProject(updated);
+      setFixingContainer(false);
+      setContainerOptions([]);
+      toast.success('Container name updated.');
+    } catch (e: unknown) {
+      toast.error((e as { message?: string })?.message ?? 'Failed to save.');
+    } finally {
+      setSavingContainer(false);
+    }
+  };
+
+  const deleteBackup = async (filePath: string) => {
+    setDeletingBackup(filePath);
+    try {
+      await api.delete(`/api/projects/${id}/db/backups?file=${encodeURIComponent(filePath)}`);
+      setBackups(prev => prev.filter(b => b.filePath !== filePath));
+      toast.success('Backup deleted.');
+    } catch (e: unknown) {
+      toast.error((e as { message?: string })?.message ?? 'Failed to delete backup.');
+    } finally {
+      setDeletingBackup(null);
+      setConfirmingDelete(null);
+    }
+  };
+
+  const startDeleteCountdown = (filePath: string) => {
+    setConfirmingDelete(filePath);
+    setDeleteCountdown(3);
+    let n = 3;
+    deleteTimerRef.current = setInterval(() => {
+      n -= 1;
+      setDeleteCountdown(n);
+      if (n <= 0) {
+        clearInterval(deleteTimerRef.current!);
+        deleteTimerRef.current = null;
+        deleteBackup(filePath);
+      }
+    }, 1000);
+  };
+
+  const cancelDelete = () => {
+    if (deleteTimerRef.current) { clearInterval(deleteTimerRef.current); deleteTimerRef.current = null; }
+    setConfirmingDelete(null);
+    setDeleteCountdown(0);
+  };
+
+  const loadLastBuildLog = async () => {
+    if (!summary?.lastBuild?.id) return;
+    setBuildLogLoading(true);
+    setBuildLogContent(null);
+    try {
+      const content = await api.getRaw(`/api/builds/${summary.lastBuild.id}/log`);
+      setBuildLogContent(content);
+    } catch {
+      setBuildLogContent('(Failed to load log)');
+    } finally {
+      setBuildLogLoading(false);
+    }
+  };
+
+  const loadLogContainers = async () => {
+    setLogLoadingContainers(true);
+    try {
+      const list = await api.get<{ name: string; image: string }[]>(`/api/projects/${id}/db/containers`);
+      setLogContainers(list);
+      if (!logContainer && project?.database?.containerName) {
+        const match = list.find(c => c.name === project.database!.containerName);
+        if (match) setLogContainer(match.name);
+      }
+    } catch (e: unknown) {
+      toast.error((e as { message?: string })?.message ?? 'Could not reach server.');
+    } finally {
+      setLogLoadingContainers(false);
+    }
+  };
+
+  const startContainerLog = () => {
+    if (!logContainer) return;
+    logEsRef.current?.close();
+    setLogLines([]);
+    setLogActive(true);
+    const es = new EventSource(
+      sseUrl(`/api/projects/${id}/container-logs/stream?container=${encodeURIComponent(logContainer)}&tail=200`)
+    );
+    logEsRef.current = es;
+    es.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.line !== undefined) {
+          setLogLines(prev => [...prev, data.line as string]);
+        }
+      } catch { /* ignore */ }
+    };
+    es.onerror = () => {
+      setLogActive(false);
+      logEsRef.current = null;
+    };
+  };
+
+  const stopContainerLog = () => {
+    logEsRef.current?.close();
+    logEsRef.current = null;
+    setLogActive(false);
+  };
+
+  const logBoxStyle: React.CSSProperties = {
+    background: '#0D1625',
+    border: '1px solid rgba(255,255,255,0.08)',
+    borderRadius: 8,
+    padding: '10px 14px',
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 12,
+    lineHeight: 1.6,
+    color: '#A8B8CC',
+    maxHeight: 400,
+    overflowY: 'auto',
   };
 
   return (
@@ -123,104 +403,422 @@ export default function ProjectDetail() {
           {' / '}{project.name}
         </p>
 
-        <section className={styles.section}>
-          <h2 className={styles.sectionTitle}>Services</h2>
-          <div className={styles.serviceList}>
-            {project.services.map(s => {
-              const v = versionMap[s.name];
-              return (
-                <div key={s.name} className={styles.serviceRow}>
-                  <span className={styles.serviceName}>{s.name}</span>
-                  {v?.version && <span className={styles.versionChip}>v{v.version}</span>}
-                  {v?.error && <span className={styles.versionError} title={v.error}>version unreadable</span>}
-                  <span className={styles.imageLabel}>{s.dockerImageName}</span>
-                </div>
-              );
-            })}
-          </div>
-        </section>
+        <ZestTabs
+          id="project-detail"
+          items={PROJECT_TABS}
+          activeValue={activeTab}
+          onChange={setActiveTab}
+        />
 
-        <section className={styles.section}>
-          <h2 className={styles.sectionTitle}>Build & Deploy</h2>
-          <div className={styles.buildActions}>
-            <ZestButton zest={{ visualOptions: { variant: 'standard' } }}
-              onClick={() => { setWizardBuildId(undefined); setWizardOpen(true); }}>
-              Build
-            </ZestButton>
-            {summary?.lastBuild?.status === 'ImageBuilt' && (
-              <ZestButton zest={{ visualOptions: { variant: 'standard' } }}
-                onClick={() => { setWizardBuildId(summary.lastBuild!.id); setWizardOpen(true); }}>
-                Push to Registry
-              </ZestButton>
-            )}
-            {summary?.lastBuild?.status === 'PushFailed' && (
-              <ZestButton zest={{ visualOptions: { variant: 'standard' } }}
-                onClick={() => { setWizardBuildId(summary.lastBuild!.id); setWizardOpen(true); }}>
-                Retry Push
-              </ZestButton>
-            )}
-            {(summary?.lastBuild?.status === 'PushSucceeded' || summary?.lastBuild?.status === 'BuildSucceeded') && (
-              <ZestButton zest={{ visualOptions: { variant: 'standard' } }}
-                onClick={() => { setWizardBuildId(summary.lastBuild!.id); setWizardOpen(true); }}>
-                Deploy to Production
-              </ZestButton>
-            )}
-          </div>
-        </section>
-
-        {project.database && (
-          <section id="database" className={styles.section}>
-            <h2 className={styles.sectionTitle}>Database — {project.database.databaseName}</h2>
-            <div className={styles.buildActions}>
-              <ZestButton
-                zest={{ visualOptions: { variant: 'standard' } }}
-                onClick={startBackup}
-                disabled={backupRunning}>
-                {backupRunning ? 'Backing up…' : 'Backup Now'}
-              </ZestButton>
-            </div>
-
-            {/* Live log for backup / restore */}
-            {(dbStatus === 'running' || dbLogs.length > 0) && (
-              <div style={{ marginTop: 12, background: '#0D1625', borderRadius: 8, padding: '10px 14px',
-                fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#A8B8CC',
-                maxHeight: 200, overflowY: 'auto', border: '1px solid rgba(255,255,255,0.08)' }}>
-                {dbLogs.map((l, i) => <div key={i}>{l}</div>)}
-              </div>
-            )}
-            {dbStatus === 'success' && <p style={{ color: '#3D9970', fontSize: 13, marginTop: 8 }}>{dbMessage}</p>}
-            {dbStatus === 'error'   && <p style={{ color: '#B84040', fontSize: 13, marginTop: 8 }}>{dbMessage}</p>}
-
-            {/* Backup list */}
-            {backups.length > 0 && (
-              <div style={{ marginTop: 16 }}>
-                <h3 className={styles.sectionTitle}>Backups</h3>
-                {backups.map(b => (
-                  <div key={b.filePath} style={{ display: 'flex', alignItems: 'center', gap: 12,
-                    padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#C9A84C', flex: 1 }}>
-                      {b.fileName}
-                    </span>
-                    <span style={{ fontSize: 12, color: '#637389' }}>
-                      {(b.sizeBytes / 1024).toFixed(1)} KB
-                    </span>
-                    <ZestButton
-                      zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}
-                      onClick={() => startRestore(b.filePath)}>
-                      Restore
-                    </ZestButton>
+        {activeTab === 'overview' && (
+          <section className={styles.section}>
+            <h2 className={styles.sectionTitle}>Services</h2>
+            <div className={styles.serviceList}>
+              {project.services.map(s => {
+                const v = versionMap[s.name];
+                return (
+                  <div key={s.name} className={styles.serviceRow}>
+                    <span className={styles.serviceName}>{s.name}</span>
+                    {v?.version && <span className={styles.versionChip}>v{v.version}</span>}
+                    {v?.error && <span className={styles.versionError} title={v.error}>version unreadable</span>}
+                    <span className={styles.imageLabel}>{s.dockerImageName}</span>
                   </div>
-                ))}
-              </div>
-            )}
-
-            {/* SQL Query */}
-            <div style={{ marginTop: 20 }}>
-              <h3 className={styles.sectionTitle}>Run SQL Query</h3>
-              <SqlQueryPanel projectId={id} />
+                );
+              })}
             </div>
           </section>
         )}
+
+        {activeTab === 'build' && (
+          <>
+            <section className={styles.section}>
+              <h2 className={styles.sectionTitle}>Build & Deploy</h2>
+              <div className={styles.buildActions}>
+                <ZestButton zest={{ visualOptions: { variant: 'standard' } }}
+                  onClick={() => { setWizardBuildId(undefined); setWizardOpen(true); }}>
+                  Build
+                </ZestButton>
+                {summary?.lastBuild?.status === 'ImageBuilt' && (
+                  <ZestButton zest={{ visualOptions: { variant: 'standard' } }}
+                    onClick={() => { setWizardBuildId(summary.lastBuild!.id); setWizardOpen(true); }}>
+                    Push to Registry
+                  </ZestButton>
+                )}
+                {summary?.lastBuild?.status === 'PushFailed' && (
+                  <ZestButton zest={{ visualOptions: { variant: 'standard' } }}
+                    onClick={() => { setWizardBuildId(summary.lastBuild!.id); setWizardOpen(true); }}>
+                    Retry Push
+                  </ZestButton>
+                )}
+                {(summary?.lastBuild?.status === 'PushSucceeded' || summary?.lastBuild?.status === 'BuildSucceeded') && (
+                  <ZestButton zest={{ visualOptions: { variant: 'standard' } }}
+                    onClick={() => { setWizardBuildId(summary.lastBuild!.id); setWizardOpen(true); }}>
+                    Deploy to Production
+                  </ZestButton>
+                )}
+              </div>
+            </section>
+
+            {summary?.lastBuild && (
+              <section className={styles.section}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: showBuildLog ? 12 : 0 }}>
+                  <h2 className={styles.sectionTitle} style={{ margin: 0 }}>Last Build Log</h2>
+                  <span style={{ fontSize: 12, color: '#637389' }}>{summary.lastBuild.status}</span>
+                  <ZestButton
+                    zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}
+                    onClick={() => {
+                      const next = !showBuildLog;
+                      setShowBuildLog(next);
+                      if (next && buildLogContent === null) loadLastBuildLog();
+                    }}>
+                    {showBuildLog ? 'Hide' : 'Show log'}
+                  </ZestButton>
+                </div>
+                {showBuildLog && (
+                  <>
+                    {buildLogLoading && (
+                      <p style={{ fontSize: 12, color: '#637389', fontFamily: "'JetBrains Mono', monospace" }}>
+                        Loading…
+                      </p>
+                    )}
+                    {buildLogContent !== null && (
+                      <div style={logBoxStyle}>
+                        {buildLogContent.split('\n').map((line, i) => (
+                          <div key={i} style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{line || '​'}</div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </section>
+            )}
+
+            {/* Deployment History */}
+            <section className={styles.section}>
+              <h2 className={styles.sectionTitle}>Deployment History</h2>
+              {deployments.length === 0 ? (
+                <p style={{ fontSize: 13, color: '#637389' }}>No deployments recorded yet.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                  {deployments.map((dep, idx) => (
+                    <div key={dep.id} style={{ display: 'flex', alignItems: 'center', gap: 12,
+                      padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 11, color: '#637389', flexShrink: 0, fontFamily: "'JetBrains Mono', monospace" }}>
+                        {new Date(dep.deployedAt).toLocaleString()}
+                      </span>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#C9A84C', flexShrink: 0 }}>
+                        {dep.gitTag || '—'}
+                      </span>
+                      {dep.versions.map(v => (
+                        <span key={v.serviceName} style={{ fontSize: 11, background: 'rgba(74,127,168,0.15)',
+                          border: '1px solid rgba(74,127,168,0.3)', borderRadius: 4,
+                          padding: '2px 6px', color: '#7AACE0', fontFamily: "'JetBrains Mono', monospace" }}>
+                          {v.serviceName}:{v.newVersion}
+                        </span>
+                      ))}
+                      {dep.isRollback && (
+                        <span style={{ fontSize: 10, color: '#C9943A', background: 'rgba(201,148,58,0.12)',
+                          border: '1px solid rgba(201,148,58,0.3)', borderRadius: 4, padding: '2px 6px' }}>
+                          ↩ rollback
+                        </span>
+                      )}
+                      <ZestButton
+                        zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}
+                        onClick={() => startRollback(dep.id)}
+                        disabled={
+                          idx === 0 ||
+                          rollbackStatus === 'running' ||
+                          project.server.deployMode === 'Unmanaged'
+                        }
+                        title={
+                          idx === 0 ? 'Currently deployed version'
+                          : project.server.deployMode === 'Unmanaged'
+                            ? 'Enable Semi-managed or Fully Managed deploy mode to use rollback'
+                            : undefined
+                        }>
+                        Roll back
+                      </ZestButton>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Rollback log */}
+              {rollbackStatus !== 'idle' && (
+                <div style={{ marginTop: 12 }}>
+                  {rollbackLogs.length > 0 && (
+                    <div style={{ ...logBoxStyle, maxHeight: 200, marginBottom: 8 }}>
+                      {rollbackLogs.map((l, i) => <div key={i} style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{l}</div>)}
+                    </div>
+                  )}
+                  {rollbackStatus === 'running' && (
+                    <p style={{ fontSize: 12, color: '#637389', fontFamily: "'JetBrains Mono', monospace" }}>Rolling back…</p>
+                  )}
+                  {rollbackStatus === 'success' && <p style={{ color: '#3D9970', fontSize: 13 }}>{rollbackMessage}</p>}
+                  {rollbackStatus === 'error'   && <p style={{ color: '#B84040', fontSize: 13 }}>{rollbackMessage}</p>}
+                </div>
+              )}
+            </section>
+          </>
+        )}
+
+        {activeTab === 'database' && (
+          <section className={styles.section}>
+            {!project.database ? (
+              <>
+                <h2 className={styles.sectionTitle}>Database</h2>
+                <p style={{ fontSize: 13, color: '#637389', marginBottom: 12 }}>
+                  No database configured for this project.
+                </p>
+
+                {!inferResult && (
+                  <ZestButton
+                    zest={{ buttonStyle: 'outline' }}
+                    onClick={detectFromCompose}
+                    disabled={inferring}>
+                    {inferring ? 'Detecting…' : 'Detect from docker-compose.yml'}
+                  </ZestButton>
+                )}
+
+                {inferResult && (
+                  <div style={{ background: '#131D30', border: '1px solid rgba(74,127,168,0.35)',
+                    borderRadius: 10, padding: '16px 20px', marginTop: 4, display: 'flex',
+                    flexDirection: 'column', gap: 10 }}>
+                    <p style={{ fontSize: 13, color: '#4A7FA8', fontWeight: 600, margin: 0 }}>
+                      Found in docker-compose.yml
+                    </p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {inferResult.detected.map((d, i) => (
+                        <span key={i} style={{ fontSize: 12, color: '#A8B8CC',
+                          fontFamily: "'JetBrains Mono', monospace" }}>
+                          {d}
+                        </span>
+                      ))}
+                    </div>
+                    {!inferResult.config.containerName && (
+                      <p style={{ fontSize: 12, color: '#C9943A', margin: 0 }}>
+                        Container name could not be matched — use the Edit page to set it after saving,
+                        or click Detect containers in the wizard.
+                      </p>
+                    )}
+                    <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+                      <ZestButton
+                        zest={{ visualOptions: { variant: 'standard' } }}
+                        onClick={saveInferredConfig}
+                        disabled={savingInfer}>
+                        {savingInfer ? 'Saving…' : 'Save this configuration'}
+                      </ZestButton>
+                      <ZestButton
+                        zest={{ buttonStyle: 'outline' }}
+                        onClick={() => setInferResult(null)}>
+                        Dismiss
+                      </ZestButton>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <h2 className={styles.sectionTitle}>Database — {project.database.databaseName}</h2>
+
+                {/* Container name row */}
+                {!fixingContainer ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                    <span style={{ fontSize: 12, color: '#637389' }}>Container:</span>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12,
+                      color: project.database.containerName ? '#C9A84C' : '#B84040' }}>
+                      {project.database.containerName || '(not set)'}
+                    </span>
+                    <ZestButton
+                      zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}
+                      onClick={detectContainers}>
+                      Change
+                    </ZestButton>
+                  </div>
+                ) : (
+                  <div style={{ marginBottom: 14, background: '#0D1625', border: '1px solid rgba(255,255,255,0.08)',
+                    borderRadius: 8, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <p style={{ margin: 0, fontSize: 12, color: '#637389' }}>
+                      {containerOptions.length === 0 ? 'Detecting running containers…' : 'Select the database container:'}
+                    </p>
+                    {containerOptions.length > 0 && (
+                      <select
+                        value={selectedContainer}
+                        onChange={e => setSelectedContainer(e.target.value)}
+                        style={{ background: '#131D30', border: '1px solid rgba(255,255,255,0.12)',
+                          borderRadius: 6, padding: '6px 10px', color: '#C9D6E3',
+                          fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>
+                        <option value="">— pick container —</option>
+                        {containerOptions.map(c => (
+                          <option key={c.name} value={c.name}>
+                            {c.name}  ({c.image})
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <ZestButton
+                        zest={{ visualOptions: { variant: 'standard', size: 'sm' } }}
+                        onClick={saveContainer}
+                        disabled={!selectedContainer || savingContainer}>
+                        {savingContainer ? 'Saving…' : 'Save'}
+                      </ZestButton>
+                      <ZestButton
+                        zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}
+                        onClick={() => { setFixingContainer(false); setContainerOptions([]); }}>
+                        Cancel
+                      </ZestButton>
+                    </div>
+                  </div>
+                )}
+
+                <div className={styles.buildActions} style={{ alignItems: 'center' }}>
+                  <ZestButton
+                    zest={{ visualOptions: { variant: 'standard' } }}
+                    onClick={startBackup}
+                    disabled={backupRunning}>
+                    {backupRunning ? 'Backing up…' : 'Backup Now'}
+                  </ZestButton>
+                  {backupRunning && <span className={styles.spinner} />}
+                </div>
+
+                {/* Live log for backup / restore */}
+                {(dbStatus === 'running' || dbLogs.length > 0) && (
+                  <div className={dbStatus === 'running' ? styles.logBoxRunning : undefined}
+                    style={{ marginTop: 12, background: '#0D1625', borderRadius: 8, padding: '10px 14px',
+                      fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#A8B8CC',
+                      maxHeight: 200, overflowY: 'auto', border: '1px solid rgba(255,255,255,0.08)' }}>
+                    {dbLogs.map((l, i) => <div key={i}>{l}</div>)}
+                  </div>
+                )}
+                {dbStatus === 'success' && <p style={{ color: '#3D9970', fontSize: 13, marginTop: 8 }}>{dbMessage}</p>}
+                {dbStatus === 'error'   && <p style={{ color: '#B84040', fontSize: 13, marginTop: 8 }}>{dbMessage}</p>}
+
+                {/* Backup list */}
+                {backups.length > 0 && (
+                  <div style={{ marginTop: 16 }}>
+                    <h3 className={styles.sectionTitle}>Backups</h3>
+                    {backups.map(b => (
+                      <div key={b.filePath} style={{ display: 'flex', alignItems: 'center', gap: 12,
+                        padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', flexWrap: 'wrap' }}>
+                        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#C9A84C', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {b.fileName}
+                        </span>
+                        <span style={{ fontSize: 12, color: '#637389', flexShrink: 0 }}>
+                          {(b.sizeBytes / 1024).toFixed(1)} KB
+                        </span>
+                        <ZestButton
+                          zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}
+                          onClick={() => startRestore(b.filePath)}>
+                          Restore
+                        </ZestButton>
+                        {confirmingDelete === b.filePath ? (
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <span style={{ fontSize: 12, color: '#B84040', fontFamily: "'JetBrains Mono', monospace" }}>
+                              {deletingBackup === b.filePath ? 'Deleting…' : `Deleting in ${deleteCountdown}s`}
+                            </span>
+                            {!deletingBackup && (
+                              <ZestButton
+                                zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}
+                                onClick={cancelDelete}>
+                                Cancel
+                              </ZestButton>
+                            )}
+                          </div>
+                        ) : (
+                          <ZestButton
+                            zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' }, semanticType: 'delete' }}
+                            onClick={() => startDeleteCountdown(b.filePath)}
+                            disabled={!!deletingBackup}>
+                            Delete
+                          </ZestButton>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* SQL Query */}
+                <div style={{ marginTop: 20 }}>
+                  <h3 className={styles.sectionTitle}>Run SQL Query</h3>
+                  <SqlQueryPanel projectId={id} />
+                </div>
+              </>
+            )}
+          </section>
+        )}
+
+        {activeTab === 'logs' && (
+          <section className={styles.section}>
+            <h2 className={styles.sectionTitle}>Container Logs</h2>
+
+            {/* Container picker */}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+              {logContainers.length > 0 ? (
+                <select
+                  value={logContainer}
+                  onChange={e => setLogContainer(e.target.value)}
+                  style={{ background: '#131D30', border: '1px solid rgba(255,255,255,0.12)',
+                    borderRadius: 6, padding: '6px 10px', color: '#C9D6E3',
+                    fontFamily: "'JetBrains Mono', monospace", fontSize: 12, minWidth: 220 }}>
+                  <option value="">— pick container —</option>
+                  {logContainers.map(c => (
+                    <option key={c.name} value={c.name}>{c.name}  ({c.image})</option>
+                  ))}
+                </select>
+              ) : (
+                <span style={{ fontSize: 12, color: '#637389', fontFamily: "'JetBrains Mono', monospace" }}>
+                  {logLoadingContainers ? 'Detecting…' : 'No containers detected yet'}
+                </span>
+              )}
+              <ZestButton
+                zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}
+                onClick={loadLogContainers}
+                disabled={logLoadingContainers}>
+                {logLoadingContainers ? 'Detecting…' : logContainers.length === 0 ? 'Detect containers' : 'Refresh'}
+              </ZestButton>
+            </div>
+
+            {/* Stream controls */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              {!logActive ? (
+                <ZestButton
+                  zest={{ visualOptions: { variant: 'standard' } }}
+                  onClick={startContainerLog}
+                  disabled={!logContainer}>
+                  Start streaming
+                </ZestButton>
+              ) : (
+                <ZestButton
+                  zest={{ buttonStyle: 'outline' }}
+                  onClick={stopContainerLog}>
+                  Stop
+                </ZestButton>
+              )}
+              {logLines.length > 0 && (
+                <ZestButton
+                  zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}
+                  onClick={() => setLogLines([])}>
+                  Clear
+                </ZestButton>
+              )}
+            </div>
+
+            {/* Live log box */}
+            {(logLines.length > 0 || logActive) && (
+              <div style={{ ...logBoxStyle, maxHeight: 500 }}>
+                {logLines.length === 0 && logActive && (
+                  <span style={{ color: '#637389' }}>Waiting for output…</span>
+                )}
+                {logLines.map((line, i) => (
+                  <div key={i} style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{line}</div>
+                ))}
+                <div ref={logEndRef} />
+              </div>
+            )}
+          </section>
+        )}
+
       </AppShell>
 
       <BuildWizard

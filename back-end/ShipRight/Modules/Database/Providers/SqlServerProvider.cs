@@ -33,7 +33,7 @@ public class SqlServerProvider : IDbProvider
     {
         var pw = "$" + PasswordEnvVar;
         return $"docker exec {cfg.ContainerName} /opt/mssql-tools/bin/sqlcmd " +
-               $"-S localhost -U {cfg.RootUser} -P \"{pw}\" -i {remoteFilePath}";
+               $"-S localhost -U {cfg.RootUser} -P \"{pw}\" -s $'\\t' -W -i {remoteFilePath}";
     }
 
     public string CleanupCommand(string remoteFilePath) => $"rm -f {remoteFilePath}";

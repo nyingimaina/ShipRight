@@ -30,3 +30,8 @@ export const api = {
   delete: <T>(path: string)               => request<T>('DELETE', path),
   getRaw,
 };
+
+/** Resolve an API path to a fully-qualified URL for use with EventSource. */
+export function sseUrl(path: string): string {
+  return `${BASE}${path}`;
+}

@@ -29,6 +29,7 @@ public static class RepoMaintenanceRouter
                 return Results.BadRequest(new { isError = true, message = "At least one pattern is required." });
 
             var opId = Guid.NewGuid().ToString("N");
+            bus.Register(opId);
             _ = Task.Run(() => RunPurgeHistoryAsync(project, repoIndex, request.Patterns, opId, bus, runner));
             return Results.Accepted($"/api/repos/ops/{opId}/stream",
                 new { opId, message = "History purge started." });
@@ -52,6 +53,7 @@ public static class RepoMaintenanceRouter
                 return Results.BadRequest(new { isError = true, message = "At least one file path is required." });
 
             var opId = Guid.NewGuid().ToString("N");
+            bus.Register(opId);
             _ = Task.Run(() => RunDeleteFilesAsync(project, repoIndex, request.Files, opId, bus, runner));
             return Results.Accepted($"/api/repos/ops/{opId}/stream",
                 new { opId, message = "File deletion started." });
@@ -67,17 +69,37 @@ public static class RepoMaintenanceRouter
             http.Response.Headers["X-Accel-Buffering"] = "no";
             http.Response.Headers.Connection = "keep-alive";
 
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            var heartbeat = Task.Run(async () =>
+            {
+                while (!cts.Token.IsCancellationRequested)
+                {
+                    try
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(15), cts.Token);
+                        await http.Response.WriteAsync(": heartbeat\n\n", cts.Token);
+                        await http.Response.Body.FlushAsync(cts.Token);
+                    }
+                    catch (OperationCanceledException) { break; }
+                }
+            });
+
             var reader = bus.Subscribe(opId);
             try
             {
-                await foreach (var payload in reader.ReadAllAsync(ct))
+                await foreach (var payload in reader.ReadAllAsync(cts.Token))
                 {
-                    await http.Response.WriteAsync($"data: {payload}\n\n", ct);
-                    await http.Response.Body.FlushAsync(ct);
+                    await http.Response.WriteAsync($"data: {payload}\n\n", cts.Token);
+                    await http.Response.Body.FlushAsync(cts.Token);
                 }
             }
             catch (OperationCanceledException) { /* client disconnected */ }
-            finally { bus.Unsubscribe(opId, reader); }
+            finally
+            {
+                await cts.CancelAsync();
+                await heartbeat;
+                bus.Unsubscribe(opId, reader);
+            }
         });
     }
 

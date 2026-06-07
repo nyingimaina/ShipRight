@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text.RegularExpressions;
 using Serilog;
 using Serilog.Context;
 using ShipRight.Modules.Projects;
@@ -68,6 +69,7 @@ public class BuildOrchestrator
         };
 
         await _buildStore.SaveAsync(record);
+        _bus.Register(record.Id);
         _ = Task.Run(() => RunPipelineAsync(record, project));
         return record;
     }
@@ -91,7 +93,13 @@ public class BuildOrchestrator
         {
             await ctx.EmitLogAsync($"Connecting to {project.Server.Username}@{project.Server.Host}…", "ssh");
 
-            var cmd = $"cd {project.Server.RemoteWorkingDir} && bash {project.Server.RebuildScript}";
+            var cmd = project.Server.DeployMode switch
+            {
+                DeployMode.SemiManaged  => BuildSemiManagedDeployCmd(project),
+                DeployMode.FullyManaged => BuildFullyManagedDeployCmd(project, record.Versions),
+                _                       => $"cd {project.Server.RemoteWorkingDir} && bash {project.Server.RebuildScript}"
+            };
+            await ctx.EmitLogAsync($"Deploy mode: {project.Server.DeployMode}", "shipright");
             var exitCode = await _ssh.RunAsync(
                 project.Server.Host,
                 project.Server.Username,
@@ -470,7 +478,11 @@ public class BuildOrchestrator
             // ── Step 5: Compose Repo Sync ─────────────────────────────────────
             await ctx.StepStartedAsync(5, "ComposeRepoSync");
 
-            if (resumeFromStep > 5)
+            if (project.Server.DeployMode == DeployMode.FullyManaged)
+            {
+                await ctx.EmitLogAsync("ComposeRepoSync skipped — Fully Managed mode injects image tags at deploy time", "shipright");
+            }
+            else if (resumeFromStep > 5)
             {
                 await ctx.EmitLogAsync("ComposeRepoSync skipped — already completed in previous build", "shipright");
             }
@@ -868,6 +880,110 @@ public class BuildOrchestrator
 
         record.Status = BuildStatus.Running;
         return true;
+    }
+
+    private static string BuildSemiManagedDeployCmd(ProjectConfig project)
+    {
+        var branch = project.GitRepos.FirstOrDefault()?.DeployBranch ?? "master";
+        return $"cd {project.Server.RemoteWorkingDir} && git pull origin {branch} && docker compose pull && docker compose up -d";
+    }
+
+    private static string BuildFullyManagedDeployCmd(ProjectConfig project, List<ServiceVersion> versions)
+    {
+        var envVars = string.Join(" ", versions.Select(v =>
+        {
+            var key = Regex.Replace(v.ServiceName.ToUpperInvariant(), @"[^A-Z0-9]", "_") + "_TAG";
+            return $"{key}={v.DockerImageName}:{v.NewVersion}";
+        }));
+        return $"cd {project.Server.RemoteWorkingDir} && export {envVars} && docker compose pull && docker compose up -d";
+    }
+
+    public async Task<string> RollbackAsync(string targetBuildId)
+    {
+        var target = await _buildStore.GetByIdAsync(targetBuildId)
+            ?? throw new InvalidOperationException("Build record not found.");
+        var project = await _projectStore.GetByIdAsync(target.ProjectId)
+            ?? throw new InvalidOperationException("Project not found.");
+
+        if (project.Server.DeployMode == DeployMode.Unmanaged)
+            throw new InvalidOperationException("Rollback requires Semi-managed or Fully Managed deploy mode.");
+
+        var record = new BuildRecord
+        {
+            ProjectId             = project.Id,
+            ProjectName           = project.Name,
+            GitTag                = target.GitTag,
+            Versions              = target.Versions.ToList(),
+            IsRollback            = true,
+            RolledBackFromBuildId = targetBuildId,
+            Status                = BuildStatus.Deploying,
+        };
+        await _buildStore.SaveAsync(record);
+        _bus.Register(record.Id);
+        _ = Task.Run(() => ExecuteRollbackAsync(project, record, target, CancellationToken.None));
+        return record.Id;
+    }
+
+    private async Task ExecuteRollbackAsync(ProjectConfig project, BuildRecord record,
+        BuildRecord target, CancellationToken ct)
+    {
+        var ctx = new PipelineContext(record, _bus);
+        try
+        {
+            if (project.Server.DeployMode == DeployMode.SemiManaged)
+            {
+                var branch = project.GitRepos.FirstOrDefault()?.DeployBranch ?? "master";
+                await ctx.EmitLogAsync("Updating compose repo to rollback versions…", "shipright");
+                await _runner.RunAsync("git",
+                    ["-C", project.Wsl.WorkingDir, "pull", "origin", branch],
+                    null, line => ctx.EmitLogAsync(line, "git"));
+                var composePath = Path.Combine(project.Wsl.WorkingDir, "docker-compose.yml");
+                var imageMap = target.Versions.ToDictionary(v => v.DockerImageName, v => v.NewVersion);
+                await DockerComposeUpdater.UpdateAsync(composePath, imageMap);
+                await _runner.RunAsync("git",
+                    ["-C", project.Wsl.WorkingDir, "add", "docker-compose.yml"],
+                    null, line => ctx.EmitLogAsync(line, "git"));
+                var commitResult = await _runner.RunAsync("git",
+                    ["-C", project.Wsl.WorkingDir, "commit", "-m", $"chore: rollback to {target.GitTag}"],
+                    null, line => ctx.EmitLogAsync(line, "git"));
+                if (!commitResult.Success)
+                {
+                    var commitOut = commitResult.StdOut + commitResult.StdErr;
+                    if (!commitOut.Contains("nothing to commit"))
+                        throw new InvalidOperationException($"git commit failed: {commitOut}");
+                    await ctx.EmitLogAsync("Compose already at target versions — skipping commit", "shipright");
+                }
+                await _runner.RunAsync("git",
+                    ["-C", project.Wsl.WorkingDir, "push", "origin", branch],
+                    null, line => ctx.EmitLogAsync(line, "git"));
+            }
+
+            await ctx.EmitLogAsync($"Connecting to {project.Server.Host}…", "ssh");
+            var cmd = project.Server.DeployMode == DeployMode.FullyManaged
+                ? BuildFullyManagedDeployCmd(project, target.Versions)
+                : BuildSemiManagedDeployCmd(project);
+
+            var exit = await _ssh.RunAsync(
+                project.Server.Host, project.Server.Username,
+                project.Server.SshKeyPath, cmd,
+                line => ctx.EmitLogAsync(line, "ssh"), ct: ct);
+
+            record.Status     = exit == 0 ? BuildStatus.Deployed : BuildStatus.DeployFailed;
+            record.DeployedAt = exit == 0 ? DateTime.UtcNow : null;
+            if (exit != 0) record.ErrorSummary = $"Rollback command exited with code {exit}.";
+        }
+        catch (Exception ex)
+        {
+            record.Status       = BuildStatus.DeployFailed;
+            record.ErrorSummary = ex.Message;
+            Log.Error(ex, "Rollback failed for project {ProjectId}", project.Id);
+            await ctx.EmitLogAsync($"[ERROR] {ex.Message}", "shipright");
+        }
+        finally
+        {
+            await _buildStore.SaveAsync(record);
+            await ctx.DeployCompletedAsync();
+        }
     }
 
     private static string TryReadVersion(string path)

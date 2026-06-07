@@ -52,18 +52,50 @@ public static class DatabaseRouter
             }
         });
 
+        // ── Infer from docker-compose ─────────────────────────────────────────
+
+        app.MapGet("/api/projects/{id}/db/infer", async (
+            string id, IProjectStore store, DatabaseOrchestrator orchestrator) =>
+        {
+            var project = await store.GetByIdAsync(id);
+            if (project is null)
+                return Results.NotFound(new { isError = true, message = $"Project '{id}' not found." });
+
+            try
+            {
+                var result = await orchestrator.InferConfigAsync(project);
+                if (result is null)
+                    return Results.Ok(new { found = false, config = (object?)null, detected = Array.Empty<string>() });
+
+                return Results.Ok(new
+                {
+                    found    = true,
+                    config   = result.Config,
+                    detected = result.Detected,
+                });
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "InferConfig failed for {ProjectId}", id);
+                return Results.BadRequest(new { isError = true, message = ex.Message });
+            }
+        });
+
         // ── Backup ────────────────────────────────────────────────────────────
 
         app.MapPost("/api/projects/{id}/db/backup", async (
-            string id, IProjectStore store, DatabaseOrchestrator orchestrator) =>
+            string id, IProjectStore store, DatabaseOrchestrator orchestrator, BuildEventBus bus) =>
         {
             var project = await store.GetByIdAsync(id);
             if (project is null)
                 return Results.NotFound(new { isError = true, message = $"Project '{id}' not found." });
             if (project.Database is null)
                 return Results.BadRequest(new { isError = true, message = "No database configuration for this project." });
+            if (string.IsNullOrWhiteSpace(project.Database.DatabaseName))
+                return Results.BadRequest(new { isError = true, message = "Database name is not set. Go to Edit to configure it." });
 
             var opId = Guid.NewGuid().ToString("N");
+            bus.Register(opId);
             _ = Task.Run(() => orchestrator.BackupAsync(project, opId, CancellationToken.None));
             return Results.Accepted($"/api/projects/{id}/db/ops/{opId}/stream",
                 new { opId, message = "Backup started." });
@@ -73,7 +105,7 @@ public static class DatabaseRouter
 
         app.MapPost("/api/projects/{id}/db/restore", async (
             string id, RestoreRequest request,
-            IProjectStore store, DatabaseOrchestrator orchestrator) =>
+            IProjectStore store, DatabaseOrchestrator orchestrator, BuildEventBus bus) =>
         {
             var project = await store.GetByIdAsync(id);
             if (project is null)
@@ -86,6 +118,7 @@ public static class DatabaseRouter
                 return Results.BadRequest(new { isError = true, message = $"Backup file not found: {request.BackupFile}" });
 
             var opId = Guid.NewGuid().ToString("N");
+            bus.Register(opId);
             _ = Task.Run(() => orchestrator.RestoreAsync(project, opId, request.BackupFile, CancellationToken.None));
             return Results.Accepted($"/api/projects/{id}/db/ops/{opId}/stream",
                 new { opId, message = "Restore started." });
@@ -95,7 +128,7 @@ public static class DatabaseRouter
 
         app.MapPost("/api/projects/{id}/db/query", async (
             string id, QueryRequest request,
-            IProjectStore store, DatabaseOrchestrator orchestrator) =>
+            IProjectStore store, DatabaseOrchestrator orchestrator, BuildEventBus bus) =>
         {
             var project = await store.GetByIdAsync(id);
             if (project is null)
@@ -108,7 +141,29 @@ public static class DatabaseRouter
                 return Results.BadRequest(new { isError = true, message = $"SQL file not found: {request.LocalSqlPath}" });
 
             var opId = Guid.NewGuid().ToString("N");
+            bus.Register(opId);
             _ = Task.Run(() => orchestrator.QueryAsync(project, opId, request.LocalSqlPath, CancellationToken.None));
+            return Results.Accepted($"/api/projects/{id}/db/ops/{opId}/stream",
+                new { opId, message = "Query started." });
+        });
+
+        // ── Raw SQL query ─────────────────────────────────────────────────────
+
+        app.MapPost("/api/projects/{id}/db/query-raw", async (
+            string id, QueryRawRequest request,
+            IProjectStore store, DatabaseOrchestrator orchestrator, BuildEventBus bus) =>
+        {
+            var project = await store.GetByIdAsync(id);
+            if (project is null)
+                return Results.NotFound(new { isError = true, message = $"Project '{id}' not found." });
+            if (project.Database is null)
+                return Results.BadRequest(new { isError = true, message = "No database configuration for this project." });
+            if (string.IsNullOrWhiteSpace(request.Sql))
+                return Results.BadRequest(new { isError = true, message = "sql is required." });
+
+            var opId = Guid.NewGuid().ToString("N");
+            bus.Register(opId);
+            _ = Task.Run(() => orchestrator.QueryRawAsync(project, opId, request.Sql, CancellationToken.None));
             return Results.Accepted($"/api/projects/{id}/db/ops/{opId}/stream",
                 new { opId, message = "Query started." });
         });
@@ -126,6 +181,29 @@ public static class DatabaseRouter
             return Results.Ok(backups);
         });
 
+        // ── Delete backup ─────────────────────────────────────────────────────
+
+        app.MapDelete("/api/projects/{id}/db/backups", async (
+            string id, string file,
+            IProjectStore store, DatabaseOrchestrator orchestrator) =>
+        {
+            var project = await store.GetByIdAsync(id);
+            if (project is null)
+                return Results.NotFound(new { isError = true, message = $"Project '{id}' not found." });
+            if (string.IsNullOrWhiteSpace(file))
+                return Results.BadRequest(new { isError = true, message = "file query param is required." });
+
+            try
+            {
+                orchestrator.DeleteBackup(id, file);
+                return Results.Ok(new { message = "Backup deleted." });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(new { isError = true, message = ex.Message });
+            }
+        });
+
         // ── SSE stream for db operations ──────────────────────────────────────
 
         app.MapGet("/api/projects/{id}/db/ops/{opId}/stream", async (
@@ -137,20 +215,41 @@ public static class DatabaseRouter
             http.Response.Headers["X-Accel-Buffering"] = "no";
             http.Response.Headers.Connection = "keep-alive";
 
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            var heartbeat = Task.Run(async () =>
+            {
+                while (!cts.Token.IsCancellationRequested)
+                {
+                    try
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(15), cts.Token);
+                        await http.Response.WriteAsync(": heartbeat\n\n", cts.Token);
+                        await http.Response.Body.FlushAsync(cts.Token);
+                    }
+                    catch (OperationCanceledException) { break; }
+                }
+            });
+
             var reader = eventBus.Subscribe(opId);
             try
             {
-                await foreach (var payload in reader.ReadAllAsync(ct))
+                await foreach (var payload in reader.ReadAllAsync(cts.Token))
                 {
-                    await http.Response.WriteAsync($"data: {payload}\n\n", ct);
-                    await http.Response.Body.FlushAsync(ct);
+                    await http.Response.WriteAsync($"data: {payload}\n\n", cts.Token);
+                    await http.Response.Body.FlushAsync(cts.Token);
                 }
             }
             catch (OperationCanceledException) { /* client disconnected */ }
-            finally { eventBus.Unsubscribe(opId, reader); }
+            finally
+            {
+                await cts.CancelAsync();
+                await heartbeat;
+                eventBus.Unsubscribe(opId, reader);
+            }
         });
     }
 
     private record RestoreRequest(string BackupFile);
     private record QueryRequest(string LocalSqlPath);
+    private record QueryRawRequest(string Sql);
 }

@@ -76,6 +76,31 @@
   color: #637389;
 }
 
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes logPulse {
+  0%, 100% { border-color: rgba(74, 127, 168, 0.25); }
+  50%       { border-color: rgba(74, 127, 168, 0.6); }
+}
+
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(74, 127, 168, 0.2);
+  border-top-color: #4A7FA8;
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.logBoxRunning {
+  animation: logPulse 2s ease-in-out infinite;
+}
+
 .loading {
   color: #637389;
 }

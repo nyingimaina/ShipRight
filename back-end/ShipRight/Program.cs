@@ -6,6 +6,7 @@ using ShipRight.Modules.Database.Providers;
 using ShipRight.Modules.Filesystem;
 using ShipRight.Modules.Projects;
 using ShipRight.Modules.RepoMaintenance;
+using ShipRight.Modules.Services;
 using ShipRight.Modules.System;
 using ShipRight.Shared.Events;
 using ShipRight.Shared.ProcessRunner;
@@ -84,6 +85,7 @@ try
     app.MapProjectSummaryRoutes();
     app.MapBuildRoutes();
     app.MapDatabaseRoutes();
+    app.MapContainerLogRoutes();
     app.MapRepoMaintenanceRoutes();
 
     app.MapFallbackToFile("index.html");

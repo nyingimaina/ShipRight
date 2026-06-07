@@ -30,7 +30,7 @@ public class MariaDbProvider : IDbProvider
     {
         var pw = "$" + PasswordEnvVar;
         return $"docker exec -i {cfg.ContainerName} sh -c " +
-               $"'exec mysql -u{cfg.RootUser} -p\"{pw}\" {cfg.DatabaseName}' < {remoteFilePath}";
+               $"'exec mysql -u{cfg.RootUser} -p\"{pw}\" --batch --column-names {cfg.DatabaseName}' < {remoteFilePath}";
     }
 
     public string CleanupCommand(string remoteFilePath) => $"rm -f {remoteFilePath}";
