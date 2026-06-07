@@ -40,27 +40,31 @@ const BUILD_STEP_NAMES = [
 const PUSH_STEP_NAMES = ['DockerLoginCheck', 'DockerPush', 'PushComplete'];
 
 const OPTION_LABELS: Record<string, string> = {
-  commit_and_push: 'Commit & Push',
-  commit:          'Commit Only',
-  merge:           'Merge into Deploy Branch',
-  switch:          'Switch to Deploy Branch',
-  build_here:      'Build Current Branch',
-  abort:           'Abort',
-  login:           'Log In',
-  resume:          'Resume from Failed Step',
-  start_fresh:     'Start Fresh',
+  commit_and_push:          'Commit & Push',
+  commit:                   'Commit Only',
+  merge:                    'Merge into Deploy Branch',
+  switch:                   'Switch to Deploy Branch',
+  build_here:               'Build Current Branch',
+  abort:                    'Abort',
+  login:                    'Log In',
+  resume:                   'Resume from Failed Step',
+  start_fresh:              'Start Fresh',
+  install_buildx:           'Install BuildKit',
+  continue_without_buildkit:'Continue Without BuildKit',
 };
 
 const OPTION_DESCS: Record<string, string> = {
-  commit_and_push: 'Stage, commit, and push to remote immediately',
-  commit:          'Stage and commit locally — push manually later',
-  merge:           'Checkout deploy branch, pull, merge current, push',
-  switch:          'Checkout deploy branch and pull latest',
-  build_here:      'Stay on current branch and build as-is',
-  abort:           'Stop this build and exit',
-  login:           'Enter Docker Hub credentials to proceed',
-  resume:          'Skip already-completed steps and continue from the failed step',
-  start_fresh:     'Run all steps from scratch',
+  commit_and_push:          'Stage, commit, and push to remote immediately',
+  commit:                   'Stage and commit locally — push manually later',
+  merge:                    'Checkout deploy branch, pull, merge current, push',
+  switch:                   'Checkout deploy branch and pull latest',
+  build_here:               'Stay on current branch and build as-is',
+  abort:                    'Stop this build and exit',
+  login:                    'Enter Docker Hub credentials to proceed',
+  resume:                   'Skip already-completed steps and continue from the failed step',
+  start_fresh:              'Run all steps from scratch',
+  install_buildx:           'Auto-detect WSL arch, download buildx from GitHub, and enable DOCKER_BUILDKIT=1',
+  continue_without_buildkit:'Use the classic Docker builder (DOCKER_BUILDKIT=0) — slower, no layer cache',
 };
 
 interface PauseState {

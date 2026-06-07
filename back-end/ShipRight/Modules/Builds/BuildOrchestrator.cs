@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Serilog;
 using Serilog.Context;
@@ -24,6 +25,7 @@ public class BuildOrchestrator
     private readonly ISshRunner _ssh;
     private readonly Dictionary<string, TaskCompletionSource<RespondRequest>> _pauseWaiters = new();
     private static readonly ConcurrentDictionary<string, CancellationTokenSource> _cancellations = new();
+    private static readonly HttpClient _httpClient = new();
     private static readonly Dictionary<string, int> _stepNumbers = new()
     {
         ["PreconditionCheck"] = 1, ["GitStatusCheck"] = 2, ["BranchCheck"] = 3,
@@ -201,14 +203,28 @@ public class BuildOrchestrator
             else
             {
                 await ctx.EmitLogAsync(
-                    "BuildKit (buildx) is not available or broken on this machine — " +
-                    "falling back to the classic builder (DOCKER_BUILDKIT=0). " +
-                    "Builds will still succeed but without layer caching or multi-platform support. " +
-                    "To enable BuildKit, install the correct buildx binary for your WSL architecture from " +
-                    "https://github.com/docker/buildx/releases and place it at " +
-                    "~/.docker/cli-plugins/docker-buildx (chmod +x).",
+                    "BuildKit (buildx) is not installed or broken. " +
+                    "Installing it enables faster builds with layer caching.",
                     "shipright");
-                useBuildKit = false;
+
+                await ctx.PauseAsync("buildx_missing",
+                    "Docker BuildKit (buildx) is not installed or broken on this machine. Install it now for faster, cached builds?",
+                    ["install_buildx", "continue_without_buildkit"]);
+                await SaveStep();
+
+                var tcs = new TaskCompletionSource<RespondRequest>();
+                _pauseWaiters[record.Id] = tcs;
+                var response = await tcs.Task;
+
+                if (response.Choice == "install_buildx")
+                {
+                    useBuildKit = await InstallBuildxAsync(ctx);
+                }
+                else
+                {
+                    await ctx.EmitLogAsync("Continuing without BuildKit — classic builder (DOCKER_BUILDKIT=0) will be used.", "shipright");
+                    useBuildKit = false;
+                }
             }
 
             await ctx.EmitLogAsync("Preconditions satisfied.", "shipright");
@@ -965,6 +981,80 @@ public class BuildOrchestrator
         if (services.Count == 0) return null;
         if (services.Any(s => string.IsNullOrWhiteSpace(s.ComposeServiceName))) return null;
         return string.Join(" ", services.Select(s => s.ComposeServiceName));
+    }
+
+    private async Task<bool> InstallBuildxAsync(PipelineContext ctx)
+    {
+        // Detect WSL architecture
+        var unameExe  = OperatingSystem.IsWindows() ? "wsl"   : "uname";
+        var unameArgs = OperatingSystem.IsWindows() ? new[] { "uname", "-m" } : new[] { "-m" };
+        var uname = await _runner.RunAsync(unameExe, unameArgs, null);
+        var rawArch = uname.StdOut.Trim();
+        var arch = rawArch switch
+        {
+            "x86_64"  => "amd64",
+            "aarch64" => "arm64",
+            "armv7l"  => "arm-v7",
+            _         => rawArch
+        };
+        await ctx.EmitLogAsync($"Detected architecture: {rawArch} → {arch}", "shipright");
+
+        // Fetch latest buildx release tag from GitHub API
+        string version;
+        try
+        {
+            _httpClient.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "ShipRight/1.0");
+            var json = await _httpClient.GetStringAsync(
+                "https://api.github.com/repos/docker/buildx/releases/latest");
+            using var doc = JsonDocument.Parse(json);
+            var tagName = doc.RootElement.GetProperty("tag_name").GetString()!;
+            version = tagName.TrimStart('v');
+        }
+        catch (Exception ex)
+        {
+            await ctx.EmitLogAsync($"Could not fetch latest buildx version from GitHub: {ex.Message}", "shipright");
+            await ctx.EmitLogAsync("Falling back to classic builder (DOCKER_BUILDKIT=0).", "shipright");
+            return false;
+        }
+        await ctx.EmitLogAsync($"Latest buildx version: {version}", "shipright");
+
+        var url = $"https://github.com/docker/buildx/releases/download/v{version}/buildx-v{version}.linux-{arch}";
+        await ctx.EmitLogAsync($"Downloading from: {url}", "shipright");
+
+        var installScript =
+            $"mkdir -p ~/.docker/cli-plugins && " +
+            $"curl -fsSL -o ~/.docker/cli-plugins/docker-buildx '{url}' && " +
+            $"chmod +x ~/.docker/cli-plugins/docker-buildx";
+
+        var bashExe  = OperatingSystem.IsWindows() ? "wsl"  : "bash";
+        var bashArgs = OperatingSystem.IsWindows()
+            ? new[] { "bash", "-c", installScript }
+            : new[] { "-c", installScript };
+
+        var install = await _runner.RunAsync(bashExe, bashArgs, null,
+            line => ctx.EmitLogAsync(line, "install"));
+
+        if (!install.Success)
+        {
+            await ctx.EmitLogAsync($"Installation failed: {install.StdErr}", "shipright");
+            await ctx.EmitLogAsync("Falling back to classic builder (DOCKER_BUILDKIT=0).", "shipright");
+            return false;
+        }
+
+        // Verify the install worked
+        var recheck = await _runner.RunAsync("docker", ["buildx", "version"], null);
+        if (recheck.Success)
+        {
+            var ver = recheck.StdOut.Trim().Split('\n')[0].Trim();
+            await ctx.EmitLogAsync($"BuildKit installed and verified ({ver}) — DOCKER_BUILDKIT=1 enabled.", "shipright");
+            return true;
+        }
+
+        await ctx.EmitLogAsync(
+            "buildx was installed but still fails to run — check the binary manually. " +
+            "Falling back to classic builder (DOCKER_BUILDKIT=0).",
+            "shipright");
+        return false;
     }
 
     public async Task<string> RollbackAsync(string targetBuildId)
