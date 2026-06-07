@@ -160,6 +160,8 @@
   outline: none;
   box-sizing: border-box;
   tab-size: 2;
+  /* Prevent tiny text on iOS */
+  -webkit-text-size-adjust: 100%;
 }
 
 .sqlInput:focus {
@@ -168,4 +170,10 @@
 
 .sqlInput::placeholder {
   color: #2E3D54;
+}
+
+@media (max-width: 480px) {
+  .sqlInput { min-height: 110px; font-size: 13px; }
+  .logBox   { font-size: 11px; }
+  .tableWrap { font-size: 11px; }
 }
