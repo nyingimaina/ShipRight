@@ -290,6 +290,25 @@
   color: #3D9970;
 }
 
+@keyframes successPop {
+  0%   { transform: scale(0.95); opacity: 0.7; }
+  60%  { transform: scale(1.02); }
+  100% { transform: scale(1);    opacity: 1;   }
+}
+
+.deploySectionSuccess {
+  background: rgba(61, 153, 112, 0.12) !important;
+  border-color: rgba(61, 153, 112, 0.4) !important;
+  animation: successPop 0.4s ease-out forwards;
+}
+
+.deploySuccessHeading {
+  font-size: 14px;
+  font-weight: 700;
+  color: #3D9970;
+  margin-bottom: 2px;
+}
+
 .errorBanner {
   padding: 12px 16px;
   background: rgba(184, 64, 64, 0.1);

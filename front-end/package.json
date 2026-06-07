@@ -11,6 +11,7 @@
   "dependencies": {
     "@microsoft/signalr": "^10.0.0",
     "@types/react-syntax-highlighter": "^15.5.13",
+    "canvas-confetti": "^1.9.4",
     "framer-motion": "^12.40.0",
     "jattac.libs.web.overflow-menu": "^0.0.35",
     "jattac.libs.web.responsive-table": "^0.12.0",
@@ -35,6 +36,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@types/canvas-confetti": "^1.9.0",
     "@types/lodash": "^4.17.24",
     "@types/node": "^20",
     "@types/react": "^18",

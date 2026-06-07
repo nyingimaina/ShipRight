@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Drawer } from 'vaul';
+import confetti from 'canvas-confetti';
 import ZestButton from 'jattac.libs.web.zest-button';
 import ZestTextbox from 'jattac.libs.web.zest-textbox';
 import { api } from '@/shared/ApiService';
@@ -141,6 +142,25 @@ export default function BuildWizard({ projectId, projectName, currentVersions, i
     }
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [phase]);
+
+  // Celebration effects on key milestones
+  useEffect(() => {
+    const status = buildRecord?.status;
+    if (status === 'Deployed') {
+      // Full gold-and-green burst for a successful deploy
+      confetti({ particleCount: 120, spread: 80, origin: { y: 0.55 },
+        colors: ['#C9A84C', '#3D9970', '#F0F2F5', '#C9D6E3', '#C9943A'] });
+      setTimeout(() => confetti({ particleCount: 60, spread: 50, origin: { x: 0.2, y: 0.6 },
+        colors: ['#C9A84C', '#3D9970'] }), 250);
+      setTimeout(() => confetti({ particleCount: 60, spread: 50, origin: { x: 0.8, y: 0.6 },
+        colors: ['#C9A84C', '#3D9970'] }), 400);
+    } else if (status === 'PushSucceeded' || status === 'BuildSucceeded') {
+      // Smaller side-burst for a push success
+      confetti({ particleCount: 55, spread: 55, origin: { y: 0.6 },
+        colors: ['#4A7FA8', '#C9A84C', '#F0F2F5'] });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buildRecord?.status]);
 
   const appendLine = useCallback((source: string, line: string) => {
     setLines(prev => [...prev, { id: lineCounter++, source, line }]);
@@ -470,11 +490,19 @@ export default function BuildWizard({ projectId, projectName, currentVersions, i
                   </div>
                 )}
 
-                {isDeployed && (
+                {isDeployed && buildRecord?.status === 'Deployed' && (
+                  <div className={`${styles.deploySection} ${styles.deploySectionSuccess}`}>
+                    <div>
+                      <div className={styles.deploySuccessHeading}>Deployed successfully</div>
+                      <div className={styles.deployTag}>{buildRecord?.gitTag}</div>
+                    </div>
+                    <ZestButton onClick={handleClose} zest={{ buttonStyle: 'outline' }}>Close</ZestButton>
+                  </div>
+                )}
+
+                {isDeployed && buildRecord?.status !== 'Deployed' && (
                   <div className={styles.deploySection}>
-                    <span className={styles.deployInfo}>
-                      {buildRecord?.status === 'Deployed' ? '✓ Deployed successfully' : '✗ Deployment failed'}
-                    </span>
+                    <span className={styles.deployInfo}>✗ Deployment failed</span>
                     <ZestButton onClick={handleClose} zest={{ buttonStyle: 'outline' }}>Close</ZestButton>
                   </div>
                 )}
