@@ -13,6 +13,7 @@ namespace ShipRight.Modules.Builds;
 public record StartBuildRequest(string ProjectId, List<ServiceVersionInput> ServiceVersions);
 public record ServiceVersionInput(string ServiceName, string NewVersion);
 public record RespondRequest(string Reason, string Choice, Dictionary<string, string>? Data);
+public record DeployRequest(string? DeployModeOverride);
 
 public class BuildOrchestrator
 {
@@ -74,7 +75,7 @@ public class BuildOrchestrator
         return record;
     }
 
-    public async Task DeployAsync(string buildId)
+    public async Task DeployAsync(string buildId, DeployMode? deployModeOverride = null)
     {
         var record = await _buildStore.GetByIdAsync(buildId);
         if (record is null) return;
@@ -89,17 +90,22 @@ public class BuildOrchestrator
         await _buildStore.SaveAsync(record);
         var deployStartedAt = DateTime.UtcNow;
 
+        var effectiveMode = deployModeOverride ?? project.Server.DeployMode;
+
         try
         {
             await ctx.EmitLogAsync($"Connecting to {project.Server.Username}@{project.Server.Host}…", "ssh");
 
-            var cmd = project.Server.DeployMode switch
+            var cmd = effectiveMode switch
             {
                 DeployMode.GitCompose => BuildGitComposeDeployCmd(project),
                 DeployMode.EnvCompose => BuildEnvComposeDeployCmd(project, record.Versions),
                 _                     => BuildGitScriptDeployCmd(project),  // GitScript (default)
             };
-            await ctx.EmitLogAsync($"Deploy mode: {project.Server.DeployMode}", "shipright");
+            var modeLabel = deployModeOverride is not null
+                ? $"{effectiveMode} (override; project default: {project.Server.DeployMode})"
+                : effectiveMode.ToString();
+            await ctx.EmitLogAsync($"Deploy mode: {modeLabel}", "shipright");
             var exitCode = await _ssh.RunAsync(
                 project.Server.Host,
                 project.Server.Username,

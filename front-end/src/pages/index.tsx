@@ -103,6 +103,7 @@ export default function Dashboard() {
           projectId={wizardTarget.project.id}
           projectName={wizardTarget.project.name}
           currentVersions={versions[wizardTarget.project.id] ?? []}
+          defaultDeployMode={wizardTarget.project.server.deployMode}
           initialBuildId={wizardTarget.buildId}
           isOpen
           onClose={() => setWizardTarget(null)}

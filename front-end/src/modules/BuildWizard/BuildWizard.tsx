@@ -7,6 +7,7 @@ import { api } from '@/shared/ApiService';
 import { buildSse } from '@/shared/SseService';
 import { IBuildRecord } from '@/shared/types/IBuildRecord';
 import { IServiceVersion } from '@/shared/types/IBuildRecord';
+import { DeployMode } from '@/shared/types/IProject';
 import LogViewer, { LogEntry } from './LogViewer';
 import OptionPicker, { PickerOption } from './OptionPicker';
 import styles from './Styles/BuildWizard.module.css';
@@ -15,6 +16,7 @@ interface Props {
   projectId: string;
   projectName: string;
   currentVersions: IServiceVersion[];
+  defaultDeployMode: DeployMode;
   isOpen: boolean;
   onClose: () => void;
   initialBuildId?: string;
@@ -84,8 +86,9 @@ const fmtExpected = (s: number | null | undefined) => {
 
 let lineCounter = 0;
 
-export default function BuildWizard({ projectId, projectName, currentVersions, isOpen, onClose, initialBuildId }: Props) {
+export default function BuildWizard({ projectId, projectName, currentVersions, defaultDeployMode, isOpen, onClose, initialBuildId }: Props) {
   const [phase, setPhase] = useState<Phase>('versions');
+  const [deployModeOverride, setDeployModeOverride] = useState<DeployMode>(defaultDeployMode);
   const [newVersions, setNewVersions] = useState<Record<string, string>>({});
   const [buildId, setBuildId] = useState<string | null>(null);
   const [buildRecord, setBuildRecord] = useState<IBuildRecord | null>(null);
@@ -271,7 +274,7 @@ export default function BuildWizard({ projectId, projectName, currentVersions, i
   const handleDeploy = async () => {
     if (!buildId) return;
     setElapsed(0);
-    await api.post(`/api/builds/${buildId}/deploy`, {});
+    await api.post(`/api/builds/${buildId}/deploy`, { deployModeOverride });
     sseConnected.current = false;
     connectSse(buildId);
   };
@@ -483,10 +486,26 @@ export default function BuildWizard({ projectId, projectName, currentVersions, i
                       <div className={styles.deployInfo}>Pushed to registry — ready to deploy</div>
                       <div className={styles.deployTag}>{buildRecord?.gitTag}</div>
                     </div>
-                    <ZestButton onClick={handleDeploy}
-                      zest={{ visualOptions: { variant: 'standard' }, busyOptions: { handleInternally: true } }}>
-                      Deploy to Production
-                    </ZestButton>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+                      <select
+                        value={deployModeOverride}
+                        onChange={e => setDeployModeOverride(e.target.value as DeployMode)}
+                        style={{ background: '#131D30', color: '#C9D6E3', border: '1px solid rgba(255,255,255,0.12)',
+                          borderRadius: 6, padding: '5px 10px', fontSize: 12, width: '100%' }}>
+                        <option value="GitScript">Git + Script</option>
+                        <option value="GitCompose">Git + Compose</option>
+                        <option value="EnvCompose">Env + Compose</option>
+                      </select>
+                      {deployModeOverride !== defaultDeployMode && (
+                        <span style={{ fontSize: 11, color: '#C9943A' }}>
+                          Override — project default: {defaultDeployMode}
+                        </span>
+                      )}
+                      <ZestButton onClick={handleDeploy}
+                        zest={{ visualOptions: { variant: 'standard' }, busyOptions: { handleInternally: true } }}>
+                        Deploy to Production
+                      </ZestButton>
+                    </div>
                   </div>
                 )}
 

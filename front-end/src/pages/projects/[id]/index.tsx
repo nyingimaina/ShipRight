@@ -845,6 +845,7 @@ export default function ProjectDetail() {
         projectId={project.id}
         projectName={project.name}
         currentVersions={versions}
+        defaultDeployMode={project.server.deployMode}
         initialBuildId={wizardBuildId}
         isOpen={wizardOpen}
         onClose={() => { setWizardOpen(false); setWizardBuildId(undefined); }}

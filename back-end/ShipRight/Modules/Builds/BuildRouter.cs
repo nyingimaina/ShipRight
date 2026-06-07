@@ -1,4 +1,5 @@
 using Serilog;
+using ShipRight.Modules.Projects;
 using ShipRight.Shared.Events;
 
 namespace ShipRight.Modules.Builds;
@@ -130,15 +131,21 @@ public static class BuildRouter
             });
         });
 
-        app.MapPost("/api/builds/{id}/deploy", async (string id, IBuildStore store, BuildOrchestrator orchestrator, BuildEventBus bus) =>
+        app.MapPost("/api/builds/{id}/deploy", async (string id, DeployRequest? request,
+            IBuildStore store, BuildOrchestrator orchestrator, BuildEventBus bus) =>
         {
             var record = await store.GetByIdAsync(id);
             if (record is null) return Results.NotFound(new { isError = true, message = $"Build '{id}' not found." });
             if (record.Status != BuildStatus.PushSucceeded)
                 return Results.BadRequest(new { isError = true, message = "Only a pushed build can be deployed." });
 
+            DeployMode? modeOverride = null;
+            if (request?.DeployModeOverride is not null &&
+                Enum.TryParse<DeployMode>(request.DeployModeOverride, ignoreCase: true, out var parsed))
+                modeOverride = parsed;
+
             bus.Register(id);
-            _ = Task.Run(() => orchestrator.DeployAsync(id));
+            _ = Task.Run(() => orchestrator.DeployAsync(id, modeOverride));
             return Results.Accepted($"/api/builds/{id}", new
             {
                 buildId = id,
