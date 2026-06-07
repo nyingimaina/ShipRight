@@ -4,6 +4,7 @@ export interface IDetectedService {
   buildContextPath: string;
   dockerImageName: string | null;
   imageDetected: boolean;
+  composeServiceName: string | null;
 }
 
 export interface IDetectedGitRepo {

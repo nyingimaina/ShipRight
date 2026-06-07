@@ -894,17 +894,23 @@ public class BuildOrchestrator
 
     /// <summary>
     /// GitCompose: git pull the compose repo (which has updated image tags from Step 5),
-    /// then pull and restart all services via docker compose.
+    /// then pull and restart. Uses targeted --no-deps restart when all built services
+    /// have a ComposeServiceName configured (avoids restarting nginx/minio/etc.).
     /// </summary>
     private static string BuildGitComposeDeployCmd(ProjectConfig project)
     {
         var branch = project.GitRepos.FirstOrDefault()?.DeployBranch ?? "master";
-        return $"cd {project.Server.RemoteWorkingDir} && git pull origin {branch} && docker compose pull && docker compose up -d";
+        var svcNames = GetTargetedServiceNames(project.Services);
+        var composeUp = svcNames is not null
+            ? $"docker compose pull {svcNames} && docker compose up -d --no-deps {svcNames}"
+            : "docker compose pull && docker compose up -d";
+        return $"cd {project.Server.RemoteWorkingDir} && git pull origin {branch} && {composeUp}";
     }
 
     /// <summary>
     /// EnvCompose: inject image tags as env vars at deploy time so the server never needs
     /// a git pull of the compose repo (useful when compose is not in a git-tracked dir).
+    /// Uses targeted --no-deps restart when all built services have a ComposeServiceName.
     /// </summary>
     private static string BuildEnvComposeDeployCmd(ProjectConfig project, List<ServiceVersion> versions)
     {
@@ -913,7 +919,22 @@ public class BuildOrchestrator
             var key = Regex.Replace(v.ServiceName.ToUpperInvariant(), @"[^A-Z0-9]", "_") + "_TAG";
             return $"{key}={v.DockerImageName}:{v.NewVersion}";
         }));
-        return $"cd {project.Server.RemoteWorkingDir} && export {envVars} && docker compose pull && docker compose up -d";
+        var svcNames = GetTargetedServiceNames(project.Services);
+        var composeUp = svcNames is not null
+            ? $"docker compose pull {svcNames} && docker compose up -d --no-deps {svcNames}"
+            : "docker compose pull && docker compose up -d";
+        return $"cd {project.Server.RemoteWorkingDir} && export {envVars} && {composeUp}";
+    }
+
+    /// <summary>
+    /// Returns a space-separated list of compose service names if every service has one
+    /// configured, otherwise null (fall back to restarting the whole stack).
+    /// </summary>
+    private static string? GetTargetedServiceNames(List<ServiceConfig> services)
+    {
+        if (services.Count == 0) return null;
+        if (services.Any(s => string.IsNullOrWhiteSpace(s.ComposeServiceName))) return null;
+        return string.Join(" ", services.Select(s => s.ComposeServiceName));
     }
 
     public async Task<string> RollbackAsync(string targetBuildId)

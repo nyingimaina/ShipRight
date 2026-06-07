@@ -7,8 +7,9 @@ public record DetectedService(
     string SuggestedName,
     string VersionFilePath,
     string BuildContextPath,
-    string? DockerImageName,    // null if not detected
-    bool ImageDetected);
+    string? DockerImageName,        // null if not detected
+    bool ImageDetected,
+    string? ComposeServiceName);    // service key in docker-compose.yml, null if not detected
 
 public record DetectedGitRepo(string RepoPath, string DeployBranch);
 
@@ -84,16 +85,19 @@ public static class ProjectDetector
             // Suggest service name from directory name (clean it up)
             var svcName = ToServiceName(dirName);
 
-            // Try to find image name from compose file
-            string? imageName = composeImageMap
+            // Try to find image name and compose service name from compose file
+            var composeMatch = composeImageMap
                 .Where(kv => dirName.Contains(kv.Key, StringComparison.OrdinalIgnoreCase)
                           || kv.Key.Contains(dirName, StringComparison.OrdinalIgnoreCase))
-                .Select(kv => kv.Value)
+                .Cast<KeyValuePair<string, string>?>()
                 .FirstOrDefault();
 
-            services.Add(new DetectedService(svcName, vf, buildContext, imageName, imageName is not null));
-            Log.Information("Service detected: {Name} | version: {Vf} | context: {Ctx} | image: {Img}",
-                svcName, vf, buildContext, imageName ?? "(not found)");
+            string? imageName = composeMatch?.Value;
+            string? composeServiceName = composeMatch?.Key;
+
+            services.Add(new DetectedService(svcName, vf, buildContext, imageName, imageName is not null, composeServiceName));
+            Log.Information("Service detected: {Name} | version: {Vf} | context: {Ctx} | image: {Img} | compose: {Compose}",
+                svcName, vf, buildContext, imageName ?? "(not found)", composeServiceName ?? "(not found)");
         }
 
         // ── Git detection — find all unique .git roots ────────────────────────

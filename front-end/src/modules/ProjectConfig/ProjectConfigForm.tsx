@@ -45,7 +45,7 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
 
   const addService = () => setForm(prev => ({
     ...prev,
-    services: [...prev.services, { name: '', versionFilePath: '', buildContextPath: '', dockerImageName: '' }],
+    services: [...prev.services, { name: '', versionFilePath: '', buildContextPath: '', dockerImageName: '', composeServiceName: '' }],
   }));
 
   const removeService = (i: number) => setForm(prev => ({
@@ -172,6 +172,13 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
               <Field label="Docker Image Name" error={errors[`services[${i}].dockerImageName`]}>
                 <ZestTextbox value={svc.dockerImageName} onChange={e => setService(i, 'dockerImageName', e.target.value)}
                   placeholder="nyingi/jattac-sms" zest={{ stretch: true }} />
+              </Field>
+              <Field label="Compose Service Name" error={errors[`services[${i}].composeServiceName`]}>
+                <ZestTextbox value={svc.composeServiceName} onChange={e => setService(i, 'composeServiceName', e.target.value)}
+                  placeholder="api (key in docker-compose.yml services:)" zest={{ stretch: true }} />
+                <p style={{ margin: '4px 0 0', fontSize: 11, color: '#637389' }}>
+                  Optional — when set on all services, only those containers are restarted (nginx/minio stay up).
+                </p>
               </Field>
             </div>
           ))}

@@ -3,6 +3,7 @@ export interface IServiceConfig {
   versionFilePath: string;
   buildContextPath: string;
   dockerImageName: string;
+  composeServiceName: string;
 }
 
 export interface IGitConfig {
@@ -59,7 +60,7 @@ export const emptyDatabaseConfig = (): IDatabaseConfig => ({
 
 export const emptyProjectInput = (): IProjectInput => ({
   name: '',
-  services: [{ name: '', versionFilePath: '', buildContextPath: '', dockerImageName: '' }],
+  services: [{ name: '', versionFilePath: '', buildContextPath: '', dockerImageName: '', composeServiceName: '' }],
   gitRepos: [],
   wsl: { workingDir: '' },
   server: { host: '', username: 'ubuntu', sshKeyPath: '', remoteWorkingDir: '', rebuildScript: 'rebuild.sh', deployMode: 'GitScript' },

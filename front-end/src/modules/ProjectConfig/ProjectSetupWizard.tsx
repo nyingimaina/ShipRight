@@ -34,8 +34,8 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
   // Editable fields from detection + manual
   const [name, setName]                 = useState(existing?.name ?? '');
   const [services, setServices]         = useState(existing
-    ? existing.services.map(s => ({ name: s.name, versionFilePath: s.versionFilePath, buildContextPath: s.buildContextPath, dockerImageName: s.dockerImageName }))
-    : [] as { name: string; versionFilePath: string; buildContextPath: string; dockerImageName: string }[]);
+    ? existing.services.map(s => ({ name: s.name, versionFilePath: s.versionFilePath, buildContextPath: s.buildContextPath, dockerImageName: s.dockerImageName, composeServiceName: s.composeServiceName ?? '' }))
+    : [] as { name: string; versionFilePath: string; buildContextPath: string; dockerImageName: string; composeServiceName: string }[]);
   const [gitRepos, setGitRepos]         = useState<{ repoPath: string; deployBranch: string }[]>(existing?.gitRepos ?? []);
   const [wslWorkingDir, setWslWorkingDir] = useState(existing?.wsl.workingDir ?? '');
   const [serverHost, setServerHost]     = useState(existing?.server.host ?? '');
@@ -70,6 +70,7 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
         versionFilePath: s.versionFilePath,
         buildContextPath: s.buildContextPath,
         dockerImageName: s.dockerImageName ?? '',
+        composeServiceName: s.composeServiceName ?? '',
       })));
       setStep('review');
     } catch (e: unknown) {
@@ -277,6 +278,20 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
                   {errors[`services[${i}].dockerImageName`] && (
                     <p className={styles.errorText}>{errors[`services[${i}].dockerImageName`]}</p>
                   )}
+                </div>
+
+                <div className={styles.fieldRow}>
+                  <span className={styles.fieldLabel}>
+                    Compose service name
+                    {svc.composeServiceName && <span className={styles.detectedBadge} style={{ marginLeft: 6 }}>auto-detected</span>}
+                  </span>
+                  <ZestTextbox value={svc.composeServiceName ?? ''}
+                    onChange={e => setServices(prev => prev.map((s, j) => j === i ? { ...s, composeServiceName: e.target.value } : s))}
+                    placeholder="e.g. api (key in docker-compose.yml)"
+                    zest={{ stretch: true, zSize: 'sm' }} />
+                  <p style={{ margin: '3px 0 0', fontSize: 11, color: '#637389' }}>
+                    Optional — when set on all services, only those containers restart (nginx/minio stay up).
+                  </p>
                 </div>
 
                 <div className={styles.fieldRow}>

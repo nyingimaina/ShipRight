@@ -19,6 +19,12 @@ public record ServiceConfig
     public string VersionFilePath { get; init; } = string.Empty;
     public string BuildContextPath { get; init; } = string.Empty;
     public string DockerImageName { get; init; } = string.Empty;
+    /// <summary>
+    /// The service key in docker-compose.yml (e.g. "api", "web").
+    /// When set on all built services, deploy uses targeted --no-deps restart
+    /// instead of bringing the whole stack down and up.
+    /// </summary>
+    public string ComposeServiceName { get; init; } = string.Empty;
 }
 
 public record GitConfig
