@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Tab, TabList, TabPanel, Tabs } from 'react-tabs';
 import ZestButton from 'jattac.libs.web.zest-button';
 import ZestTextbox from 'jattac.libs.web.zest-textbox';
 import { RiAddLine, RiDeleteBinLine } from 'react-icons/ri';
-import { IApiError, IProjectInput, emptyProjectInput } from '@/shared/types/IProject';
+import { IApiError, IDatabaseConfig, IProjectInput, DbProviderType, emptyDatabaseConfig, emptyProjectInput } from '@/shared/types/IProject';
+import { api } from '@/shared/ApiService';
 import styles from './Styles/ProjectConfigForm.module.css';
 
 interface Props {
@@ -12,9 +13,15 @@ interface Props {
   onCancel: () => void;
 }
 
-export default function ProjectConfigForm({ initial, onSave, onCancel }: Props) {
+export default function ProjectConfigForm({ initial, onSave, onCancel, projectId }: Props & { projectId?: string }) {
   const [form, setForm] = useState<IProjectInput>(initial ?? emptyProjectInput());
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [dbEnabled, setDbEnabled] = useState(!!initial?.database);
+  const [db, setDb] = useState<IDatabaseConfig>(initial?.database ?? emptyDatabaseConfig());
+  const [containers, setContainers] = useState<{ name: string; image: string; status: string }[]>([]);
+  const [databases, setDatabases] = useState<string[]>([]);
+  const [loadingContainers, setLoadingContainers] = useState(false);
+  const [loadingDatabases, setLoadingDatabases] = useState(false);
 
   const set = (path: string, value: string) => {
     const parts = path.split('.');
@@ -62,10 +69,43 @@ export default function ProjectConfigForm({ initial, onSave, onCancel }: Props) 
     ...prev, gitRepos: prev.gitRepos.filter((_, idx) => idx !== i),
   }));
 
+  const detectContainers = async () => {
+    if (!projectId) return;
+    setLoadingContainers(true);
+    setContainers([]);
+    setDatabases([]);
+    try {
+      const list = await api.get<{ name: string; image: string; status: string }[]>(
+        `/api/projects/${projectId}/db/containers`);
+      setContainers(list);
+    } catch { /* server not reachable yet — user can type manually */ }
+    finally { setLoadingContainers(false); }
+  };
+
+  const detectDatabases = async (containerName: string, provider: DbProviderType) => {
+    if (!projectId || !containerName) return;
+    setLoadingDatabases(true);
+    setDatabases([]);
+    try {
+      const list = await api.get<string[]>(
+        `/api/projects/${projectId}/db/databases?container=${encodeURIComponent(containerName)}&provider=${provider}`);
+      setDatabases(list);
+    } catch { /* ignore */ }
+    finally { setLoadingDatabases(false); }
+  };
+
+  const setDbField = <K extends keyof IDatabaseConfig>(key: K, value: IDatabaseConfig[K]) => {
+    setDb(prev => ({ ...prev, [key]: value }));
+  };
+
   const handleSave = async () => {
     setErrors({});
     try {
-      await onSave(form);
+      const payload: IProjectInput = {
+        ...form,
+        database: dbEnabled ? db : undefined,
+      };
+      await onSave(payload);
     } catch (errs: unknown) {
       const apiErrors: Record<string, string> = {};
       const list = Array.isArray(errs) ? errs : [errs];
@@ -90,6 +130,7 @@ export default function ProjectConfigForm({ initial, onSave, onCancel }: Props) 
             { label: 'Services',  keys: ['services'] },
             { label: 'Git & WSL', keys: ['gitRepos', 'wsl'] },
             { label: 'Server',    keys: ['server'] },
+            { label: 'Database',  keys: ['database'] },
           ].map(({ label, keys }) => (
             <Tab key={label} className={tabClass(keys)} selectedClassName={styles.tabActive}>
               {label}
@@ -195,6 +236,80 @@ export default function ProjectConfigForm({ initial, onSave, onCancel }: Props) 
             <ZestTextbox value={form.server.rebuildScript} onChange={e => set('server.rebuildScript', e.target.value)}
               placeholder="rebuild.sh" maxLength={100} zest={{ stretch: true }} />
           </Field>
+        </TabPanel>
+        <TabPanel className={styles.panel} selectedClassName={styles.panelActive}>
+          <div className={styles.formRow} style={{ alignItems: 'center', flexDirection: 'row', gap: 12 }}>
+            <label className={styles.label} style={{ marginBottom: 0 }}>Enable database management</label>
+            <input type="checkbox" checked={dbEnabled} onChange={e => setDbEnabled(e.target.checked)}
+              style={{ accentColor: '#C9A84C', width: 16, height: 16 }} />
+          </div>
+
+          {dbEnabled && (
+            <>
+              <Field label="Provider">
+                <select value={db.provider}
+                  onChange={e => {
+                    const p = e.target.value as DbProviderType;
+                    setDbField('provider', p);
+                    setDbField('rootUser', p === 'MariaDb' ? 'root' : 'sa');
+                    setContainers([]);
+                    setDatabases([]);
+                  }}
+                  style={{ background: '#131D30', color: '#F0F2F5', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, padding: '6px 10px', width: '100%' }}>
+                  <option value="MariaDb">MariaDB</option>
+                  <option value="SqlServer">SQL Server</option>
+                </select>
+              </Field>
+
+              <Field label="Container name">
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {containers.length > 0
+                    ? <select value={db.containerName}
+                        onChange={e => {
+                          setDbField('containerName', e.target.value);
+                          detectDatabases(e.target.value, db.provider);
+                        }}
+                        style={{ flex: 1, background: '#131D30', color: '#F0F2F5', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, padding: '6px 10px' }}>
+                        <option value="">Select a container…</option>
+                        {containers.map(c => (
+                          <option key={c.name} value={c.name}>{c.name} — {c.image}</option>
+                        ))}
+                      </select>
+                    : <ZestTextbox value={db.containerName} onChange={e => setDbField('containerName', e.target.value)}
+                        placeholder="e.g. jattac-database" zest={{ stretch: true }} />
+                  }
+                  <ZestButton onClick={detectContainers} disabled={loadingContainers || !projectId}
+                    zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}>
+                    {loadingContainers ? '…' : 'Detect'}
+                  </ZestButton>
+                </div>
+              </Field>
+
+              <Field label="Database name">
+                {databases.length > 0
+                  ? <select value={db.databaseName} onChange={e => setDbField('databaseName', e.target.value)}
+                      style={{ width: '100%', background: '#131D30', color: '#F0F2F5', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, padding: '6px 10px' }}>
+                      <option value="">Select a database…</option>
+                      {databases.map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                  : <ZestTextbox value={db.databaseName} onChange={e => setDbField('databaseName', e.target.value)}
+                      placeholder="e.g. jattac_sms" zest={{ stretch: true }} />
+                }
+                {loadingDatabases && <span style={{ color: '#637389', fontSize: 12 }}>Fetching databases…</span>}
+              </Field>
+
+              <Field label="Root user">
+                <ZestTextbox value={db.rootUser} onChange={e => setDbField('rootUser', e.target.value)}
+                  placeholder="root" zest={{ stretch: true }} />
+              </Field>
+
+              <Field label="Backup retain count">
+                <ZestTextbox value={String(db.backupRetainCount)}
+                  onChange={e => setDbField('backupRetainCount', Number(e.target.value) || 10)}
+                  placeholder="10" zest={{ stretch: true }} />
+              </Field>
+            </>
+          )}
         </TabPanel>
       </Tabs>
 

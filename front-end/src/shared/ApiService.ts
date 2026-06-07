@@ -14,9 +14,19 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return data as T;
 }
 
+async function getRaw(path: string): Promise<string> {
+  const res = await fetch(`${BASE}${path}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({ message: `HTTP ${res.status}` }));
+    throw data;
+  }
+  return res.text();
+}
+
 export const api = {
   get:    <T>(path: string)               => request<T>('GET',    path),
   post:   <T>(path: string, body: unknown) => request<T>('POST',   path, body),
   put:    <T>(path: string, body: unknown) => request<T>('PUT',    path, body),
   delete: <T>(path: string)               => request<T>('DELETE', path),
+  getRaw,
 };

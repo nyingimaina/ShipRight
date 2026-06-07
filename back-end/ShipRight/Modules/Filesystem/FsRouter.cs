@@ -9,6 +9,7 @@ public static class FsRouter
 {
     private const int MaxPathLength = 4096;
     private const int SshConnectTimeoutSecs = 15;
+    private const long MaxReadBytes = 512 * 1024;
 public static void MapFsRoutes(this WebApplication app)
     {
         app.MapGet("/api/fs/shortcuts", async () =>
@@ -94,6 +95,30 @@ public static void MapFsRoutes(this WebApplication app)
             catch (UnauthorizedAccessException)
             {
                 return Results.Ok(new { path = dir, parent = parentDir, entries = Array.Empty<object>() });
+            }
+        });
+
+        app.MapGet("/api/fs/read", (string path) =>
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return Results.BadRequest(new { isError = true, message = "path is required." });
+            if (path.Contains("..") || path.Contains('\0') || path.Length > MaxPathLength)
+                return Results.BadRequest(new { isError = true, message = "Invalid path." });
+            if (!File.Exists(path))
+                return Results.NotFound(new { isError = true, message = $"File not found: {path}" });
+
+            var info = new FileInfo(path);
+            if (info.Length > MaxReadBytes)
+                return Results.BadRequest(new { isError = true, message = $"File too large to preview ({info.Length:N0} bytes; limit is {MaxReadBytes / 1024} KB)." });
+
+            try
+            {
+                var content = File.ReadAllText(path);
+                return Results.Text(content, "text/plain");
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Results.BadRequest(new { isError = true, message = "Access denied." });
             }
         });
 

@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@microsoft/signalr": "^10.0.0",
+    "@types/react-syntax-highlighter": "^15.5.13",
     "framer-motion": "^12.40.0",
     "jattac.libs.web.overflow-menu": "^0.0.35",
     "jattac.libs.web.responsive-table": "^0.12.0",
@@ -26,6 +27,7 @@
     "react-hot-toast": "^2.6.0",
     "react-icons": "^5.6.0",
     "react-select": "^5.10.2",
+    "react-syntax-highlighter": "^16.1.1",
     "react-tabs": "^6.1.1",
     "timeago-react": "^3.0.7",
     "vaul": "^1.1.2",

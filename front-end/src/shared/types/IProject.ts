@@ -22,6 +22,16 @@ export interface IServerConfig {
   rebuildScript: string;
 }
 
+export type DbProviderType = 'MariaDb' | 'SqlServer';
+
+export interface IDatabaseConfig {
+  provider: DbProviderType;
+  containerName: string;
+  databaseName: string;
+  rootUser: string;
+  backupRetainCount: number;
+}
+
 export interface IProject {
   id: string;
   name: string;
@@ -29,11 +39,20 @@ export interface IProject {
   gitRepos: IGitConfig[];
   wsl: IWslConfig;
   server: IServerConfig;
+  database?: IDatabaseConfig;
   createdAt: string;
   modifiedAt: string;
 }
 
 export type IProjectInput = Omit<IProject, 'id' | 'createdAt' | 'modifiedAt'>;
+
+export const emptyDatabaseConfig = (): IDatabaseConfig => ({
+  provider: 'MariaDb',
+  containerName: '',
+  databaseName: '',
+  rootUser: 'root',
+  backupRetainCount: 10,
+});
 
 export const emptyProjectInput = (): IProjectInput => ({
   name: '',

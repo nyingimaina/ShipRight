@@ -1,8 +1,11 @@
 using Serilog;
 using Serilog.Formatting.Json;
 using ShipRight.Modules.Builds;
+using ShipRight.Modules.Database;
+using ShipRight.Modules.Database.Providers;
 using ShipRight.Modules.Filesystem;
 using ShipRight.Modules.Projects;
+using ShipRight.Modules.RepoMaintenance;
 using ShipRight.Modules.System;
 using ShipRight.Shared.Events;
 using ShipRight.Shared.ProcessRunner;
@@ -49,6 +52,12 @@ try
     builder.Services.AddSingleton<KnownHostsStore>();
     builder.Services.AddSingleton<ISshRunner, SshRunner>();
     builder.Services.AddSingleton<BuildOrchestrator>();
+    builder.Services.AddSingleton<MariaDbProvider>();
+    builder.Services.AddSingleton<SqlServerProvider>();
+    builder.Services.AddSingleton<IDbProviderResolver>(sp => new DbProviderResolver(
+        sp.GetRequiredService<MariaDbProvider>(),
+        sp.GetRequiredService<SqlServerProvider>()));
+    builder.Services.AddSingleton<DatabaseOrchestrator>();
 
     var app = builder.Build();
 
@@ -74,6 +83,8 @@ try
     app.MapProjectRoutes();
     app.MapProjectSummaryRoutes();
     app.MapBuildRoutes();
+    app.MapDatabaseRoutes();
+    app.MapRepoMaintenanceRoutes();
 
     app.MapFallbackToFile("index.html");
 

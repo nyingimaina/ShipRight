@@ -10,6 +10,7 @@ public static class DataDirectory
         );
         Directory.CreateDirectory(Path.Combine(dir, "builds"));
         Directory.CreateDirectory(Path.Combine(dir, "logs"));
+        Directory.CreateDirectory(Path.Combine(dir, "backups"));
         return dir;
     }
 }
