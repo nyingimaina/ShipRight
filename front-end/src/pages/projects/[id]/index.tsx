@@ -13,18 +13,20 @@ import ZestTabs, { ZestTabItem } from 'jattac.libs.web.zest-tabs';
 import { api, sseUrl } from '@/shared/ApiService';
 import { useElapsedTimer, fmtElapsed } from '@/shared/hooks/useElapsedTimer';
 
-const SqlQueryPanel = dynamic(() => import('@/modules/Database/SqlQueryPanel'), { ssr: false });
+const SqlQueryPanel  = dynamic(() => import('@/modules/Database/SqlQueryPanel'),  { ssr: false });
+const SshTerminal    = dynamic(() => import('@/modules/Ssh/SshTerminal'),          { ssr: false });
 import { IDatabaseConfig, IProject } from '@/shared/types/IProject';
 import { IDeployment, IServiceVersion } from '@/shared/types/IBuildRecord';
 import styles from './Styles/ProjectDetail.module.css';
 
-type ProjectTab = 'overview' | 'build' | 'database' | 'logs';
+type ProjectTab = 'overview' | 'build' | 'database' | 'logs' | 'terminal';
 
 const PROJECT_TABS: ZestTabItem<ProjectTab>[] = [
   { label: 'Overview',       value: 'overview'  },
   { label: 'Build & Deploy', value: 'build'     },
   { label: 'Database',       value: 'database'  },
   { label: 'Logs',           value: 'logs'      },
+  { label: 'Terminal',       value: 'terminal'  },
 ];
 
 function toLogEntries(lines: string[]): LogEntry[] {
@@ -811,6 +813,28 @@ export default function ProjectDetail() {
                 lines={toLogEntries(logLines)}
                 isLive={logActive}
               />
+            )}
+          </section>
+        )}
+
+        {activeTab === 'terminal' && (
+          <section className={styles.section}>
+            <h2 className={styles.sectionTitle}>SSH Terminal</h2>
+            <p style={{ marginBottom: 16, fontSize: 13, color: '#637389' }}>
+              Run arbitrary commands on{' '}
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", color: '#C9D6E3' }}>
+                {project.server.username}@{project.server.host}
+              </span>
+            </p>
+            {project.server.host ? (
+              <SshTerminal
+                projectId={project.id}
+                serverLabel={`${project.server.username}@${project.server.host}`}
+              />
+            ) : (
+              <p style={{ color: '#C9943A', fontSize: 13 }}>
+                No server configured for this project. Edit the project to add server details.
+              </p>
             )}
           </section>
         )}

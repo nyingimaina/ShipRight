@@ -7,6 +7,7 @@ using ShipRight.Modules.Filesystem;
 using ShipRight.Modules.Projects;
 using ShipRight.Modules.RepoMaintenance;
 using ShipRight.Modules.Services;
+using ShipRight.Modules.Ssh;
 using ShipRight.Modules.System;
 using ShipRight.Shared.Events;
 using ShipRight.Shared.ProcessRunner;
@@ -85,6 +86,7 @@ try
     app.MapProjectSummaryRoutes();
     app.MapBuildRoutes();
     app.MapDatabaseRoutes();
+    app.MapSshTerminalRoutes();
     app.MapContainerLogRoutes();
     app.MapRepoMaintenanceRoutes();
 
