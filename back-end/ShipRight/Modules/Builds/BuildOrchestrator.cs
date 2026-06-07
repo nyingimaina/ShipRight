@@ -539,7 +539,9 @@ public class BuildOrchestrator
             }
             else
             {
-                await ctx.EmitLogAsync($"docker-compose.yml not found at {composePath} — skipping compose sync", "shipright");
+                throw new InvalidOperationException(
+                    $"docker-compose.yml not found at '{composePath}'. " +
+                    "Ensure the WSL working directory is set to the folder containing docker-compose.yml.");
             }
             } // end else (not skipped)
             await ctx.StepCompletedAsync(5, "ComposeRepoSync");
@@ -979,15 +981,26 @@ public class BuildOrchestrator
             {
                 var branch = project.GitRepos.FirstOrDefault()?.DeployBranch ?? "master";
                 await ctx.EmitLogAsync("Updating compose repo to rollback versions…", "shipright");
-                await _runner.RunAsync("git",
+                var rbPull = await _runner.RunAsync("git",
                     ["-C", project.Wsl.WorkingDir, "pull", "origin", branch],
                     null, line => ctx.EmitLogAsync(line, "git"));
+                if (!rbPull.Success)
+                    throw new InvalidOperationException($"git pull failed during rollback:\n{rbPull.StdErr}");
+
                 var composePath = project.Wsl.WorkingDir.TrimEnd('/', '\\') + "/docker-compose.yml";
+                if (!File.Exists(composePath))
+                    throw new InvalidOperationException(
+                        $"docker-compose.yml not found at '{composePath}' — cannot rollback without it.");
+
                 var imageMap = target.Versions.ToDictionary(v => v.DockerImageName, v => v.NewVersion);
                 await DockerComposeUpdater.UpdateAsync(composePath, imageMap);
-                await _runner.RunAsync("git",
+
+                var rbAdd = await _runner.RunAsync("git",
                     ["-C", project.Wsl.WorkingDir, "add", "docker-compose.yml"],
                     null, line => ctx.EmitLogAsync(line, "git"));
+                if (!rbAdd.Success)
+                    throw new InvalidOperationException($"git add failed during rollback:\n{rbAdd.StdErr}");
+
                 var commitResult = await _runner.RunAsync("git",
                     ["-C", project.Wsl.WorkingDir, "commit", "-m", $"chore: rollback to {target.GitTag}"],
                     null, line => ctx.EmitLogAsync(line, "git"));
@@ -995,12 +1008,15 @@ public class BuildOrchestrator
                 {
                     var commitOut = commitResult.StdOut + commitResult.StdErr;
                     if (!commitOut.Contains("nothing to commit"))
-                        throw new InvalidOperationException($"git commit failed: {commitOut}");
-                    await ctx.EmitLogAsync("Compose already at target versions — skipping commit", "shipright");
+                        throw new InvalidOperationException($"git commit failed during rollback:\n{commitOut}");
+                    await ctx.EmitLogAsync("Compose already at rollback versions — nothing new to commit.", "shipright");
                 }
-                await _runner.RunAsync("git",
+
+                var rbPush = await _runner.RunAsync("git",
                     ["-C", project.Wsl.WorkingDir, "push", "origin", branch],
                     null, line => ctx.EmitLogAsync(line, "git"));
+                if (!rbPush.Success)
+                    throw new InvalidOperationException($"git push failed during rollback:\n{rbPush.StdErr}");
             }
 
             await ctx.EmitLogAsync($"Connecting to {project.Server.Host}…", "ssh");
