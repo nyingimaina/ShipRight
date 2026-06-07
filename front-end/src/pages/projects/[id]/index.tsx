@@ -7,9 +7,11 @@ import dynamic from 'next/dynamic';
 import AppShell from '@/modules/AppShell/AppShell';
 import BuildWizard from '@/modules/BuildWizard/BuildWizard';
 import { ProjectSummary } from '@/modules/Dashboard/ProjectCard';
+import LogViewer, { LogEntry } from '@/modules/BuildWizard/LogViewer';
 import ZestButton from 'jattac.libs.web.zest-button';
 import ZestTabs, { ZestTabItem } from 'jattac.libs.web.zest-tabs';
 import { api, sseUrl } from '@/shared/ApiService';
+import { useElapsedTimer, fmtElapsed } from '@/shared/hooks/useElapsedTimer';
 
 const SqlQueryPanel = dynamic(() => import('@/modules/Database/SqlQueryPanel'), { ssr: false });
 import { IDatabaseConfig, IProject } from '@/shared/types/IProject';
@@ -24,6 +26,17 @@ const PROJECT_TABS: ZestTabItem<ProjectTab>[] = [
   { label: 'Database',       value: 'database'  },
   { label: 'Logs',           value: 'logs'      },
 ];
+
+function toLogEntries(lines: string[]): LogEntry[] {
+  return lines.map((line, i) => ({
+    id: i,
+    source: line.startsWith('[docker]') ? 'docker'
+          : line.startsWith('[git]') ? 'git'
+          : line.startsWith('[ssh]') ? 'ssh'
+          : 'shipright',
+    line,
+  }));
+}
 
 export default function ProjectDetail() {
   const router = useRouter();
@@ -62,7 +75,7 @@ export default function ProjectDetail() {
 
   // Build log panel
   const [showBuildLog, setShowBuildLog] = useState(false);
-  const [buildLogContent, setBuildLogContent] = useState<string | null>(null);
+  const [buildLogLines, setBuildLogLines] = useState<LogEntry[]>([]);
   const [buildLogLoading, setBuildLogLoading] = useState(false);
 
   // Container log stream
@@ -72,7 +85,11 @@ export default function ProjectDetail() {
   const [logLines, setLogLines] = useState<string[]>([]);
   const [logActive, setLogActive] = useState(false);
   const logEsRef = useRef<EventSource | null>(null);
-  const logEndRef = useRef<HTMLDivElement>(null);
+
+  // Elapsed timers for active operations
+  const dbElapsed = useElapsedTimer(dbStatus === 'running');
+  const rollbackElapsed = useElapsedTimer(rollbackStatus === 'running');
+  const logElapsed = useElapsedTimer(logActive);
 
   useEffect(() => {
     if (!id) return;
@@ -88,11 +105,6 @@ export default function ProjectDetail() {
       .catch(() => toast.error('Project not found.'))
       .finally(() => setLoading(false));
   }, [id]);
-
-  // Auto-scroll container log box
-  useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [logLines]);
 
   // Cleanup EventSource and delete countdown on unmount
   useEffect(() => {
@@ -140,7 +152,6 @@ export default function ProjectDetail() {
         if (es.readyState === EventSource.CLOSED) {
           setDbStatus('error'); setDbMessage('Connection lost.'); setBackupRunning(false);
         }
-        // readyState CONNECTING = browser is auto-retrying; do nothing
       };
     } catch (e: unknown) {
       setDbStatus('error');
@@ -318,12 +329,12 @@ export default function ProjectDetail() {
   const loadLastBuildLog = async () => {
     if (!summary?.lastBuild?.id) return;
     setBuildLogLoading(true);
-    setBuildLogContent(null);
+    setBuildLogLines([]);
     try {
       const content = await api.getRaw(`/api/builds/${summary.lastBuild.id}/log`);
-      setBuildLogContent(content);
+      setBuildLogLines(toLogEntries(content.split('\n').filter(Boolean)));
     } catch {
-      setBuildLogContent('(Failed to load log)');
+      setBuildLogLines([{ id: 0, source: 'shipright', line: '(Failed to load log)' }]);
     } finally {
       setBuildLogLoading(false);
     }
@@ -372,19 +383,6 @@ export default function ProjectDetail() {
     logEsRef.current?.close();
     logEsRef.current = null;
     setLogActive(false);
-  };
-
-  const logBoxStyle: React.CSSProperties = {
-    background: '#0D1625',
-    border: '1px solid rgba(255,255,255,0.08)',
-    borderRadius: 8,
-    padding: '10px 14px',
-    fontFamily: "'JetBrains Mono', monospace",
-    fontSize: 12,
-    lineHeight: 1.6,
-    color: '#A8B8CC',
-    maxHeight: 400,
-    overflowY: 'auto',
   };
 
   return (
@@ -469,26 +467,15 @@ export default function ProjectDetail() {
                     onClick={() => {
                       const next = !showBuildLog;
                       setShowBuildLog(next);
-                      if (next && buildLogContent === null) loadLastBuildLog();
+                      if (next && buildLogLines.length === 0) loadLastBuildLog();
                     }}>
                     {showBuildLog ? 'Hide' : 'Show log'}
                   </ZestButton>
                 </div>
                 {showBuildLog && (
-                  <>
-                    {buildLogLoading && (
-                      <p style={{ fontSize: 12, color: '#637389', fontFamily: "'JetBrains Mono', monospace" }}>
-                        Loading…
-                      </p>
-                    )}
-                    {buildLogContent !== null && (
-                      <div style={logBoxStyle}>
-                        {buildLogContent.split('\n').map((line, i) => (
-                          <div key={i} style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{line || '​'}</div>
-                        ))}
-                      </div>
-                    )}
-                  </>
+                  buildLogLoading
+                    ? <p style={{ fontSize: 12, color: '#637389', fontFamily: "'JetBrains Mono', monospace" }}>Loading…</p>
+                    : <LogViewer lines={buildLogLines} />
                 )}
               </section>
             )}
@@ -545,17 +532,20 @@ export default function ProjectDetail() {
 
               {/* Rollback log */}
               {rollbackStatus !== 'idle' && (
-                <div style={{ marginTop: 12 }}>
-                  {rollbackLogs.length > 0 && (
-                    <div style={{ ...logBoxStyle, maxHeight: 200, marginBottom: 8 }}>
-                      {rollbackLogs.map((l, i) => <div key={i} style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{l}</div>)}
+                <div className={`${styles.liveOpCard}${rollbackStatus === 'running' ? ' alive' : ''}`}
+                  style={{ marginTop: 12 }}>
+                  {rollbackStatus === 'running' && (
+                    <div className="elapsedBar" style={{ marginBottom: 8 }}>
+                      <span className="elapsedDot" />
+                      <span className="elapsedTime">{fmtElapsed(rollbackElapsed)}</span>
+                      <span>rolling back…</span>
                     </div>
                   )}
-                  {rollbackStatus === 'running' && (
-                    <p style={{ fontSize: 12, color: '#637389', fontFamily: "'JetBrains Mono', monospace" }}>Rolling back…</p>
+                  {rollbackLogs.length > 0 && (
+                    <LogViewer lines={toLogEntries(rollbackLogs)} isLive={rollbackStatus === 'running'} />
                   )}
-                  {rollbackStatus === 'success' && <p style={{ color: '#3D9970', fontSize: 13 }}>{rollbackMessage}</p>}
-                  {rollbackStatus === 'error'   && <p style={{ color: '#B84040', fontSize: 13 }}>{rollbackMessage}</p>}
+                  {rollbackStatus === 'success' && <p style={{ color: '#3D9970', fontSize: 13, marginTop: 8 }}>{rollbackMessage}</p>}
+                  {rollbackStatus === 'error'   && <p style={{ color: '#B84040', fontSize: 13, marginTop: 8 }}>{rollbackMessage}</p>}
                 </div>
               )}
             </section>
@@ -672,27 +662,31 @@ export default function ProjectDetail() {
                   </div>
                 )}
 
-                <div className={styles.buildActions} style={{ alignItems: 'center' }}>
-                  <ZestButton
-                    zest={{ visualOptions: { variant: 'standard' } }}
-                    onClick={startBackup}
-                    disabled={backupRunning}>
-                    {backupRunning ? 'Backing up…' : 'Backup Now'}
-                  </ZestButton>
-                  {backupRunning && <span className={styles.spinner} />}
-                </div>
-
-                {/* Live log for backup / restore */}
-                {(dbStatus === 'running' || dbLogs.length > 0) && (
-                  <div className={dbStatus === 'running' ? styles.logBoxRunning : undefined}
-                    style={{ marginTop: 12, background: '#0D1625', borderRadius: 8, padding: '10px 14px',
-                      fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#A8B8CC',
-                      maxHeight: 200, overflowY: 'auto', border: '1px solid rgba(255,255,255,0.08)' }}>
-                    {dbLogs.map((l, i) => <div key={i}>{l}</div>)}
+                {/* Backup action + live feedback */}
+                <div className={`${styles.dbOpSection}${dbStatus === 'running' ? ' alive' : ''}`}>
+                  <div className={styles.buildActions} style={{ alignItems: 'center' }}>
+                    <ZestButton
+                      zest={{ visualOptions: { variant: 'standard' } }}
+                      onClick={startBackup}
+                      disabled={backupRunning}>
+                      {backupRunning ? 'Backing up…' : 'Backup Now'}
+                    </ZestButton>
                   </div>
-                )}
-                {dbStatus === 'success' && <p style={{ color: '#3D9970', fontSize: 13, marginTop: 8 }}>{dbMessage}</p>}
-                {dbStatus === 'error'   && <p style={{ color: '#B84040', fontSize: 13, marginTop: 8 }}>{dbMessage}</p>}
+
+                  {dbStatus === 'running' && (
+                    <div className="elapsedBar">
+                      <span className="elapsedDot" />
+                      <span className="elapsedTime">{fmtElapsed(dbElapsed)}</span>
+                      <span>{backupRunning ? 'backup in progress…' : 'restore in progress…'}</span>
+                    </div>
+                  )}
+
+                  {(dbStatus === 'running' || dbLogs.length > 0) && (
+                    <LogViewer lines={toLogEntries(dbLogs)} isLive={dbStatus === 'running'} />
+                  )}
+                  {dbStatus === 'success' && <p style={{ color: '#3D9970', fontSize: 13, marginTop: 8 }}>{dbMessage}</p>}
+                  {dbStatus === 'error'   && <p style={{ color: '#B84040', fontSize: 13, marginTop: 8 }}>{dbMessage}</p>}
+                </div>
 
                 {/* Backup list */}
                 {backups.length > 0 && (
@@ -780,7 +774,7 @@ export default function ProjectDetail() {
             </div>
 
             {/* Stream controls */}
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
               {!logActive ? (
                 <ZestButton
                   zest={{ visualOptions: { variant: 'standard' } }}
@@ -802,19 +796,21 @@ export default function ProjectDetail() {
                   Clear
                 </ZestButton>
               )}
+              {logActive && (
+                <div className="elapsedBar" style={{ marginLeft: 4 }}>
+                  <span className="elapsedDot" />
+                  <span className="elapsedTime">{fmtElapsed(logElapsed)}</span>
+                  <span>streaming</span>
+                </div>
+              )}
             </div>
 
-            {/* Live log box */}
+            {/* Live log via LogViewer */}
             {(logLines.length > 0 || logActive) && (
-              <div style={{ ...logBoxStyle, maxHeight: 500 }}>
-                {logLines.length === 0 && logActive && (
-                  <span style={{ color: '#637389' }}>Waiting for output…</span>
-                )}
-                {logLines.map((line, i) => (
-                  <div key={i} style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{line}</div>
-                ))}
-                <div ref={logEndRef} />
-              </div>
+              <LogViewer
+                lines={toLogEntries(logLines)}
+                isLive={logActive}
+              />
             )}
           </section>
         )}

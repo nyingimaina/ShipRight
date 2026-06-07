@@ -108,3 +108,25 @@
 .notFound {
   color: #B84040;
 }
+
+/* Wraps live db ops (backup/restore) — gets .alive class when running */
+.dbOpSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.01);
+  transition: border-color 0.3s;
+  margin-bottom: 4px;
+}
+
+/* Wraps rollback log — gets .alive class when running */
+.liveOpCard {
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.01);
+  transition: border-color 0.3s;
+}
