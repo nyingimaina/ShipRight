@@ -2,8 +2,10 @@ import { useState, useRef, useEffect } from 'react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import ZestButton from 'jattac.libs.web.zest-button';
+import ResponsiveTable from 'jattac.libs.web.responsive-table';
 import FilePicker from '@/modules/FilePicker/FilePicker';
 import { api, sseUrl } from '@/shared/ApiService';
+import { useElapsedTimer, fmtElapsed } from '@/shared/hooks/useElapsedTimer';
 import styles from './Styles/SqlQueryPanel.module.css';
 
 interface Props {
@@ -37,6 +39,9 @@ export default function SqlQueryPanel({ projectId }: Props) {
   const logsEndRef = useRef<HTMLDivElement>(null);
   const esRef = useRef<EventSource | null>(null);
   const collectedRef = useRef<string[]>([]);
+
+  const isRunning = phase === 'running';
+  const elapsed = useElapsedTimer(isRunning);
 
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -79,7 +84,6 @@ export default function SqlQueryPanel({ projectId }: Props) {
         setPhase('done');
         es.close();
       }
-      // readyState CONNECTING = browser is auto-retrying; do nothing
     };
   };
 
@@ -155,8 +159,15 @@ export default function SqlQueryPanel({ projectId }: Props) {
 
   const isRunningOrDone = phase === 'running' || phase === 'done';
 
+  // Build column definitions for ResponsiveTable from parsed TSV headers
+  const tableCols = tableData?.headers.map((h, i) => ({
+    columnId: `col_${i}`,
+    displayLabel: h,
+    cellRenderer: (row: string[]) => row[i] ?? '',
+  })) ?? [];
+
   return (
-    <div className={styles.panel}>
+    <div className={`${styles.panel}${isRunning ? ' alive' : ''}`}>
       {/* Mode tabs — shown only when picking input */}
       {phase === 'pick' && (
         <div className={styles.modeTabs}>
@@ -194,7 +205,7 @@ export default function SqlQueryPanel({ projectId }: Props) {
         </>
       )}
 
-      {/* File input mode — pick phase */}
+      {/* File input mode */}
       {phase === 'pick' && inputMode === 'file' && (
         <>
           <FilePicker label="Select a .sql file to execute" onSelect={handleFilePick} />
@@ -236,9 +247,21 @@ export default function SqlQueryPanel({ projectId }: Props) {
       {/* Running / done */}
       {isRunningOrDone && (
         <>
+          {/* Elapsed timer — visible while running */}
+          {isRunning && (
+            <div className="elapsedBar">
+              <span className="elapsedDot" />
+              <span className="elapsedTime">{fmtElapsed(elapsed)}</span>
+              <span>running query…</span>
+            </div>
+          )}
+
           {/* Log: shown while running; hidden on SELECT success when table is rendered */}
           {(phase === 'running' || resultStatus === 'error' || !tableData) && (
-            <div className={styles.logBox}>
+            <div className={`${styles.logBox}${isRunning ? ` ${styles.logBoxRunning}` : ''}`}>
+              {logs.length === 0 && isRunning && (
+                <span className={styles.logWaiting}>Waiting for output…</span>
+              )}
               {logs.map((line, i) => <div key={i} className={styles.logLine}>{line}</div>)}
               {phase === 'done' && !tableData && outputLines.map((line, i) => (
                 <div key={`o${i}`} className={styles.logLine}>{line}</div>
@@ -247,20 +270,15 @@ export default function SqlQueryPanel({ projectId }: Props) {
             </div>
           )}
 
-          {/* Table result — replaces log on SELECT success */}
+          {/* Table result via ResponsiveTable */}
           {phase === 'done' && tableData && (
             <>
               <div className={styles.tableWrap}>
-                <table className={styles.dataTable}>
-                  <thead>
-                    <tr>{tableData.headers.map((h, i) => <th key={i}>{h}</th>)}</tr>
-                  </thead>
-                  <tbody>
-                    {tableData.rows.map((row, ri) => (
-                      <tr key={ri}>{row.map((cell, ci) => <td key={ci}>{cell}</td>)}</tr>
-                    ))}
-                  </tbody>
-                </table>
+                <ResponsiveTable
+                  columnDefinitions={tableCols}
+                  data={tableData.rows}
+                  animationProps={{ animateOnLoad: true }}
+                />
               </div>
               <p className={styles.rowCount}>
                 {tableData.rows.length} row{tableData.rows.length !== 1 ? 's' : ''}

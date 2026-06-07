@@ -2,6 +2,19 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+  border-radius: 10px;
+  transition: box-shadow 0.3s;
+}
+
+/* logBoxRunning: subtle animated border while query is in flight */
+.logBoxRunning {
+  border-color: rgba(201, 168, 76, 0.35) !important;
+  transition: border-color 0.3s;
+}
+
+.logWaiting {
+  color: #637389;
+  font-style: italic;
 }
 
 .fileHeader {
