@@ -283,20 +283,27 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
     connectSse(buildId);
   };
 
+  // Reset wizard state only after the drawer has fully closed, so the
+  // close animation doesn't flash back to the version-picker mid-animation.
+  useEffect(() => {
+    if (!isOpen) {
+      setPhase('versions');
+      setLines([]);
+      setStepStatuses({});
+      setCurrentStepName(null);
+      setStepStartTimes({});
+      setStepActualDurations({});
+      setActivePushPhase(false);
+      setPause(null);
+      setBuildId(null);
+      setBuildRecord(null);
+      setElapsed(0);
+    }
+  }, [isOpen]);
+
   const handleClose = () => {
     buildSse.disconnect();
     sseConnected.current = false;
-    setPhase('versions');
-    setLines([]);
-    setStepStatuses({});
-    setCurrentStepName(null);
-    setStepStartTimes({});
-    setStepActualDurations({});
-    setActivePushPhase(false);
-    setPause(null);
-    setBuildId(null);
-    setBuildRecord(null);
-    setElapsed(0);
     onClose();
   };
 
@@ -526,6 +533,15 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
                 {isDeployed && buildRecord?.status !== 'Deployed' && (
                   <div className={styles.deploySection}>
                     <span className={styles.deployInfo}>✗ Deployment failed</span>
+                    <ZestButton onClick={handleClose} zest={{ buttonStyle: 'outline' }}>Close</ZestButton>
+                  </div>
+                )}
+
+                {(status === 'BuildFailed' || status === 'Aborted' || status === 'Interrupted') && (
+                  <div className={styles.deploySection}>
+                    <span className={styles.deployInfo}>
+                      {status === 'Aborted' ? 'Build aborted' : status === 'Interrupted' ? 'Build interrupted' : '✗ Build failed'}
+                    </span>
                     <ZestButton onClick={handleClose} zest={{ buttonStyle: 'outline' }}>Close</ZestButton>
                   </div>
                 )}

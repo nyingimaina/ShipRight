@@ -542,13 +542,14 @@ public class BuildOrchestrator
                 throw new InvalidOperationException($"git pull compose repo failed:\n{composePull.StdErr}");
 
             // Update docker-compose.yml image tags
-            var composePath = project.Wsl.WorkingDir.TrimEnd('/', '\\') + "/docker-compose.yml";
-            if (File.Exists(composePath))
+            var composePath     = project.Wsl.WorkingDir.TrimEnd('/', '\\') + "/docker-compose.yml";
+            var localComposePath = await ResolveWslPathAsync(composePath);
+            if (File.Exists(localComposePath))
             {
                 var imageMap = record.Versions.ToDictionary(
                     v => v.DockerImageName,
                     v => v.NewVersion);
-                await DockerComposeUpdater.UpdateAsync(composePath, imageMap);
+                await DockerComposeUpdater.UpdateAsync(localComposePath, imageMap);
                 await ctx.EmitLogAsync($"Updated docker-compose.yml with new image tags", "shipright");
 
                 var addCompose = await _runner.RunAsync("git",
@@ -579,7 +580,7 @@ public class BuildOrchestrator
             else
             {
                 throw new InvalidOperationException(
-                    $"docker-compose.yml not found at '{composePath}'. " +
+                    $"docker-compose.yml not found at '{localComposePath}' (WSL: '{composePath}'). " +
                     "Ensure the WSL working directory is set to the folder containing docker-compose.yml.");
             }
             } // end else (not skipped)
@@ -973,6 +974,21 @@ public class BuildOrchestrator
     }
 
     /// <summary>
+    /// On Windows, translates a WSL Linux path to a Windows UNC path so that
+    /// .NET File APIs can read/write it. On Linux returns the path unchanged.
+    /// </summary>
+    private async Task<string> ResolveWslPathAsync(string linuxPath)
+    {
+        if (!OperatingSystem.IsWindows()) return linuxPath;
+        var r = await _runner.RunAsync("wsl", ["wslpath", "-w", linuxPath], null);
+        if (!r.Success)
+            throw new InvalidOperationException(
+                $"wslpath -w failed for '{linuxPath}': {r.StdErr}. " +
+                "Ensure WSL is installed and the path is valid.");
+        return r.StdOut.Trim();
+    }
+
+    /// <summary>
     /// Returns a space-separated list of compose service names if every service has one
     /// configured, otherwise null (fall back to restarting the whole stack).
     /// </summary>
@@ -1099,13 +1115,14 @@ public class BuildOrchestrator
                 if (!rbPull.Success)
                     throw new InvalidOperationException($"git pull failed during rollback:\n{rbPull.StdErr}");
 
-                var composePath = project.Wsl.WorkingDir.TrimEnd('/', '\\') + "/docker-compose.yml";
-                if (!File.Exists(composePath))
+                var composePath      = project.Wsl.WorkingDir.TrimEnd('/', '\\') + "/docker-compose.yml";
+                var localComposePath = await ResolveWslPathAsync(composePath);
+                if (!File.Exists(localComposePath))
                     throw new InvalidOperationException(
-                        $"docker-compose.yml not found at '{composePath}' — cannot rollback without it.");
+                        $"docker-compose.yml not found at '{localComposePath}' (WSL: '{composePath}') — cannot rollback without it.");
 
                 var imageMap = target.Versions.ToDictionary(v => v.DockerImageName, v => v.NewVersion);
-                await DockerComposeUpdater.UpdateAsync(composePath, imageMap);
+                await DockerComposeUpdater.UpdateAsync(localComposePath, imageMap);
 
                 var rbAdd = await _runner.RunAsync("git",
                     ["-C", project.Wsl.WorkingDir, "add", "docker-compose.yml"],
