@@ -13,6 +13,11 @@ using ShipRight.Shared.Events;
 using ShipRight.Shared.ProcessRunner;
 using ShipRight.Shared.SshRunner;
 using ShipRight.Shared.Store;
+#if WINDOWS
+using System.Diagnostics;
+using System.Drawing;
+using System.Windows.Forms;
+#endif
 
 var dataDir = DataDirectory.Resolve();
 
@@ -33,6 +38,7 @@ Log.Logger = new LoggerConfiguration()
 try
 {
     var builder = WebApplication.CreateBuilder(args);
+    builder.WebHost.UseUrls("http://127.0.0.1:5200");
     builder.Host.UseSerilog();
 
     builder.Services.ConfigureHttpJsonOptions(o =>
@@ -100,7 +106,63 @@ try
     Log.Information("Data directory: {DataDir}", dataDir);
     Log.Information("{ProjectCount} projects, {BuildCount} builds loaded", projectCount, buildCount);
 
-    app.Run("http://127.0.0.1:5200");
+    await app.StartAsync();
+
+#if WINDOWS
+    var shutdownRequested = new TaskCompletionSource();
+
+    var trayThread = new Thread(() =>
+    {
+        using var trayIcon = new NotifyIcon();
+        try
+        {
+            var exePath = Environment.ProcessPath;
+            if (exePath != null && File.Exists(exePath))
+                trayIcon.Icon = Icon.ExtractAssociatedIcon(exePath);
+        }
+        catch { trayIcon.Icon = SystemIcons.Application; }
+        trayIcon.Icon ??= SystemIcons.Application;
+        trayIcon.Text = "ShipRight";
+
+        trayIcon.DoubleClick += (_, _) =>
+        {
+            try { Process.Start(new ProcessStartInfo("http://127.0.0.1:5200") { UseShellExecute = true }); }
+            catch (Exception ex) { Log.Warning(ex, "Failed to open dashboard"); }
+        };
+
+        var menu = new ContextMenuStrip();
+        menu.Items.Add("Open Dashboard", null, (_, _) =>
+        {
+            try { Process.Start(new ProcessStartInfo("http://127.0.0.1:5200") { UseShellExecute = true }); }
+            catch (Exception ex) { Log.Warning(ex, "Failed to open dashboard"); }
+        });
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("Exit", null, (_, _) =>
+        {
+            trayIcon.Visible = false;
+            shutdownRequested.TrySetResult();
+            Application.Exit();
+        });
+        trayIcon.ContextMenuStrip = menu;
+        trayIcon.Visible = true;
+
+        Application.Run();
+    });
+    trayThread.SetApartmentState(ApartmentState.STA);
+    trayThread.Start();
+
+    _ = Task.Run(async () =>
+    {
+        await Task.Delay(1500);
+        try { Process.Start(new ProcessStartInfo("http://127.0.0.1:5200") { UseShellExecute = true }); }
+        catch (Exception ex) { Log.Warning(ex, "Failed to open browser"); }
+    });
+
+    await Task.WhenAny(shutdownRequested.Task, app.WaitForShutdownAsync());
+    await app.StopAsync();
+#else
+    await app.WaitForShutdownAsync();
+#endif
 }
 catch (Exception ex)
 {
