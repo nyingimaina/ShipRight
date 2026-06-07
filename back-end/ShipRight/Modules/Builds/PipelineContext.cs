@@ -55,6 +55,17 @@ public class PipelineContext
         });
     }
 
+    public async Task ServiceBuildProgressAsync(int current, int total, string serviceName)
+    {
+        await _bus.EmitAsync(Record.Id, "ServiceBuildProgress", new
+        {
+            buildId = Record.Id,
+            current,
+            total,
+            serviceName
+        });
+    }
+
     public async Task BuildCompletedAsync()
     {
         await _bus.EmitAsync(Record.Id, "BuildCompleted", new

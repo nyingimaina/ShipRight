@@ -835,9 +835,13 @@ public class BuildOrchestrator
             record.Status = BuildStatus.Running;
         }
 
+        var totalServices = record.Versions.Count;
+        var currentService = 0;
         foreach (var sv in record.Versions)
         {
+            currentService++;
             var svc = project.Services.First(s => s.Name == sv.ServiceName);
+            await ctx.ServiceBuildProgressAsync(currentService, totalServices, sv.ServiceName);
 
             if (toSkip.Contains(svc.DockerImageName))
             {
