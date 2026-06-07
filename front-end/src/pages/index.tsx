@@ -16,7 +16,7 @@ export default function Dashboard() {
   const [summaries, setSummaries] = useState<Record<string, ProjectSummary>>({});
   const [versions, setVersions] = useState<Record<string, IServiceVersion[]>>({});
   const [loading, setLoading] = useState(true);
-  const [buildTarget, setBuildTarget] = useState<IProject | null>(null);
+  const [wizardTarget, setWizardTarget] = useState<{ project: IProject; buildId?: string } | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -63,24 +63,32 @@ export default function Dashboard() {
           {projects.map(p => {
             const summary = summaries[p.id];
             if (!summary) return null;
+            const lb = summary.lastBuild;
             return (
               <ProjectCard
                 key={p.id}
                 summary={summary}
-                onBuild={() => setBuildTarget(p)}
+                onBuild={() => setWizardTarget({ project: p })}
+                onPush={(lb?.status === 'ImageBuilt' || lb?.status === 'PushFailed')
+                  ? () => setWizardTarget({ project: p, buildId: lb!.id })
+                  : undefined}
+                onDeploy={(lb?.status === 'PushSucceeded' || lb?.status === 'BuildSucceeded')
+                  ? () => setWizardTarget({ project: p, buildId: lb!.id })
+                  : undefined}
               />
             );
           })}
         </div>
       </AppShell>
 
-      {buildTarget && (
+      {wizardTarget && (
         <BuildWizard
-          projectId={buildTarget.id}
-          projectName={buildTarget.name}
-          currentVersions={versions[buildTarget.id] ?? []}
+          projectId={wizardTarget.project.id}
+          projectName={wizardTarget.project.name}
+          currentVersions={versions[wizardTarget.project.id] ?? []}
+          initialBuildId={wizardTarget.buildId}
           isOpen
-          onClose={() => setBuildTarget(null)}
+          onClose={() => setWizardTarget(null)}
         />
       )}
     </>

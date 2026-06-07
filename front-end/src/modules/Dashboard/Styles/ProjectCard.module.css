@@ -102,3 +102,14 @@
   font-size: 11px;
   color: #637389;
 }
+
+.statusImageBuilt    { background: rgba(74,127,168,0.15);  color: #4A7FA8; }
+.statusPushSucceeded { background: rgba(61,153,112,0.15);  color: #3D9970; }
+.statusPushFailed    { background: rgba(184,64,64,0.15);   color: #B84040; }
+
+.quickActions {
+  display: flex;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}

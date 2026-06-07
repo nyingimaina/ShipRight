@@ -16,6 +16,7 @@ interface Props {
   currentVersions: IServiceVersion[];
   isOpen: boolean;
   onClose: () => void;
+  initialBuildId?: string;
 }
 
 type Phase = 'versions' | 'pipeline' | 'done';
@@ -82,7 +83,7 @@ const fmtExpected = (s: number | null | undefined) => {
 
 let lineCounter = 0;
 
-export default function BuildWizard({ projectId, projectName, currentVersions, isOpen, onClose }: Props) {
+export default function BuildWizard({ projectId, projectName, currentVersions, isOpen, onClose, initialBuildId }: Props) {
   const [phase, setPhase] = useState<Phase>('versions');
   const [newVersions, setNewVersions] = useState<Record<string, string>>({});
   const [buildId, setBuildId] = useState<string | null>(null);
@@ -105,6 +106,23 @@ export default function BuildWizard({ projectId, projectName, currentVersions, i
     currentVersions.forEach(v => { map[v.serviceName] = v.suggestedNext ?? v.version ?? ''; });
     setNewVersions(map);
   }, [currentVersions]);
+
+  // When opened with an existing build ID, skip straight to the done phase
+  useEffect(() => {
+    if (!isOpen || !initialBuildId) return;
+    api.get<IBuildRecord>(`/api/builds/${initialBuildId}`).then(record => {
+      setBuildId(initialBuildId);
+      setBuildRecord(record);
+      setPhase('done');
+      const isPush = record.status === 'PushSucceeded' || record.status === 'BuildSucceeded'
+        || record.status === 'PushFailed';
+      const stepNames = isPush ? PUSH_STEP_NAMES : BUILD_STEP_NAMES;
+      const doneStatuses: Record<string, StepStatus> = {};
+      stepNames.forEach(n => { doneStatuses[n] = 'done'; });
+      setStepStatuses(doneStatuses);
+      setActivePushPhase(isPush);
+    }).catch(() => {});
+  }, [isOpen, initialBuildId]);
 
   // Fetch build stats when wizard opens
   useEffect(() => {

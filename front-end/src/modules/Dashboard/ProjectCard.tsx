@@ -20,6 +20,8 @@ export interface ProjectSummary {
 interface Props {
   summary: ProjectSummary;
   onBuild: () => void;
+  onPush?: () => void;
+  onDeploy?: () => void;
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -27,7 +29,9 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`${styles.statusBadge} ${cls}`}>{status}</span>;
 }
 
-export default function ProjectCard({ summary, onBuild }: Props) {
+const ACTIONABLE_STATUSES = ['ImageBuilt', 'PushSucceeded', 'BuildSucceeded', 'PushFailed'];
+
+export default function ProjectCard({ summary, onBuild, onPush, onDeploy }: Props) {
   return (
     <div className={styles.card}>
       <div className={styles.cardHeader}>
@@ -83,6 +87,30 @@ export default function ProjectCard({ summary, onBuild }: Props) {
           }
         </div>
       </div>
+
+      {/* Quick actions — shown when last build is in an actionable state */}
+      {summary.lastBuild && ACTIONABLE_STATUSES.includes(summary.lastBuild.status) && (
+        <div className={styles.quickActions}>
+          {(summary.lastBuild.status === 'ImageBuilt') && onPush && (
+            <ZestButton onClick={e => { e.preventDefault(); onPush(); }}
+              zest={{ visualOptions: { variant: 'standard', size: 'sm' } }}>
+              Push to Registry
+            </ZestButton>
+          )}
+          {(summary.lastBuild.status === 'PushFailed') && onPush && (
+            <ZestButton onClick={e => { e.preventDefault(); onPush(); }}
+              zest={{ visualOptions: { variant: 'standard', size: 'sm' } }}>
+              Retry Push
+            </ZestButton>
+          )}
+          {(summary.lastBuild.status === 'PushSucceeded' || summary.lastBuild.status === 'BuildSucceeded') && onDeploy && (
+            <ZestButton onClick={e => { e.preventDefault(); onDeploy(); }}
+              zest={{ visualOptions: { variant: 'standard', size: 'sm' } }}>
+              Deploy to Production
+            </ZestButton>
+          )}
+        </div>
+      )}
     </div>
   );
 }

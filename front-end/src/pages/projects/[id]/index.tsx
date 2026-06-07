@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import AppShell from '@/modules/AppShell/AppShell';
 import BuildWizard from '@/modules/BuildWizard/BuildWizard';
+import { ProjectSummary } from '@/modules/Dashboard/ProjectCard';
 import ZestButton from 'jattac.libs.web.zest-button';
 import { api } from '@/shared/ApiService';
 import { IProject } from '@/shared/types/IProject';
@@ -16,7 +17,9 @@ export default function ProjectDetail() {
   const { id } = router.query as { id: string };
   const [project, setProject] = useState<IProject | null>(null);
   const [versions, setVersions] = useState<IServiceVersion[]>([]);
+  const [summary, setSummary] = useState<ProjectSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [wizardBuildId, setWizardBuildId] = useState<string | undefined>(undefined);
   const [wizardOpen, setWizardOpen] = useState(false);
 
   useEffect(() => {
@@ -24,8 +27,9 @@ export default function ProjectDetail() {
     Promise.all([
       api.get<IProject>(`/api/projects/${id}`),
       api.get<IServiceVersion[]>(`/api/projects/${id}/current-versions`).catch(() => [] as IServiceVersion[]),
+      api.get<ProjectSummary>(`/api/projects/${id}/summary`).catch(() => null),
     ])
-      .then(([p, v]) => { setProject(p); setVersions(v); })
+      .then(([p, v, s]) => { setProject(p); setVersions(v); setSummary(s); })
       .catch(() => toast.error('Project not found.'))
       .finally(() => setLoading(false));
   }, [id]);
@@ -70,10 +74,30 @@ export default function ProjectDetail() {
 
         <section className={styles.section}>
           <h2 className={styles.sectionTitle}>Build & Deploy</h2>
-          <ZestButton zest={{ visualOptions: { variant: 'standard' } }}
-            onClick={() => setWizardOpen(true)}>
-            Build
-          </ZestButton>
+          <div className={styles.buildActions}>
+            <ZestButton zest={{ visualOptions: { variant: 'standard' } }}
+              onClick={() => { setWizardBuildId(undefined); setWizardOpen(true); }}>
+              Build
+            </ZestButton>
+            {summary?.lastBuild?.status === 'ImageBuilt' && (
+              <ZestButton zest={{ visualOptions: { variant: 'standard' } }}
+                onClick={() => { setWizardBuildId(summary.lastBuild!.id); setWizardOpen(true); }}>
+                Push to Registry
+              </ZestButton>
+            )}
+            {summary?.lastBuild?.status === 'PushFailed' && (
+              <ZestButton zest={{ visualOptions: { variant: 'standard' } }}
+                onClick={() => { setWizardBuildId(summary.lastBuild!.id); setWizardOpen(true); }}>
+                Retry Push
+              </ZestButton>
+            )}
+            {(summary?.lastBuild?.status === 'PushSucceeded' || summary?.lastBuild?.status === 'BuildSucceeded') && (
+              <ZestButton zest={{ visualOptions: { variant: 'standard' } }}
+                onClick={() => { setWizardBuildId(summary.lastBuild!.id); setWizardOpen(true); }}>
+                Deploy to Production
+              </ZestButton>
+            )}
+          </div>
         </section>
       </AppShell>
 
@@ -81,8 +105,9 @@ export default function ProjectDetail() {
         projectId={project.id}
         projectName={project.name}
         currentVersions={versions}
+        initialBuildId={wizardBuildId}
         isOpen={wizardOpen}
-        onClose={() => setWizardOpen(false)}
+        onClose={() => { setWizardOpen(false); setWizardBuildId(undefined); }}
       />
     </>
   );

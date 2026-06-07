@@ -29,6 +29,12 @@
   margin-bottom: 32px;
 }
 
+.buildActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .serviceList {
   display: flex;
   flex-direction: column;
