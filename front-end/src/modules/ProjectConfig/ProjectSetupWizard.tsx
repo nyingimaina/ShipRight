@@ -6,7 +6,7 @@ import { RiCheckLine, RiAlertLine } from 'react-icons/ri';
 import FilePicker from '@/modules/FilePicker/FilePicker';
 import { api } from '@/shared/ApiService';
 import { IDetectedProjectConfig } from '@/shared/types/IDetectedProject';
-import { IProject, IProjectInput, IApiError } from '@/shared/types/IProject';
+import { IProject, IProjectInput, IApiError, IDatabaseConfig, DbProviderType, emptyDatabaseConfig } from '@/shared/types/IProject';
 import styles from './Styles/ProjectSetupWizard.module.css';
 
 interface Props {
@@ -47,6 +47,12 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
   const [showSshPicker, setShowSshPicker] = useState(false);
   const [showWslPicker, setShowWslPicker] = useState(false);
   const [showRemotePicker, setShowRemotePicker] = useState(false);
+  const [dbEnabled, setDbEnabled]       = useState(!!existing?.database);
+  const [db, setDb]                     = useState<IDatabaseConfig>(existing?.database ?? emptyDatabaseConfig());
+  const [dbContainers, setDbContainers] = useState<{ name: string; image: string }[]>([]);
+  const [dbDatabases, setDbDatabases]   = useState<string[]>([]);
+  const [loadingContainers, setLoadingContainers] = useState(false);
+  const [loadingDatabases, setLoadingDatabases]   = useState(false);
 
   // Step 1: detect from root path
   const handleDetect = async () => {
@@ -73,6 +79,34 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
     }
   };
 
+  const detectContainers = async () => {
+    if (!existing?.id) return;
+    setLoadingContainers(true);
+    setDbContainers([]);
+    setDbDatabases([]);
+    try {
+      const list = await api.get<{ name: string; image: string }[]>(
+        `/api/projects/${existing.id}/db/containers`);
+      setDbContainers(list);
+    } catch { /* ignore — user can type manually */ }
+    finally { setLoadingContainers(false); }
+  };
+
+  const detectDatabases = async (containerName: string, provider: DbProviderType) => {
+    if (!existing?.id || !containerName) return;
+    setLoadingDatabases(true);
+    setDbDatabases([]);
+    try {
+      const list = await api.get<string[]>(
+        `/api/projects/${existing.id}/db/databases?container=${encodeURIComponent(containerName)}&provider=${provider}`);
+      setDbDatabases(list);
+    } catch { /* ignore */ }
+    finally { setLoadingDatabases(false); }
+  };
+
+  const setDbField = <K extends keyof IDatabaseConfig>(key: K, value: IDatabaseConfig[K]) =>
+    setDb(prev => ({ ...prev, [key]: value }));
+
   // Save
   const handleSave = async () => {
     setErrors({});
@@ -82,6 +116,7 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
       gitRepos,
       wsl: { workingDir: wslWorkingDir },
       server: { host: serverHost, username: serverUser, sshKeyPath, remoteWorkingDir: remoteDir, rebuildScript },
+      database: dbEnabled ? db : undefined,
     };
     try {
       const saved = existing
@@ -364,6 +399,73 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
                 placeholder="rebuild.sh" zest={{ stretch: true }} />
               {errors['server.rebuildScript'] && <p className={styles.errorText}>{errors['server.rebuildScript']}</p>}
             </div>
+          </div>
+
+          {/* ── Database ── */}
+          <div className={styles.section}>
+            <span className={styles.sectionTitle}>Database (optional)</span>
+            <div className={styles.fieldRow} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <label className={styles.fieldLabel} style={{ marginBottom: 0 }}>Enable database management</label>
+              <input type="checkbox" checked={dbEnabled} onChange={e => setDbEnabled(e.target.checked)}
+                style={{ accentColor: '#C9A84C', width: 16, height: 16 }} />
+            </div>
+            {dbEnabled && (
+              <>
+                <div className={styles.fieldRow}>
+                  <label className={styles.fieldLabel}>Provider</label>
+                  <select value={db.provider}
+                    onChange={e => {
+                      const p = e.target.value as DbProviderType;
+                      setDbField('provider', p);
+                      setDbField('rootUser', p === 'MariaDb' ? 'root' : 'sa');
+                      setDbContainers([]);
+                      setDbDatabases([]);
+                    }}
+                    style={{ background: '#131D30', color: '#F0F2F5', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, padding: '6px 10px', width: '100%' }}>
+                    <option value="MariaDb">MariaDB</option>
+                    <option value="SqlServer">SQL Server</option>
+                  </select>
+                </div>
+                <div className={styles.fieldRow}>
+                  <label className={styles.fieldLabel}>Container name</label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {dbContainers.length > 0
+                      ? <select value={db.containerName}
+                          onChange={e => { setDbField('containerName', e.target.value); detectDatabases(e.target.value, db.provider); }}
+                          style={{ flex: 1, background: '#131D30', color: '#F0F2F5', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, padding: '6px 10px' }}>
+                          <option value="">Select a container…</option>
+                          {dbContainers.map(c => <option key={c.name} value={c.name}>{c.name} — {c.image}</option>)}
+                        </select>
+                      : <ZestTextbox value={db.containerName} onChange={e => setDbField('containerName', e.target.value)}
+                          placeholder="e.g. jattac-database" zest={{ stretch: true }} />
+                    }
+                    <ZestButton onClick={detectContainers} disabled={loadingContainers || !existing?.id}
+                      zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}>
+                      {loadingContainers ? '…' : 'Detect'}
+                    </ZestButton>
+                  </div>
+                  {!existing?.id && <p className={styles.stepSub} style={{ marginTop: 4 }}>Save the project first to enable auto-detect.</p>}
+                </div>
+                <div className={styles.fieldRow}>
+                  <label className={styles.fieldLabel}>Database name</label>
+                  {dbDatabases.length > 0
+                    ? <select value={db.databaseName} onChange={e => setDbField('databaseName', e.target.value)}
+                        style={{ width: '100%', background: '#131D30', color: '#F0F2F5', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, padding: '6px 10px' }}>
+                        <option value="">Select a database…</option>
+                        {dbDatabases.map(d => <option key={d} value={d}>{d}</option>)}
+                      </select>
+                    : <ZestTextbox value={db.databaseName} onChange={e => setDbField('databaseName', e.target.value)}
+                        placeholder="e.g. jattac_sms" zest={{ stretch: true }} />
+                  }
+                  {loadingDatabases && <p className={styles.stepSub} style={{ marginTop: 4 }}>Fetching databases…</p>}
+                </div>
+                <div className={styles.fieldRow}>
+                  <label className={styles.fieldLabel}>Root user</label>
+                  <ZestTextbox value={db.rootUser} onChange={e => setDbField('rootUser', e.target.value)}
+                    placeholder="root" zest={{ stretch: true }} />
+                </div>
+              </>
+            )}
           </div>
 
           {Object.keys(errors).some(k => !k.startsWith('server')) && (
