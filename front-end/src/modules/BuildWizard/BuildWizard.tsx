@@ -216,7 +216,12 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
         setPhase('done');
       },
       onDeployCompleted: e => {
-        setBuildRecord(prev => prev ? { ...prev, status: e.status as IBuildRecord['status'] } : null);
+        api.get<IBuildRecord>(`/api/builds/${id}`).then(fresh => {
+          if (fresh) setBuildRecord(fresh);
+        }).catch(() => {
+          setBuildRecord(prev => prev ? { ...prev, status: e.status as IBuildRecord['status'] } : null);
+        });
+        setPhase('done');
       },
       onConnectionChange: s => {
         setConnState(s);
@@ -547,8 +552,28 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
 
                 {isDeployed && buildRecord?.status !== 'Deployed' && (
                   <div className={styles.deploySection}>
-                    <span className={styles.deployInfo}>✗ Deployment failed</span>
-                    <ZestButton onClick={handleClose} zest={{ buttonStyle: 'outline' }}>Close</ZestButton>
+                    <div>
+                      <div className={styles.deployInfo}>✗ Deployment failed</div>
+                      <div className={styles.deployTag}>{buildRecord?.gitTag}</div>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+                      <select
+                        value={deployModeOverride}
+                        onChange={e => setDeployModeOverride(e.target.value as DeployMode)}
+                        style={{ background: '#131D30', color: '#C9D6E3', border: '1px solid rgba(255,255,255,0.12)',
+                          borderRadius: 6, padding: '5px 10px', fontSize: 12, width: '100%' }}>
+                        <option value="GitScript">Git + Script</option>
+                        <option value="GitCompose">Git + Compose</option>
+                        <option value="EnvCompose">Env + Compose</option>
+                      </select>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <ZestButton onClick={handleDeploy}
+                          zest={{ visualOptions: { variant: 'standard' }, busyOptions: { handleInternally: true } }}>
+                          Retry Deploy
+                        </ZestButton>
+                        <ZestButton onClick={handleClose} zest={{ buttonStyle: 'outline' }}>Close</ZestButton>
+                      </div>
+                    </div>
                   </div>
                 )}
 
