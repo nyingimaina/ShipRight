@@ -21,13 +21,18 @@ import styles from './Styles/ProjectDetail.module.css';
 
 type ProjectTab = 'overview' | 'build' | 'database' | 'logs' | 'terminal';
 
-const PROJECT_TABS: ZestTabItem<ProjectTab>[] = [
-  { label: 'Overview',       value: 'overview'  },
-  { label: 'Build & Deploy', value: 'build'     },
-  { label: 'Database',       value: 'database'  },
-  { label: 'Logs',           value: 'logs'      },
-  { label: 'Terminal',       value: 'terminal'  },
-];
+function projectTabs(project: IProject): ZestTabItem<ProjectTab>[] {
+  const tabs: ZestTabItem<ProjectTab>[] = [
+    { label: 'Overview',       value: 'overview'  },
+    { label: 'Build & Deploy', value: 'build'     },
+  ];
+  if (project.database) tabs.push({ label: 'Database', value: 'database' });
+  tabs.push(
+    { label: 'Logs',     value: 'logs'     },
+    { label: 'Terminal', value: 'terminal'  },
+  );
+  return tabs;
+}
 
 function toLogEntries(lines: string[]): LogEntry[] {
   return lines.map((line, i) => ({
@@ -107,6 +112,12 @@ export default function ProjectDetail() {
       .catch(() => toast.error('Project not found.'))
       .finally(() => setLoading(false));
   }, [id]);
+
+  // Keep activeTab valid when tabs change (e.g. project has no database)
+  useEffect(() => {
+    const valid = projectTabs(project!).some(t => t.value === activeTab);
+    if (!valid) setActiveTab('overview');
+  }, [project?.database]);
 
   // Cleanup EventSource and delete countdown on unmount
   useEffect(() => {
@@ -405,7 +416,7 @@ export default function ProjectDetail() {
 
         <ZestTabs
           id="project-detail"
-          items={PROJECT_TABS}
+          items={projectTabs(project)}
           activeValue={activeTab}
           onChange={setActiveTab}
         />

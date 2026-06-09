@@ -20,11 +20,27 @@ public record ServiceConfig
     public string BuildContextPath { get; init; } = string.Empty;
     public string DockerImageName { get; init; } = string.Empty;
     /// <summary>
+    /// Docker registry host (e.g. "ghcr.io", "myregistry.azurecr.io").
+    /// When empty, the registry is inferred from DockerImageName. When the
+    /// image name has no explicit registry (e.g. "nyingi/app"), docker.io is used.
+    /// </summary>
+    public string DockerRegistry { get; init; } = string.Empty;
+    /// <summary>
     /// The service key in docker-compose.yml (e.g. "api", "web").
     /// When set on all built services, deploy uses targeted --no-deps restart
     /// instead of bringing the whole stack down and up.
     /// </summary>
     public string ComposeServiceName { get; init; } = string.Empty;
+    /// <summary>
+    /// Pre-configured Docker registry username. When set alongside DockerPassword,
+    /// the build pipeline uses these credentials directly instead of prompting.
+    /// </summary>
+    public string DockerUsername { get; init; } = string.Empty;
+    /// <summary>
+    /// Pre-configured Docker registry password/token. Stored in projects.json
+    /// alongside other config. Leave empty to enter credentials at build time.
+    /// </summary>
+    public string DockerPassword { get; init; } = string.Empty;
 }
 
 public record GitConfig
@@ -47,6 +63,8 @@ public enum DeployMode { GitScript, GitCompose, EnvCompose }
 
 public record ServerConfig
 {
+    public string Id { get; init; } = string.Empty;
+    public string Name { get; init; } = string.Empty;
     public string Host { get; init; } = string.Empty;
     public string Username { get; init; } = string.Empty;
     public string SshKeyPath { get; init; } = string.Empty;
@@ -59,6 +77,8 @@ public record ProjectConfig
 {
     public string Id { get; init; } = string.Empty;
     public string Name { get; init; } = string.Empty;
+    public int Version { get; init; } = 2;
+    public string ServerId { get; init; } = string.Empty;
     public List<ServiceConfig> Services { get; init; } = new();
     public List<GitConfig> GitRepos { get; init; } = new();
     public WslConfig Wsl { get; init; } = new();

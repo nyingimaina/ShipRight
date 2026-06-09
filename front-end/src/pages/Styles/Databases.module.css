@@ -1,0 +1,31 @@
+.heading { font-size: 24px; margin-bottom: 4px; }
+.sub { color: #637389; font-size: 13px; margin-bottom: 24px; }
+
+.serverSelect {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.selectLabel {
+  font-size: 11px;
+  color: #637389;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.empty {
+  color: #637389;
+  font-size: 14px;
+  padding: 40px 0;
+  text-align: center;
+}

@@ -1,12 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
+import Link from 'next/link';
 import ZestButton from 'jattac.libs.web.zest-button';
 import ZestTextbox from 'jattac.libs.web.zest-textbox';
 import { RiCheckLine, RiAlertLine } from 'react-icons/ri';
 import FilePicker from '@/modules/FilePicker/FilePicker';
 import { api } from '@/shared/ApiService';
 import { IDetectedProjectConfig } from '@/shared/types/IDetectedProject';
-import { IProject, IProjectInput, IApiError, IDatabaseConfig, DbProviderType, emptyDatabaseConfig } from '@/shared/types/IProject';
+import { IProject, IProjectInput, IApiError, IServerConfig, IDatabaseConfig, DbProviderType, emptyDatabaseConfig } from '@/shared/types/IProject';
 import styles from './Styles/ProjectSetupWizard.module.css';
 
 interface Props {
@@ -15,7 +16,7 @@ interface Props {
   onCancel: () => void;
 }
 
-type Step = 'pick' | 'review' | 'server';
+type Step = 'type' | 'pick' | 'review' | 'server';
 
 function uncToLinuxPath(p: string): string {
   if (!p.startsWith('\\\\')) return p;
@@ -25,7 +26,9 @@ function uncToLinuxPath(p: string): string {
 }
 
 export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Props) {
-  const [step, setStep] = useState<Step>(existing ? 'review' : 'server');
+  const [step, setStep] = useState<Step>(existing ? 'review' : 'type');
+  const [projectType, setProjectType] = useState<'pipeline' | 'freeform'>('pipeline');
+  const [freeformFeatures, setFreeformFeatures] = useState({ docker: true, git: true, deploy: true, database: false });
   const [rootPath, setRootPath] = useState(existing?.gitRepos[0]?.repoPath ?? '');
   const [detected, setDetected] = useState<IDetectedProjectConfig | null>(null);
   const [detecting, setDetecting] = useState(false);
@@ -34,8 +37,8 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
   // Editable fields from detection + manual
   const [name, setName]                 = useState(existing?.name ?? '');
   const [services, setServices]         = useState(existing
-    ? existing.services.map(s => ({ name: s.name, versionFilePath: s.versionFilePath, buildContextPath: s.buildContextPath, dockerImageName: s.dockerImageName, composeServiceName: s.composeServiceName ?? '' }))
-    : [] as { name: string; versionFilePath: string; buildContextPath: string; dockerImageName: string; composeServiceName: string }[]);
+    ? existing.services.map(s => ({ name: s.name, versionFilePath: s.versionFilePath, buildContextPath: s.buildContextPath, dockerImageName: s.dockerImageName, dockerRegistry: s.dockerRegistry ?? '', composeServiceName: s.composeServiceName ?? '', dockerUsername: s.dockerUsername ?? '', dockerPassword: '' }))
+    : [] as { name: string; versionFilePath: string; buildContextPath: string; dockerImageName: string; dockerRegistry: string; composeServiceName: string; dockerUsername: string; dockerPassword: string }[]);
   const [gitRepos, setGitRepos]         = useState<{ repoPath: string; deployBranch: string }[]>(existing?.gitRepos ?? []);
   const [wslWorkingDir, setWslWorkingDir] = useState(existing?.wsl.workingDir ?? '');
   const [serverHost, setServerHost]     = useState(existing?.server.host ?? '');
@@ -44,6 +47,8 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
   const [remoteDir, setRemoteDir]       = useState(existing?.server.remoteWorkingDir ?? '');
   const [rebuildScript, setRebuildScript] = useState(existing?.server.rebuildScript ?? 'rebuild.sh');
   const [errors, setErrors]             = useState<Record<string, string>>({});
+  const [globalServers, setGlobalServers] = useState<IServerConfig[]>([]);
+  const [serverId, setServerId] = useState(existing?.serverId ?? '');
   const [showSshPicker, setShowSshPicker] = useState(false);
   const [showWslPicker, setShowWslPicker] = useState(false);
   const [showRemotePicker, setShowRemotePicker] = useState(false);
@@ -70,7 +75,10 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
         versionFilePath: s.versionFilePath,
         buildContextPath: s.buildContextPath,
         dockerImageName: s.dockerImageName ?? '',
+        dockerRegistry: s.dockerRegistry ?? '',
         composeServiceName: s.composeServiceName ?? '',
+        dockerUsername: '',
+        dockerPassword: '',
       })));
       setStep('review');
     } catch (e: unknown) {
@@ -109,10 +117,31 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
     setDb(prev => ({ ...prev, [key]: value }));
 
   // Save
+  // Fetch global servers for selector
+  useEffect(() => {
+    api.get<IServerConfig[]>('/api/servers')
+      .then(setGlobalServers)
+      .catch(() => {});
+  }, []);
+
+  // When a global server is selected, auto-fill the inline fields
+  const applyGlobalServer = (id: string) => {
+    setServerId(id);
+    const s = globalServers.find(g => g.id === id);
+    if (s) {
+      setServerHost(s.host);
+      setServerUser(s.username);
+      setSshKeyPath(s.sshKeyPath);
+      setRemoteDir(s.remoteWorkingDir);
+      setRebuildScript(s.rebuildScript);
+    }
+  };
+
   const handleSave = async () => {
     setErrors({});
     const input: IProjectInput = {
       name,
+      serverId: serverId || undefined,
       services,
       gitRepos,
       wsl: { workingDir: wslWorkingDir },
@@ -143,17 +172,134 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
 
   return (
     <div className={styles.wizard}>
-      {/* Step dots */}
-      <div className={styles.steps}>
-        {['server', 'pick', 'review'].map((s, i) => (
-          <>
-            {i > 0 && <div key={`line-${i}`} className={styles.stepDotLine} />}
-            <div key={s} className={`${styles.stepDot} ${i < stepIndex ? styles.stepDotDone : i === stepIndex ? styles.stepDotActive : ''}`} />
-          </>
-        ))}
-      </div>
+      {/* Step dots — hidden on intro screen */}
+      {step !== 'type' && (
+        <div className={styles.steps}>
+          {['server', 'pick', 'review'].map((s, i) => (
+            <div key={s} style={{ display: 'contents' }}>
+              {i > 0 && <div className={styles.stepDotLine} />}
+              <div className={`${styles.stepDot} ${i < stepIndex ? styles.stepDotDone : i === stepIndex ? styles.stepDotActive : ''}`} />
+            </div>
+          ))}
+        </div>
+      )}
 
-      {/* ── STEP 1: Pick root directory ── */}
+      {/* ── INTRO: Pipeline vs Freeform ── */}
+      {step === 'type' && (
+        <>
+          <div>
+            <h2 className={styles.stepTitle}>How do you want to set up this project?</h2>
+            <p className={styles.stepSub}>Choose a mode that fits your workflow.</p>
+          </div>
+
+          <div style={{ display: 'flex', gap: 14, margin: '16px 0' }}>
+            <button
+              type="button"
+              onClick={() => setProjectType('pipeline')}
+              style={{
+                flex: 1, cursor: 'pointer', background: projectType === 'pipeline'
+                  ? 'rgba(74,127,168,0.2)' : '#0D1625',
+                border: projectType === 'pipeline'
+                  ? '2px solid #4A7FA8' : '1px solid rgba(255,255,255,0.1)',
+                borderRadius: 10, padding: '18px 16px', textAlign: 'left',
+                transition: 'border-color .15s, background .15s',
+              }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: '#F0F2F5', marginBottom: 6 }}>Pipeline</div>
+              <div style={{ fontSize: 12, color: '#637389', lineHeight: 1.5 }}>
+                Full guided wizard — detect source code, configure services, set up your server and database.
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setProjectType('freeform')}
+              style={{
+                flex: 1, cursor: 'pointer', background: projectType === 'freeform'
+                  ? 'rgba(74,127,168,0.2)' : '#0D1625',
+                border: projectType === 'freeform'
+                  ? '2px solid #4A7FA8' : '1px solid rgba(255,255,255,0.1)',
+                borderRadius: 10, padding: '18px 16px', textAlign: 'left',
+                transition: 'border-color .15s, background .15s',
+              }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: '#F0F2F5', marginBottom: 6 }}>Freeform</div>
+              <div style={{ fontSize: 12, color: '#637389', lineHeight: 1.5 }}>
+                Pick only what you need — Docker build, Git repos, deployment server, database.
+              </div>
+            </button>
+          </div>
+
+          {projectType === 'freeform' && (
+            <div style={{ background: '#0D1625', borderRadius: 8, padding: '14px 16px', marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#A8B8CC', marginBottom: 10 }}>Features</div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, cursor: 'pointer', fontSize: 13, color: '#C9D6E3' }}>
+                <input type="checkbox" checked={freeformFeatures.docker} onChange={e => setFreeformFeatures(f => ({ ...f, docker: e.target.checked }))}
+                  style={{ accentColor: '#C9A84C', width: 16, height: 16 }} />
+                Docker build &amp; push — services, version files, build context
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, cursor: 'pointer', fontSize: 13, color: '#C9D6E3' }}>
+                <input type="checkbox" checked={freeformFeatures.git} onChange={e => setFreeformFeatures(f => ({ ...f, git: e.target.checked }))}
+                  style={{ accentColor: '#C9A84C', width: 16, height: 16 }} />
+                Git repositories — version control integration
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, cursor: 'pointer', fontSize: 13, color: '#C9D6E3' }}>
+                <input type="checkbox" checked={freeformFeatures.deploy} onChange={e => setFreeformFeatures(f => ({ ...f, deploy: e.target.checked }))}
+                  style={{ accentColor: '#C9A84C', width: 16, height: 16 }} />
+                Deploy server — SSH host, credentials, remote directory
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 13, color: '#C9D6E3' }}>
+                <input type="checkbox" checked={freeformFeatures.database} onChange={e => setFreeformFeatures(f => ({ ...f, database: e.target.checked }))}
+                  style={{ accentColor: '#C9A84C', width: 16, height: 16 }} />
+                Database — backup, restore, SQL queries
+              </label>
+            </div>
+          )}
+
+          <div className={styles.footer}>
+            <ZestButton
+              zest={{ visualOptions: { variant: 'standard' } }}
+              onClick={async () => {
+                if (projectType === 'pipeline') {
+                  setStep('server');
+                } else if (freeformFeatures.deploy) {
+                  setStep('server');
+                } else if (freeformFeatures.docker) {
+                  setStep('pick');
+                } else {
+                  // Minimal save: name only, no features
+                  setErrors({});
+                  if (!name.trim()) {
+                    setErrors({ name: 'Project name is required.' });
+                    return;
+                  }
+                  const input: IProjectInput = {
+                    name,
+                    serverId: '',
+                    services: [],
+                    gitRepos: [],
+                    wsl: { workingDir: '' },
+                    server: { host: '', username: 'ubuntu', sshKeyPath: '', remoteWorkingDir: '', rebuildScript: 'rebuild.sh', deployMode: 'GitScript' },
+                    database: undefined,
+                  };
+                  try {
+                    const saved = await api.post<IProject>('/api/projects', input);
+                    onSaved(saved);
+                  } catch (errs: unknown) {
+                    const apiErrors: Record<string, string> = {};
+                    const list = Array.isArray(errs) ? errs : [errs];
+                    (list as IApiError[]).forEach(e => { if (e.field) apiErrors[e.field] = e.message; });
+                    setErrors(apiErrors);
+                    if (Object.keys(apiErrors).length === 0) {
+                      toast.error('Failed to save project.');
+                    }
+                  }
+                }
+              }}>
+              Continue
+            </ZestButton>
+            <ZestButton onClick={onCancel} zest={{ buttonStyle: 'outline', semanticType: 'cancel' }}>Cancel</ZestButton>
+          </div>
+        </>
+      )}
+
       {step === 'pick' && (
         <>
           <div>
@@ -281,6 +427,17 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
                 </div>
 
                 <div className={styles.fieldRow}>
+                  <span className={styles.fieldLabel}>Docker registry</span>
+                  <ZestTextbox value={svc.dockerRegistry ?? ''}
+                    onChange={e => setServices(prev => prev.map((s, j) => j === i ? { ...s, dockerRegistry: e.target.value } : s))}
+                    placeholder="e.g. ghcr.io (leave empty for Docker Hub)"
+                    zest={{ stretch: true, zSize: 'sm' }} />
+                  <p style={{ margin: '3px 0 0', fontSize: 11, color: '#637389' }}>
+                    Optional — only needed for non-Docker Hub registries.
+                  </p>
+                </div>
+
+                <div className={styles.fieldRow}>
                   <span className={styles.fieldLabel}>
                     Compose service name
                     {svc.composeServiceName && <span className={styles.detectedBadge} style={{ marginLeft: 6 }}>auto-detected</span>}
@@ -291,6 +448,28 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
                     zest={{ stretch: true, zSize: 'sm' }} />
                   <p style={{ margin: '3px 0 0', fontSize: 11, color: '#637389' }}>
                     Optional — when set on all services, only those containers restart (nginx/minio stay up).
+                  </p>
+                </div>
+
+                <div className={styles.fieldRow}>
+                  <span className={styles.fieldLabel}>Docker username</span>
+                  <ZestTextbox value={svc.dockerUsername ?? ''}
+                    onChange={e => setServices(prev => prev.map((s, j) => j === i ? { ...s, dockerUsername: e.target.value } : s))}
+                    placeholder="registry username" zest={{ stretch: true, zSize: 'sm' }} />
+                  <p style={{ margin: '3px 0 0', fontSize: 11, color: '#637389' }}>
+                    Optional — saved credentials skip the login prompt during push.
+                  </p>
+                </div>
+                <div className={styles.fieldRow}>
+                  <span className={styles.fieldLabel}>Docker password / token</span>
+                  <input type="password" value={svc.dockerPassword ?? ''}
+                    onChange={e => setServices(prev => prev.map((s, j) => j === i ? { ...s, dockerPassword: e.target.value } : s))}
+                    placeholder="Enter to set or update"
+                    autoComplete="new-password"
+                    style={{ width: '100%', background: '#131D30', color: '#F0F2F5', border: '1px solid rgba(255,255,255,0.12)',
+                      borderRadius: 6, padding: '6px 10px', fontSize: 14, boxSizing: 'border-box' }} />
+                  <p style={{ margin: '3px 0 0', fontSize: 11, color: '#637389' }}>
+                    Encrypted at rest with AES-256-GCM. Leave blank to keep existing or be prompted at build time.
                   </p>
                 </div>
 
@@ -322,7 +501,10 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
           </div>
 
           <div className={styles.footer}>
-            {!existing && <ZestButton onClick={() => setStep('pick')} zest={{ buttonStyle: 'outline' }}>← Back</ZestButton>}
+            {!existing && (
+              <ZestButton onClick={() => setStep(projectType === 'freeform' && !freeformFeatures.deploy ? 'type' : 'server')}
+                zest={{ buttonStyle: 'outline' }}>← Back</ZestButton>
+            )}
             {existing
               ? <ZestButton onClick={() => setStep('server')} zest={{ visualOptions: { variant: 'standard' } }}>Server config →</ZestButton>
               : <ZestButton onClick={handleSave} zest={{ visualOptions: { variant: 'standard' }, semanticType: 'save' }}>Create Project</ZestButton>
@@ -349,6 +531,24 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
                 <ZestTextbox value={name} onChange={e => setName(e.target.value)}
                   placeholder="e.g. SMS Gateway" zest={{ stretch: true }} />
                 {errors['name'] && <p className={styles.errorText}>{errors['name']}</p>}
+              </div>
+            </div>
+          )}
+
+          {/* Global server selector */}
+          {globalServers.length > 0 && (
+            <div className={styles.section}>
+              <span className={styles.sectionTitle}>Linked Server <span style={{ color: '#637389', fontWeight: 400 }}>(optional)</span></span>
+              <div className={styles.fieldRow}>
+                <label className={styles.fieldLabel}>Choose a global server to pre-fill the fields below.</label>
+                <select value={serverId} onChange={e => applyGlobalServer(e.target.value)}
+                  style={{ background: '#131D30', color: '#F0F2F5', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, padding: '6px 10px', width: '100%' }}>
+                  <option value="">— Manual entry —</option>
+                  {globalServers.map(s => (
+                    <option key={s.id} value={s.id!}>{s.name || s.host}</option>
+                  ))}
+                </select>
+                <Link href="/servers/" style={{ fontSize: 12, color: '#C9A84C' }}>Manage servers →</Link>
               </div>
             </div>
           )}
@@ -491,6 +691,7 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
 
           <div className={styles.footer}>
             {existing && <ZestButton onClick={() => setStep('review')} zest={{ buttonStyle: 'outline' }}>← Back</ZestButton>}
+            {!existing && <ZestButton onClick={() => setStep('type')} zest={{ buttonStyle: 'outline' }}>← Back</ZestButton>}
             {existing
               ? <ZestButton onClick={handleSave} zest={{ visualOptions: { variant: 'standard' }, semanticType: 'save' }}>Save Changes</ZestButton>
               : <ZestButton onClick={() => setStep('pick')} zest={{ visualOptions: { variant: 'standard' } }}>Source code →</ZestButton>

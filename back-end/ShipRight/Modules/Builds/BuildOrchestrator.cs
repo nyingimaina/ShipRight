@@ -657,75 +657,35 @@ public class BuildOrchestrator
         {
             await ctx.EmitLogAsync("Push pipeline started.", "shipright");
 
-            // ── Push Step 1: Docker Login Check ───────────────────────────────
+            // ── Push Step 1: Docker Login Check (per-registry) ─────────────────
             await ctx.StepStartedAsync(1, "DockerLoginCheck");
 
-            bool needsLogin = true;
-            if (OperatingSystem.IsWindows())
-            {
-                // On Windows, docker runs in WSL — read config from WSL home
-                var cfgResult = await _runner.RunAsync("wsl",
-                    ["sh", "-c", "cat ~/.docker/config.json 2>/dev/null || echo '{}'"],
-                    null);
-                if (cfgResult.Success)
-                {
-                    var cfg = cfgResult.StdOut;
-                    needsLogin = !cfg.Contains("docker.io") && !cfg.Contains("index.docker.io");
-                }
-            }
-            else
-            {
-                var dockerConfigPath = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                    ".docker", "config.json");
-                if (File.Exists(dockerConfigPath))
-                {
-                    var cfg = await File.ReadAllTextAsync(dockerConfigPath);
-                    needsLogin = !cfg.Contains("docker.io") && !cfg.Contains("index.docker.io");
-                }
-            }
-
-            if (needsLogin)
-            {
-                var loggedIn = await DockerLoginAsync(ctx, record, "Docker Hub credentials required.");
-                if (!loggedIn)
-                {
-                    record.Status = BuildStatus.Aborted;
-                    await _buildStore.SaveAsync(record);
-                    await ctx.PushCompletedAsync();
-                    return;
-                }
-            }
-            else
-            {
-                await ctx.EmitLogAsync("Docker Hub credentials found — skipping login.", "shipright");
-            }
-
-            await ctx.StepCompletedAsync(1, "DockerLoginCheck");
-            await _buildStore.SaveAsync(record);
-
-            // ── Push Step 2: Docker Push ──────────────────────────────────────
-            await ctx.StepStartedAsync(2, "DockerPush");
-
+            var servicesByRegistry = new Dictionary<string, List<(ServiceConfig Svc, ServiceVersion Sv)>>();
             foreach (var sv in record.Versions)
             {
                 var svc = project.Services.First(s => s.Name == sv.ServiceName);
+                var registry = ResolveRegistry(svc);
+                if (!servicesByRegistry.ContainsKey(registry))
+                    servicesByRegistry[registry] = new();
+                servicesByRegistry[registry].Add((svc, sv));
+            }
 
-                var pushResult = await _runner.RunAsync("docker",
-                    ["push", $"{svc.DockerImageName}:{sv.NewVersion}"],
-                    null,
-                    line => ctx.EmitLogAsync(line, "docker"),
-                    line => ctx.EmitLogAsync(line, "docker"),
-                    ct);
-
-                if (!pushResult.Success)
+            foreach (var registry in servicesByRegistry.Keys)
+            {
+                var needsLogin = await NeedsRegistryLoginAsync(registry);
+                if (needsLogin)
                 {
-                    var pushOut = pushResult.StdOut + pushResult.StdErr;
-                    if (pushOut.Contains("denied") || pushOut.Contains("unauthorized"))
+                    // Check if any service in this group has stored credentials
+                    var creds = servicesByRegistry[registry]
+                        .Select(g => g.Svc)
+                        .FirstOrDefault(s => !string.IsNullOrEmpty(s.DockerUsername) && !string.IsNullOrEmpty(s.DockerPassword));
+
+                    if (creds is not null)
                     {
-                        // Credentials rejected — give the user a chance to re-authenticate
-                        await ctx.EmitLogAsync("Push rejected — Docker Hub credentials required.", "shipright");
-                        var loggedIn = await DockerLoginAsync(ctx, record, "Docker Hub access denied. Re-enter credentials.");
+                        await ctx.EmitLogAsync($"Using stored credentials for {registry}.", "shipright");
+                        var loggedIn = await DockerLoginAsync(ctx, record, registry,
+                            creds.DockerUsername, creds.DockerPassword,
+                            $"Docker credentials required for {registry}.");
                         if (!loggedIn)
                         {
                             record.Status = BuildStatus.Aborted;
@@ -733,23 +693,77 @@ public class BuildOrchestrator
                             await ctx.PushCompletedAsync();
                             return;
                         }
-                        // Retry once after fresh login
-                        var retry = await _runner.RunAsync("docker",
-                            ["push", $"{svc.DockerImageName}:{sv.NewVersion}"],
-                            null,
-                            line => ctx.EmitLogAsync(line, "docker"),
-                            line => ctx.EmitLogAsync(line, "docker"),
-                            ct);
-                        if (!retry.Success)
-                            throw new InvalidOperationException($"docker push failed for {svc.Name} after re-login (exit {retry.ExitCode}).");
                     }
                     else
                     {
-                        throw new InvalidOperationException($"docker push {sv.NewVersion} failed for {svc.Name} (exit {pushResult.ExitCode}).");
+                        await ctx.EmitLogAsync($"Credentials needed for {registry} — prompting.", "shipright");
+                        var loggedIn = await DockerLoginAsync(ctx, record, registry,
+                            $"Docker credentials required for {registry}.");
+                        if (!loggedIn)
+                        {
+                            record.Status = BuildStatus.Aborted;
+                            await _buildStore.SaveAsync(record);
+                            await ctx.PushCompletedAsync();
+                            return;
+                        }
                     }
                 }
+                else
+                {
+                    await ctx.EmitLogAsync($"Credentials found for {registry} — skipping login.", "shipright");
+                }
+            }
 
-                await ctx.EmitLogAsync($"Pushed {svc.DockerImageName}:{sv.NewVersion}", "shipright");
+            await ctx.StepCompletedAsync(1, "DockerLoginCheck");
+            await _buildStore.SaveAsync(record);
+
+            // ── Push Step 2: Docker Push (per-service) ────────────────────────
+            await ctx.StepStartedAsync(2, "DockerPush");
+
+            foreach (var (registry, services) in servicesByRegistry)
+            {
+                foreach (var (svc, sv) in services)
+                {
+                    var pushResult = await _runner.RunAsync("docker",
+                        ["push", $"{svc.DockerImageName}:{sv.NewVersion}"],
+                        null,
+                        line => ctx.EmitLogAsync(line, "docker"),
+                        line => ctx.EmitLogAsync(line, "docker"),
+                        ct);
+
+                    if (!pushResult.Success)
+                    {
+                        var pushOut = pushResult.StdOut + pushResult.StdErr;
+                        if (pushOut.Contains("denied") || pushOut.Contains("unauthorized"))
+                        {
+                            await ctx.EmitLogAsync($"Push rejected for {registry} — re-authenticating.", "shipright");
+                            // On re-auth failure, always prompt — stored creds already failed
+                            var loggedIn = await DockerLoginAsync(ctx, record, registry,
+                                $"Access denied for {registry}. Re-enter credentials.");
+                            if (!loggedIn)
+                            {
+                                record.Status = BuildStatus.Aborted;
+                                await _buildStore.SaveAsync(record);
+                                await ctx.PushCompletedAsync();
+                                return;
+                            }
+                            var retry = await _runner.RunAsync("docker",
+                                ["push", $"{svc.DockerImageName}:{sv.NewVersion}"],
+                                null,
+                                line => ctx.EmitLogAsync(line, "docker"),
+                                line => ctx.EmitLogAsync(line, "docker"),
+                                ct);
+                            if (!retry.Success)
+                                throw new InvalidOperationException($"docker push failed for {svc.Name} after re-login (exit {retry.ExitCode}).");
+                        }
+                        else
+                        {
+                            throw new InvalidOperationException($"docker push {sv.NewVersion} failed for {svc.Name} (exit {pushResult.ExitCode}).");
+                        }
+                    }
+
+                    await ctx.EmitLogAsync($"Pushed {svc.DockerImageName}:{sv.NewVersion}", "shipright");
+                }
             }
 
             await ctx.StepCompletedAsync(2, "DockerPush");
@@ -889,25 +903,63 @@ public class BuildOrchestrator
         return $"ship_{DateTime.UtcNow:yyyyMMddHHmm}";
     }
 
-    // Prompts for Docker Hub credentials and performs docker login.
-    // Returns true on success, false if the user chose to abort.
-    private async Task<bool> DockerLoginAsync(PipelineContext ctx, BuildRecord record, string prompt)
+    // Extracts the registry host from a ServiceConfig.
+    // Uses DockerRegistry field if set, otherwise infers from DockerImageName.
+    // Defaults to "docker.io".
+    private static string ResolveRegistry(ServiceConfig svc)
     {
-        await ctx.PauseAsync("docker_login_required", prompt, ["login", "abort"],
-            new[] { "username", "password" });
-        await _buildStore.SaveAsync(record);
+        if (!string.IsNullOrEmpty(svc.DockerRegistry))
+            return svc.DockerRegistry;
+        var image = svc.DockerImageName;
+        if (string.IsNullOrEmpty(image)) return "docker.io";
+        var firstSlash = image.IndexOf('/');
+        if (firstSlash < 0) return "docker.io";
+        var prefix = image[..firstSlash];
+        return (prefix.Contains('.') || prefix.Contains(':')) ? prefix : "docker.io";
+    }
 
-        var tcs = new TaskCompletionSource<RespondRequest>();
-        _pauseWaiters[record.Id] = tcs;
-        var response = await tcs.Task;
+    // Checks ~/.docker/config.json to see if credentials exist for the given registry.
+    // Returns true if a login is needed.
+    private async Task<bool> NeedsRegistryLoginAsync(string registry)
+    {
+        string configJson;
+        if (OperatingSystem.IsWindows())
+        {
+            var result = await _runner.RunAsync("wsl",
+                ["sh", "-c", "cat ~/.docker/config.json 2>/dev/null || echo '{}'"], null);
+            if (!result.Success) return true;
+            configJson = result.StdOut;
+        }
+        else
+        {
+            var path = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".docker", "config.json");
+            if (!File.Exists(path)) return true;
+            configJson = await File.ReadAllTextAsync(path);
+        }
 
-        if (response.Choice == "abort") return false;
+        var key = (registry == "docker.io") ? "index.docker.io" : registry;
+        return !configJson.Contains(key);
+    }
 
-        var username = response.Data?.GetValueOrDefault("username") ?? "";
-        var password = response.Data?.GetValueOrDefault("password") ?? "";
+    // Performs docker login using stored credentials (no pause/prompt).
+    private async Task<bool> DockerLoginAsync(PipelineContext ctx, BuildRecord record, string registry,
+        string username, string password, string prompt)
+    {
+        return await ExecuteDockerLoginAsync(ctx, record, registry, username, password);
+    }
 
-        var (loginExe, loginArgs) = ProcessRunner.ResolveForPlatform(
-            "docker", ["login", "-u", username, "--password-stdin"]);
+    private async Task<bool> ExecuteDockerLoginAsync(PipelineContext ctx, BuildRecord record, string registry,
+        string username, string password)
+    {
+        // Only pass registry argument for non-Docker Hub registries
+        var args = new List<string> { "login" };
+        if (registry != "docker.io" && registry != "index.docker.io")
+            args.Add(registry);
+        args.AddRange(["-u", username, "--password-stdin"]);
+
+        var (loginExe, loginArgs) = ProcessRunner.ResolveForPlatform("docker", args.ToArray());
         using var loginProc = new global::System.Diagnostics.Process
         {
             StartInfo = new global::System.Diagnostics.ProcessStartInfo
@@ -924,13 +976,33 @@ public class BuildOrchestrator
         var loginOut = await loginProc.StandardOutput.ReadToEndAsync();
         var loginErr = await loginProc.StandardError.ReadToEndAsync();
         await loginProc.WaitForExitAsync();
-        await ctx.EmitLogAsync($"docker login: {(loginOut + loginErr).Trim()}", "docker");
+        await ctx.EmitLogAsync($"docker login ({registry}): {(loginOut + loginErr).Trim()}", "docker");
 
         if (loginProc.ExitCode != 0)
-            throw new InvalidOperationException("Docker login failed — check username and password.");
+            throw new InvalidOperationException($"Docker login failed for {registry} — check username and password.");
 
         record.Status = BuildStatus.Running;
         return true;
+    }
+
+    // Prompts for Docker credentials for a specific registry and performs docker login.
+    // Returns true on success, false if the user chose to abort.
+    private async Task<bool> DockerLoginAsync(PipelineContext ctx, BuildRecord record, string registry, string prompt)
+    {
+        await ctx.PauseAsync("docker_login_required", prompt, ["login", "abort"],
+            new[] { "username", "password" });
+        await _buildStore.SaveAsync(record);
+
+        var tcs = new TaskCompletionSource<RespondRequest>();
+        _pauseWaiters[record.Id] = tcs;
+        var response = await tcs.Task;
+
+        if (response.Choice == "abort") return false;
+
+        var username = response.Data?.GetValueOrDefault("username") ?? "";
+        var password = response.Data?.GetValueOrDefault("password") ?? "";
+
+        return await ExecuteDockerLoginAsync(ctx, record, registry, username, password);
     }
 
     /// <summary>

@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Tab, TabList, TabPanel, Tabs } from 'react-tabs';
+import Link from 'next/link';
 import ZestButton from 'jattac.libs.web.zest-button';
 import ZestTextbox from 'jattac.libs.web.zest-textbox';
 import { RiAddLine, RiDeleteBinLine } from 'react-icons/ri';
-import { IApiError, IDatabaseConfig, IProjectInput, DbProviderType, DeployMode, emptyDatabaseConfig, emptyProjectInput } from '@/shared/types/IProject';
+import { IApiError, IDatabaseConfig, IProjectInput, IServerConfig, DbProviderType, DeployMode, emptyDatabaseConfig, emptyProjectInput } from '@/shared/types/IProject';
 import { api } from '@/shared/ApiService';
 import styles from './Styles/ProjectConfigForm.module.css';
 
@@ -22,6 +23,33 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
   const [databases, setDatabases] = useState<string[]>([]);
   const [loadingContainers, setLoadingContainers] = useState(false);
   const [loadingDatabases, setLoadingDatabases] = useState(false);
+
+  const [globalServers, setGlobalServers] = useState<IServerConfig[]>([]);
+
+  useEffect(() => {
+    api.get<IServerConfig[]>('/api/servers')
+      .then(setGlobalServers)
+      .catch(() => {});
+  }, []);
+
+  const applyGlobalServer = (id: string) => {
+    const s = globalServers.find(g => g.id === id);
+    if (s) {
+      setForm(prev => ({
+        ...prev,
+        serverId: id,
+        server: {
+          ...prev.server,
+          host: s.host,
+          username: s.username,
+          sshKeyPath: s.sshKeyPath,
+          remoteWorkingDir: s.remoteWorkingDir,
+          rebuildScript: s.rebuildScript,
+          deployMode: s.deployMode,
+        },
+      }));
+    }
+  };
 
   const set = (path: string, value: string) => {
     const parts = path.split('.');
@@ -45,7 +73,7 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
 
   const addService = () => setForm(prev => ({
     ...prev,
-    services: [...prev.services, { name: '', versionFilePath: '', buildContextPath: '', dockerImageName: '', composeServiceName: '' }],
+    services: [...prev.services, { name: '', versionFilePath: '', buildContextPath: '', dockerImageName: '', dockerRegistry: '', composeServiceName: '', dockerUsername: '', dockerPassword: '' }],
   }));
 
   const removeService = (i: number) => setForm(prev => ({
@@ -173,11 +201,34 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
                 <ZestTextbox value={svc.dockerImageName} onChange={e => setService(i, 'dockerImageName', e.target.value)}
                   placeholder="nyingi/jattac-sms" zest={{ stretch: true }} />
               </Field>
+              <Field label="Docker Registry" error={errors[`services[${i}].dockerRegistry`]}>
+                <ZestTextbox value={svc.dockerRegistry ?? ''} onChange={e => setService(i, 'dockerRegistry', e.target.value)}
+                  placeholder="ghcr.io (leave empty for Docker Hub)" zest={{ stretch: true }} />
+                <p style={{ margin: '4px 0 0', fontSize: 11, color: '#637389' }}>
+                  Optional — only needed for non-Docker Hub registries.
+                </p>
+              </Field>
               <Field label="Compose Service Name" error={errors[`services[${i}].composeServiceName`]}>
                 <ZestTextbox value={svc.composeServiceName} onChange={e => setService(i, 'composeServiceName', e.target.value)}
                   placeholder="api (key in docker-compose.yml services:)" zest={{ stretch: true }} />
                 <p style={{ margin: '4px 0 0', fontSize: 11, color: '#637389' }}>
                   Optional — when set on all services, only those containers are restarted (nginx/minio stay up).
+                </p>
+              </Field>
+              <Field label="Docker Username" error={errors[`services[${i}].dockerUsername`]}>
+                <ZestTextbox value={svc.dockerUsername ?? ''} onChange={e => setService(i, 'dockerUsername', e.target.value)}
+                  placeholder="Docker Hub / registry username" zest={{ stretch: true }} />
+                <p style={{ margin: '4px 0 0', fontSize: 11, color: '#637389' }}>
+                  Optional — saved credentials skip the login prompt during push.
+                </p>
+              </Field>
+              <Field label="Docker Password / Token">
+                <input type="password" value={svc.dockerPassword ?? ''} onChange={e => setService(i, 'dockerPassword', e.target.value)}
+                  placeholder="Enter to set or update" autoComplete="new-password"
+                  style={{ width: '100%', background: '#131D30', color: '#F0F2F5', border: '1px solid rgba(255,255,255,0.12)',
+                    borderRadius: 6, padding: '6px 10px', fontSize: 14, boxSizing: 'border-box' }} />
+                <p style={{ margin: '4px 0 0', fontSize: 11, color: '#637389' }}>
+                  Encrypted at rest with AES-256-GCM. Leave blank to keep existing or be prompted at build time.
                 </p>
               </Field>
             </div>
@@ -223,6 +274,21 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
         </TabPanel>
 
         <TabPanel className={styles.panel} selectedClassName={styles.panelActive}>
+          {globalServers.length > 0 && (
+            <div className={styles.formRow}>
+              <label className={styles.label}>Linked Server <span style={{ color: '#637389' }}>(optional)</span></label>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <select value={form.serverId ?? ''} onChange={e => applyGlobalServer(e.target.value)}
+                  style={{ flex: 1, background: '#131D30', color: '#F0F2F5', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, padding: '6px 10px' }}>
+                  <option value="">— None (manual entry) —</option>
+                  {globalServers.map(s => (
+                    <option key={s.id} value={s.id!}>{s.name || s.host}</option>
+                  ))}
+                </select>
+                <Link href="/servers/" style={{ fontSize: 12, color: '#C9A84C', whiteSpace: 'nowrap' }}>Manage</Link>
+              </div>
+            </div>
+          )}
           <Field label="Host" error={errors['server.host']}>
             <ZestTextbox value={form.server.host} onChange={e => set('server.host', e.target.value)}
               placeholder="3.130.65.46" zest={{ stretch: true }} />

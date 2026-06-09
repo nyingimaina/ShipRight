@@ -5,7 +5,8 @@ import { useElapsedTimer, fmtElapsed } from '@/shared/hooks/useElapsedTimer';
 import styles from './Styles/SshTerminal.module.css';
 
 interface Props {
-  projectId: string;
+  projectId?: string;
+  serverId?: string;
   serverLabel: string;
 }
 
@@ -15,7 +16,15 @@ interface OutputLine {
   text: string;
 }
 
-export default function SshTerminal({ projectId, serverLabel }: Props) {
+function apiBase(projectId?: string, serverId?: string): string | null {
+  if (projectId) return `/api/projects/${projectId}`;
+  if (serverId) return `/api/servers/${serverId}`;
+  return null;
+}
+
+export default function SshTerminal({ projectId, serverId, serverLabel }: Props) {
+  const base = apiBase(projectId, serverId);
+
   const [command, setCommand]       = useState('');
   const [lines, setLines]           = useState<OutputLine[]>([]);
   const [running, setRunning]       = useState(false);
@@ -38,7 +47,7 @@ export default function SshTerminal({ projectId, serverLabel }: Props) {
 
   const run = async () => {
     const cmd = command.trim();
-    if (!cmd || running) return;
+    if (!cmd || running || !base) return;
 
     setRunning(true);
     setCommand('');
@@ -48,9 +57,9 @@ export default function SshTerminal({ projectId, serverLabel }: Props) {
 
     try {
       const { opId } = await api.post<{ opId: string }>(
-        `/api/projects/${projectId}/ssh/exec`, { command: cmd });
+        `${base}/ssh/exec`, { command: cmd });
 
-      const es = new EventSource(sseUrl(`/api/projects/${projectId}/ssh/ops/${opId}/stream`));
+      const es = new EventSource(sseUrl(`${base}/ssh/ops/${opId}/stream`));
       esRef.current = es;
 
       es.onmessage = (event) => {
@@ -62,7 +71,7 @@ export default function SshTerminal({ projectId, serverLabel }: Props) {
           } else if (data.type === 'done') {
             const code = data.data?.exitCode ?? 0;
             pushLine(code === 0 ? 'done' : 'error',
-              code === 0 ? `✓ exit 0` : `✗ exit ${code}`);
+              code === 0 ? '✓ exit 0' : `✗ exit ${code}`);
             setRunning(false);
             es.close();
           } else if (data.type === 'error') {

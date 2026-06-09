@@ -7,6 +7,7 @@ using ShipRight.Modules.Filesystem;
 using ShipRight.Modules.Projects;
 using ShipRight.Modules.RepoMaintenance;
 using ShipRight.Modules.Services;
+using ShipRight.Modules.Servers;
 using ShipRight.Modules.Ssh;
 using ShipRight.Modules.System;
 using ShipRight.Shared.Events;
@@ -66,6 +67,7 @@ try
         sp.GetRequiredService<MariaDbProvider>(),
         sp.GetRequiredService<SqlServerProvider>()));
     builder.Services.AddSingleton<DatabaseOrchestrator>();
+    builder.Services.AddSingleton<IServerStore, JsonServerStore>();
 
     var app = builder.Build();
 
@@ -95,6 +97,7 @@ try
     app.MapSshTerminalRoutes();
     app.MapContainerLogRoutes();
     app.MapRepoMaintenanceRoutes();
+    app.MapServerRoutes();
 
     app.MapFallbackToFile("index.html");
 
