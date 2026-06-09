@@ -13,8 +13,8 @@ import ZestTabs, { ZestTabItem } from 'jattac.libs.web.zest-tabs';
 import { api, sseUrl } from '@/shared/ApiService';
 import { useElapsedTimer, fmtElapsed } from '@/shared/hooks/useElapsedTimer';
 
-const SqlQueryPanel  = dynamic(() => import('@/modules/Database/SqlQueryPanel'),  { ssr: false });
 const SshTerminal    = dynamic(() => import('@/modules/Ssh/SshTerminal'),          { ssr: false });
+import DbOperationsPanel from '@/modules/Database/DbOperationsPanel';
 import { IDatabaseConfig, IProject } from '@/shared/types/IProject';
 import { IDeployment, IServiceVersion } from '@/shared/types/IBuildRecord';
 import styles from './Styles/ProjectDetail.module.css';
@@ -55,12 +55,6 @@ export default function ProjectDetail() {
   const [wizardBuildId, setWizardBuildId] = useState<string | undefined>(undefined);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<ProjectTab>('overview');
-  const [backups, setBackups] = useState<{ fileName: string; filePath: string; sizeBytes: number; createdAt: string }[]>([]);
-  const [backupRunning, setBackupRunning] = useState(false);
-  const [dbOpId, setDbOpId] = useState<string | null>(null);
-  const [dbLogs, setDbLogs] = useState<string[]>([]);
-  const [dbStatus, setDbStatus] = useState<'idle' | 'running' | 'success' | 'error'>('idle');
-  const [dbMessage, setDbMessage] = useState('');
   const [inferring, setInferring] = useState(false);
   const [inferResult, setInferResult] = useState<{ config: IDatabaseConfig; detected: string[] } | null>(null);
   const [savingInfer, setSavingInfer] = useState(false);
@@ -68,10 +62,6 @@ export default function ProjectDetail() {
   const [containerOptions, setContainerOptions] = useState<{ name: string; image: string }[]>([]);
   const [selectedContainer, setSelectedContainer] = useState('');
   const [savingContainer, setSavingContainer] = useState(false);
-  const [deletingBackup, setDeletingBackup] = useState<string | null>(null);
-  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
-  const [deleteCountdown, setDeleteCountdown] = useState(0);
-  const deleteTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Deployment history + rollback
   const [deployments, setDeployments] = useState<IDeployment[]>([]);
@@ -94,7 +84,6 @@ export default function ProjectDetail() {
   const logEsRef = useRef<EventSource | null>(null);
 
   // Elapsed timers for active operations
-  const dbElapsed = useElapsedTimer(dbStatus === 'running');
   const rollbackElapsed = useElapsedTimer(rollbackStatus === 'running');
   const logElapsed = useElapsedTimer(logActive);
 
@@ -104,11 +93,9 @@ export default function ProjectDetail() {
       api.get<IProject>(`/api/projects/${id}`),
       api.get<IServiceVersion[]>(`/api/projects/${id}/current-versions`).catch(() => [] as IServiceVersion[]),
       api.get<ProjectSummary>(`/api/projects/${id}/summary`).catch(() => null),
-      api.get<{ fileName: string; filePath: string; sizeBytes: number; createdAt: string }[]>(
-        `/api/projects/${id}/db/backups`).catch(() => []),
       api.get<IDeployment[]>(`/api/projects/${id}/deployments?page=1&pageSize=10`).catch(() => [] as IDeployment[]),
     ])
-      .then(([p, v, s, b, d]) => { setProject(p); setVersions(v); setSummary(s); setBackups(b); setDeployments(d); })
+      .then(([p, v, s, d]) => { setProject(p); setVersions(v); setSummary(s); setDeployments(d); })
       .catch(() => toast.error('Project not found.'))
       .finally(() => setLoading(false));
   }, [id]);
@@ -119,12 +106,11 @@ export default function ProjectDetail() {
     if (!valid) setActiveTab('overview');
   }, [project?.database]);
 
-  // Cleanup EventSource and delete countdown on unmount
+  // Cleanup EventSource on unmount
   useEffect(() => {
     return () => {
       logEsRef.current?.close();
       rollbackEsRef.current?.close();
-      if (deleteTimerRef.current) clearInterval(deleteTimerRef.current);
     };
   }, []);
 
@@ -132,46 +118,6 @@ export default function ProjectDetail() {
   if (!project) return <AppShell><p className={styles.notFound}>Project not found.</p></AppShell>;
 
   const versionMap = Object.fromEntries(versions.map(v => [v.serviceName, v]));
-
-  const startBackup = async () => {
-    setBackupRunning(true);
-    setDbLogs([]);
-    setDbStatus('running');
-    setDbMessage('');
-    try {
-      const res = await api.post<{ opId: string }>(`/api/projects/${id}/db/backup`, {});
-      const opid = res.opId;
-      setDbOpId(opid);
-      const es = new EventSource(sseUrl(`/api/projects/${id}/db/ops/${opid}/stream`));
-      es.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === 'log') setDbLogs(prev => [...prev, data.data.message]);
-          else if (data.type === 'complete') {
-            setDbStatus('success');
-            setDbMessage(`Backup complete: ${data.data.fileName ?? ''}`);
-            setBackupRunning(false);
-            es.close();
-            api.get<typeof backups>(`/api/projects/${id}/db/backups`).catch(() => []).then(b => setBackups(b as typeof backups));
-          } else if (data.type === 'error') {
-            setDbStatus('error');
-            setDbMessage(data.data.message ?? 'Backup failed.');
-            setBackupRunning(false);
-            es.close();
-          }
-        } catch { /* ignore */ }
-      };
-      es.onerror = () => {
-        if (es.readyState === EventSource.CLOSED) {
-          setDbStatus('error'); setDbMessage('Connection lost.'); setBackupRunning(false);
-        }
-      };
-    } catch (e: unknown) {
-      setDbStatus('error');
-      setDbMessage((e as { message?: string })?.message ?? 'Failed to start backup.');
-      setBackupRunning(false);
-    }
-  };
 
   const startRollback = async (buildId: string) => {
     rollbackEsRef.current?.close();
@@ -205,33 +151,6 @@ export default function ProjectDetail() {
     } catch (e: unknown) {
       setRollbackStatus('error');
       setRollbackMessage((e as { message?: string })?.message ?? 'Failed to start rollback.');
-    }
-  };
-
-  const startRestore = async (filePath: string) => {
-    setDbLogs([]);
-    setDbStatus('running');
-    setDbMessage('');
-    try {
-      const res = await api.post<{ opId: string }>(`/api/projects/${id}/db/restore`, { backupFile: filePath });
-      const opid = res.opId;
-      const es = new EventSource(sseUrl(`/api/projects/${id}/db/ops/${opid}/stream`));
-      es.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === 'log') setDbLogs(prev => [...prev, data.data.message]);
-          else if (data.type === 'complete') { setDbStatus('success'); setDbMessage('Restore complete.'); es.close(); }
-          else if (data.type === 'error') { setDbStatus('error'); setDbMessage(data.data.message ?? 'Restore failed.'); es.close(); }
-        } catch { /* ignore */ }
-      };
-      es.onerror = () => {
-        if (es.readyState === EventSource.CLOSED) {
-          setDbStatus('error'); setDbMessage('Connection lost.');
-        }
-      };
-    } catch (e: unknown) {
-      setDbStatus('error');
-      setDbMessage((e as { message?: string })?.message ?? 'Failed to start restore.');
     }
   };
 
@@ -302,41 +221,6 @@ export default function ProjectDetail() {
     } finally {
       setSavingContainer(false);
     }
-  };
-
-  const deleteBackup = async (filePath: string) => {
-    setDeletingBackup(filePath);
-    try {
-      await api.delete(`/api/projects/${id}/db/backups?file=${encodeURIComponent(filePath)}`);
-      setBackups(prev => prev.filter(b => b.filePath !== filePath));
-      toast.success('Backup deleted.');
-    } catch (e: unknown) {
-      toast.error((e as { message?: string })?.message ?? 'Failed to delete backup.');
-    } finally {
-      setDeletingBackup(null);
-      setConfirmingDelete(null);
-    }
-  };
-
-  const startDeleteCountdown = (filePath: string) => {
-    setConfirmingDelete(filePath);
-    setDeleteCountdown(3);
-    let n = 3;
-    deleteTimerRef.current = setInterval(() => {
-      n -= 1;
-      setDeleteCountdown(n);
-      if (n <= 0) {
-        clearInterval(deleteTimerRef.current!);
-        deleteTimerRef.current = null;
-        deleteBackup(filePath);
-      }
-    }, 1000);
-  };
-
-  const cancelDelete = () => {
-    if (deleteTimerRef.current) { clearInterval(deleteTimerRef.current); deleteTimerRef.current = null; }
-    setConfirmingDelete(null);
-    setDeleteCountdown(0);
   };
 
   const loadLastBuildLog = async () => {
@@ -675,81 +559,10 @@ export default function ProjectDetail() {
                   </div>
                 )}
 
-                {/* Backup action + live feedback */}
-                <div className={`${styles.dbOpSection}${dbStatus === 'running' ? ' alive' : ''}`}>
-                  <div className={styles.buildActions} style={{ alignItems: 'center' }}>
-                    <ZestButton
-                      zest={{ visualOptions: { variant: 'standard' } }}
-                      onClick={startBackup}
-                      disabled={backupRunning}>
-                      {backupRunning ? 'Backing up…' : 'Backup Now'}
-                    </ZestButton>
-                  </div>
-
-                  {dbStatus === 'running' && (
-                    <div className="elapsedBar">
-                      <span className="elapsedDot" />
-                      <span className="elapsedTime">{fmtElapsed(dbElapsed)}</span>
-                      <span>{backupRunning ? 'backup in progress…' : 'restore in progress…'}</span>
-                    </div>
-                  )}
-
-                  {(dbStatus === 'running' || dbLogs.length > 0) && (
-                    <LogViewer lines={toLogEntries(dbLogs)} isLive={dbStatus === 'running'} />
-                  )}
-                  {dbStatus === 'success' && <p style={{ color: '#3D9970', fontSize: 13, marginTop: 8 }}>{dbMessage}</p>}
-                  {dbStatus === 'error'   && <p style={{ color: '#B84040', fontSize: 13, marginTop: 8 }}>{dbMessage}</p>}
-                </div>
-
-                {/* Backup list */}
-                {backups.length > 0 && (
-                  <div style={{ marginTop: 16 }}>
-                    <h3 className={styles.sectionTitle}>Backups</h3>
-                    {backups.map(b => (
-                      <div key={b.filePath} style={{ display: 'flex', alignItems: 'center', gap: 12,
-                        padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', flexWrap: 'wrap' }}>
-                        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#C9A84C', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {b.fileName}
-                        </span>
-                        <span style={{ fontSize: 12, color: '#637389', flexShrink: 0 }}>
-                          {(b.sizeBytes / 1024).toFixed(1)} KB
-                        </span>
-                        <ZestButton
-                          zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}
-                          onClick={() => startRestore(b.filePath)}>
-                          Restore
-                        </ZestButton>
-                        {confirmingDelete === b.filePath ? (
-                          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                            <span style={{ fontSize: 12, color: '#B84040', fontFamily: "'JetBrains Mono', monospace" }}>
-                              {deletingBackup === b.filePath ? 'Deleting…' : `Deleting in ${deleteCountdown}s`}
-                            </span>
-                            {!deletingBackup && (
-                              <ZestButton
-                                zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}
-                                onClick={cancelDelete}>
-                                Cancel
-                              </ZestButton>
-                            )}
-                          </div>
-                        ) : (
-                          <ZestButton
-                            zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' }, semanticType: 'delete' }}
-                            onClick={() => startDeleteCountdown(b.filePath)}
-                            disabled={!!deletingBackup}>
-                            Delete
-                          </ZestButton>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* SQL Query */}
-                <div style={{ marginTop: 20 }}>
-                  <h3 className={styles.sectionTitle}>Run SQL Query</h3>
-                  <SqlQueryPanel projectId={id} />
-                </div>
+                <DbOperationsPanel
+                  apiBase={`/api/projects/${id}/db`}
+                  dbConfig={project.database}
+                />
               </>
             )}
           </section>

@@ -9,7 +9,8 @@ import { useElapsedTimer, fmtElapsed } from '@/shared/hooks/useElapsedTimer';
 import styles from './Styles/SqlQueryPanel.module.css';
 
 interface Props {
-  projectId: string;
+  /** API base path for DB operations, e.g. `/api/projects/{id}/db` or `/api/servers/{serverId}/db` */
+  apiBase: string;
 }
 
 interface TableData { headers: string[]; rows: string[][]; }
@@ -22,7 +23,7 @@ function tryParseTable(lines: string[]): TableData | null {
   return { headers: data[0].split('\t'), rows: data.slice(1).map(l => l.split('\t')) };
 }
 
-export default function SqlQueryPanel({ projectId }: Props) {
+export default function SqlQueryPanel({ apiBase }: Props) {
   const [inputMode, setInputMode] = useState<InputMode>('text');
   const [phase, setPhase] = useState<Phase>('pick');
   const [sqlPath, setSqlPath] = useState('');
@@ -52,7 +53,7 @@ export default function SqlQueryPanel({ projectId }: Props) {
   }, []);
 
   const subscribeToStream = (id: string) => {
-    const es = new EventSource(sseUrl(`/api/projects/${projectId}/db/ops/${id}/stream`));
+    const es = new EventSource(sseUrl(`${apiBase}/ops/${id}/stream`));
     esRef.current = es;
     es.onmessage = (event) => {
       try {
@@ -116,7 +117,7 @@ export default function SqlQueryPanel({ projectId }: Props) {
   const handleExecuteFile = async () => {
     prepareRun();
     try {
-      const res = await api.post<{ opId: string }>(`/api/projects/${projectId}/db/query`, {
+      const res = await api.post<{ opId: string }>(`${apiBase}/query`, {
         localSqlPath: sqlPath,
       });
       setOpId(res.opId);
@@ -132,7 +133,7 @@ export default function SqlQueryPanel({ projectId }: Props) {
     if (!rawSql.trim()) return;
     prepareRun();
     try {
-      const res = await api.post<{ opId: string }>(`/api/projects/${projectId}/db/query-raw`, {
+      const res = await api.post<{ opId: string }>(`${apiBase}/query-raw`, {
         sql: rawSql,
       });
       setOpId(res.opId);

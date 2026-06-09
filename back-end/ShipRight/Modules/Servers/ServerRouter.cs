@@ -149,6 +149,154 @@ public static class ServerRouter
             }
         });
 
+        // ── DB backup (standalone) ───────────────────────────────────────────
+
+        app.MapPost("/api/servers/{serverId}/db/backup", async (
+            string serverId, DatabaseConfig dbConfig,
+            IServerStore store, DatabaseOrchestrator orchestrator, BuildEventBus bus) =>
+        {
+            var server = await store.GetByIdAsync(serverId);
+            if (server is null)
+                return Results.NotFound(new { isError = true, message = $"Server '{serverId}' not found." });
+
+            if (string.IsNullOrWhiteSpace(dbConfig.DatabaseName))
+                return Results.BadRequest(new { isError = true, message = "databaseName is required." });
+
+            var project = ProjectFromServer(server, dbConfig);
+            var opId = Guid.NewGuid().ToString("N");
+            bus.Register(opId);
+            _ = Task.Run(() => orchestrator.BackupAsync(project, opId, CancellationToken.None));
+            return Results.Accepted($"/api/servers/{serverId}/db/ops/{opId}/stream",
+                new { opId, message = "Backup started." });
+        });
+
+        // ── DB restore (standalone) ──────────────────────────────────────────
+
+        app.MapPost("/api/servers/{serverId}/db/restore", async (
+            string serverId, StandaloneRestoreRequest request,
+            IServerStore store, DatabaseOrchestrator orchestrator, BuildEventBus bus) =>
+        {
+            var server = await store.GetByIdAsync(serverId);
+            if (server is null)
+                return Results.NotFound(new { isError = true, message = $"Server '{serverId}' not found." });
+
+            if (string.IsNullOrWhiteSpace(request.BackupFile))
+                return Results.BadRequest(new { isError = true, message = "backupFile is required." });
+            if (!File.Exists(request.BackupFile))
+                return Results.BadRequest(new { isError = true, message = $"Backup file not found: {request.BackupFile}" });
+
+            var project = ProjectFromServer(server, request.DbConfig);
+            var opId = Guid.NewGuid().ToString("N");
+            bus.Register(opId);
+            _ = Task.Run(() => orchestrator.RestoreAsync(project, opId, request.BackupFile, CancellationToken.None));
+            return Results.Accepted($"/api/servers/{serverId}/db/ops/{opId}/stream",
+                new { opId, message = "Restore started." });
+        });
+
+        // ── DB query from file (standalone) ──────────────────────────────────
+
+        app.MapPost("/api/servers/{serverId}/db/query", async (
+            string serverId, StandaloneQueryRequest request,
+            IServerStore store, DatabaseOrchestrator orchestrator, BuildEventBus bus) =>
+        {
+            var server = await store.GetByIdAsync(serverId);
+            if (server is null)
+                return Results.NotFound(new { isError = true, message = $"Server '{serverId}' not found." });
+
+            if (string.IsNullOrWhiteSpace(request.LocalSqlPath))
+                return Results.BadRequest(new { isError = true, message = "localSqlPath is required." });
+            if (!File.Exists(request.LocalSqlPath))
+                return Results.BadRequest(new { isError = true, message = $"SQL file not found: {request.LocalSqlPath}" });
+
+            var project = ProjectFromServer(server, request.DbConfig);
+            var opId = Guid.NewGuid().ToString("N");
+            bus.Register(opId);
+            _ = Task.Run(() => orchestrator.QueryAsync(project, opId, request.LocalSqlPath, CancellationToken.None));
+            return Results.Accepted($"/api/servers/{serverId}/db/ops/{opId}/stream",
+                new { opId, message = "Query started." });
+        });
+
+        // ── DB raw SQL query (standalone) ────────────────────────────────────
+
+        app.MapPost("/api/servers/{serverId}/db/query-raw", async (
+            string serverId, StandaloneQueryRawRequest request,
+            IServerStore store, DatabaseOrchestrator orchestrator, BuildEventBus bus) =>
+        {
+            var server = await store.GetByIdAsync(serverId);
+            if (server is null)
+                return Results.NotFound(new { isError = true, message = $"Server '{serverId}' not found." });
+
+            if (string.IsNullOrWhiteSpace(request.Sql))
+                return Results.BadRequest(new { isError = true, message = "sql is required." });
+
+            var project = ProjectFromServer(server, request.DbConfig);
+            var opId = Guid.NewGuid().ToString("N");
+            bus.Register(opId);
+            _ = Task.Run(() => orchestrator.QueryRawAsync(project, opId, request.Sql, CancellationToken.None));
+            return Results.Accepted($"/api/servers/{serverId}/db/ops/{opId}/stream",
+                new { opId, message = "Query started." });
+        });
+
+        // ── List backups (standalone) ────────────────────────────────────────
+
+        app.MapGet("/api/servers/{serverId}/db/backups", async (
+            string serverId, string container, string database, string provider, string rootUser, int? backupRetainCount,
+            IServerStore store, DatabaseOrchestrator orchestrator) =>
+        {
+            var server = await store.GetByIdAsync(serverId);
+            if (server is null)
+                return Results.NotFound(new { isError = true, message = $"Server '{serverId}' not found." });
+
+            var dbConfig = new DatabaseConfig
+            {
+                ContainerName = container,
+                DatabaseName = database,
+                Provider = Enum.TryParse<DbProviderType>(provider, ignoreCase: true, out var pt) ? pt : DbProviderType.MariaDb,
+                RootUser = rootUser,
+                BackupRetainCount = backupRetainCount ?? 10,
+            };
+            var project = ProjectFromServer(server, dbConfig);
+            var backups = orchestrator.ListBackups(project.Id);
+            return Results.Ok(backups);
+        });
+
+        // ── Delete backup (standalone) ───────────────────────────────────────
+
+        app.MapDelete("/api/servers/{serverId}/db/backups", async (
+            string serverId, string file, string container, string database, string provider, string rootUser, int? backupRetainCount,
+            IServerStore store, DatabaseOrchestrator orchestrator) =>
+        {
+            var server = await store.GetByIdAsync(serverId);
+            if (server is null)
+                return Results.NotFound(new { isError = true, message = $"Server '{serverId}' not found." });
+
+            if (string.IsNullOrWhiteSpace(file))
+                return Results.BadRequest(new { isError = true, message = "file query param is required." });
+
+            var dbConfig = new DatabaseConfig
+            {
+                ContainerName = container,
+                DatabaseName = database,
+                Provider = Enum.TryParse<DbProviderType>(provider, ignoreCase: true, out var pt) ? pt : DbProviderType.MariaDb,
+                RootUser = rootUser,
+                BackupRetainCount = backupRetainCount ?? 10,
+            };
+            var project = ProjectFromServer(server, dbConfig);
+            try
+            {
+                orchestrator.DeleteBackup(project.Id, file);
+                return Results.Ok(new { message = "Backup deleted." });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(new { isError = true, message = ex.Message });
+            }
+        });
+
+        // ── SSE stream for standalone DB ops ─────────────────────────────────
+
+        app.MapGet("/api/servers/{serverId}/db/ops/{opId}/stream", SseStreamHandler);
+
         // ── Container logs stream (standalone) ────────────────────────────────
 
         app.MapGet("/api/servers/{serverId}/container-logs/stream", async (
@@ -270,8 +418,21 @@ public static class ServerRouter
         }
     }
 
-    private static ProjectConfig ProjectFromServer(ServerConfig server) =>
-        new() { Server = server };
+    private static ProjectConfig ProjectFromServer(ServerConfig server, DatabaseConfig? dbConfig = null)
+    {
+        var key = dbConfig is not null
+            ? $"standalone-{server.Id}-{dbConfig.ContainerName}-{dbConfig.DatabaseName}"
+            : $"standalone-{server.Id}";
+        return new()
+        {
+            Id = key,
+            Server = server,
+            Database = dbConfig,
+        };
+    }
 
     private record SshExecRequest(string Command);
+    private record StandaloneRestoreRequest(DatabaseConfig DbConfig, string BackupFile);
+    private record StandaloneQueryRequest(DatabaseConfig DbConfig, string LocalSqlPath);
+    private record StandaloneQueryRawRequest(DatabaseConfig DbConfig, string Sql);
 }
