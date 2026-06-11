@@ -87,6 +87,28 @@
   color: #637389;
 }
 
+.createVersionRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.createVersionInput {
+  background: #0D1625;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 4px 10px;
+  color: #C9D6E3;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  width: 80px;
+}
+
+.createVersionInput:focus {
+  outline: none;
+  border-color: #4A7FA8;
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
 }

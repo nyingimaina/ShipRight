@@ -105,6 +105,12 @@
   flex: 1;
 }
 
+.versionCreateRow {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
 .actions {
   display: flex;
   gap: 8px;

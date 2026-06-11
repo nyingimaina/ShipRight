@@ -36,10 +36,11 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
   const [detectError, setDetectError] = useState<string | null>(null);
 
   // Editable fields from detection + manual
+  type ServiceState = { name: string; versionFilePath: string; buildContextPath: string; dockerImageName: string; dockerRegistry: string; composeServiceName: string; dockerUsername: string; dockerPassword: string; version: string | null };
   const [name, setName]                 = useState(existing?.name ?? '');
-  const [services, setServices]         = useState(existing
-    ? existing.services.map(s => ({ name: s.name, versionFilePath: s.versionFilePath, buildContextPath: s.buildContextPath, dockerImageName: s.dockerImageName, dockerRegistry: s.dockerRegistry ?? '', composeServiceName: s.composeServiceName ?? '', dockerUsername: s.dockerUsername ?? '', dockerPassword: '' }))
-    : [] as { name: string; versionFilePath: string; buildContextPath: string; dockerImageName: string; dockerRegistry: string; composeServiceName: string; dockerUsername: string; dockerPassword: string }[]);
+  const [services, setServices]         = useState<ServiceState[]>(existing
+    ? existing.services.map(s => ({ name: s.name, versionFilePath: s.versionFilePath, buildContextPath: s.buildContextPath, dockerImageName: s.dockerImageName, dockerRegistry: s.dockerRegistry ?? '', composeServiceName: s.composeServiceName ?? '', dockerUsername: s.dockerUsername ?? '', dockerPassword: '', version: null }))
+    : []);
   const [gitRepos, setGitRepos]         = useState<{ repoPath: string; deployBranch: string }[]>(existing?.gitRepos ?? []);
   const [wslWorkingDir, setWslWorkingDir] = useState(existing?.wsl.workingDir ?? '');
   const [serverHost, setServerHost]     = useState(existing?.server.host ?? '');
@@ -81,6 +82,7 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
         composeServiceName: s.composeServiceName ?? '',
         dockerUsername: '',
         dockerPassword: '',
+        version: s.version,
       })));
       setStep('review');
     } catch (e: unknown) {
@@ -420,10 +422,13 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
               </div>
             )}
             {errors['services'] && <p className={styles.errorText}>{errors['services']}</p>}
-            {services.map((svc, i) => (
+            {(() => {
+              const composeNames = detected ? Array.from(new Set(detected.services.map(s => s.composeServiceName).filter(Boolean) as string[])) : [];
+              return services.map((svc, i) => (
               <div key={i} className={styles.serviceCard}>
                 <div className={styles.serviceHeader}>
                   <span className={styles.serviceName}>{svc.name || `Service ${i + 1}`}</span>
+                  {svc.version && <span className={styles.versionChip}>v{svc.version}</span>}
                   {svc.dockerImageName
                     ? <span className={styles.detectedBadge}>image detected</span>
                     : <span className={styles.needsBadge}>needs image name</span>}
@@ -433,7 +438,11 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
                   <span className={styles.fieldLabel}>Service name</span>
                   <ZestTextbox value={svc.name}
                     onChange={e => setServices(prev => prev.map((s, j) => j === i ? { ...s, name: e.target.value } : s))}
-                    zest={{ stretch: true, zSize: 'sm' }} />
+                    zest={{ stretch: true, zSize: 'sm' }}
+                    list="svc-name-suggestions" />
+                  <datalist id="svc-name-suggestions">
+                    {composeNames.map(n => <option key={n} value={n} />)}
+                  </datalist>
                   {errors[`services[${i}].name`] && <p className={styles.errorText}>{errors[`services[${i}].name`]}</p>}
                 </div>
 
@@ -467,7 +476,11 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
                   <ZestTextbox value={svc.composeServiceName ?? ''}
                     onChange={e => setServices(prev => prev.map((s, j) => j === i ? { ...s, composeServiceName: e.target.value } : s))}
                     placeholder="e.g. api (key in docker-compose.yml)"
-                    zest={{ stretch: true, zSize: 'sm' }} />
+                    zest={{ stretch: true, zSize: 'sm' }}
+                    list="compose-name-suggestions" />
+                  <datalist id="compose-name-suggestions">
+                    {composeNames.map(n => <option key={n} value={n} />)}
+                  </datalist>
                   <p style={{ margin: '3px 0 0', fontSize: 11, color: '#637389' }}>
                     Optional — when set on all services, only those containers restart (nginx/minio stay up).
                   </p>
@@ -504,7 +517,7 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
                   <div className={styles.fieldValue}>{svc.buildContextPath}</div>
                 </div>
               </div>
-            ))}
+            )); })()}
           </div>
 
           {/* WSL working dir */}

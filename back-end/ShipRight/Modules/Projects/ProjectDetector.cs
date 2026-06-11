@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.RegularExpressions;
 using Serilog;
 
@@ -9,7 +10,8 @@ public record DetectedService(
     string BuildContextPath,
     string? DockerImageName,        // null if not detected
     bool ImageDetected,
-    string? ComposeServiceName);    // service key in docker-compose.yml, null if not detected
+    string? ComposeServiceName,    // service key in docker-compose.yml, null if not detected
+    string? Version);              // version read from version.txt, null if file missing or invalid
 
 public record DetectedGitRepo(string RepoPath, string DeployBranch);
 
@@ -94,10 +96,11 @@ public static class ProjectDetector
 
             string? imageName = composeMatch?.Value;
             string? composeServiceName = composeMatch?.Key;
+            var version = ReadVersionFile(vf);
 
-            services.Add(new DetectedService(svcName, vf, buildContext, imageName, imageName is not null, composeServiceName));
-            Log.Information("Service detected: {Name} | version: {Vf} | context: {Ctx} | image: {Img} | compose: {Compose}",
-                svcName, vf, buildContext, imageName ?? "(not found)", composeServiceName ?? "(not found)");
+            services.Add(new DetectedService(svcName, vf, buildContext, imageName, imageName is not null, composeServiceName, version));
+            Log.Information("Service detected: {Name} | version: {Vf} | ver: {Ver} | context: {Ctx} | image: {Img} | compose: {Compose}",
+                svcName, vf, version ?? "(not found)", buildContext, imageName ?? "(not found)", composeServiceName ?? "(not found)");
         }
 
         // ── Git detection — find all unique .git roots ────────────────────────
@@ -117,6 +120,8 @@ public static class ProjectDetector
         var gitRepos = new List<DetectedGitRepo>();
         foreach (var repoPath in gitRepoPaths)
         {
+            // Pull latest so version files and tags are current
+            GitPull(repoPath);
             var branch = DetectDefaultBranch(repoPath) ?? "master";
             gitRepos.Add(new DetectedGitRepo(repoPath, branch));
             Log.Information("Git repo detected: {Path}, branch: {Branch}", repoPath, branch);
@@ -251,5 +256,45 @@ public static class ProjectDetector
             .Select(p => char.ToUpper(p[0]) + p[1..])
             .ToList();
         return parts.Count > 0 ? string.Join(" ", parts) : dirName;
+    }
+
+    private static void GitPull(string repoPath)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "git",
+                Arguments = $"-C \"{repoPath}\" pull --ff-only",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            using var proc = Process.Start(psi);
+            if (proc is null) return;
+            if (proc.WaitForExit(30_000) && proc.ExitCode == 0)
+                Log.Information("Git pull succeeded for {RepoPath}", repoPath);
+            else
+            {
+                var err = proc.StandardError.ReadToEnd().Trim();
+                Log.Warning("Git pull for {RepoPath}: {Stderr}", repoPath, string.IsNullOrEmpty(err) ? "timeout or failure" : err);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Could not git pull for {RepoPath}", repoPath);
+        }
+    }
+
+    private static string? ReadVersionFile(string path)
+    {
+        try
+        {
+            if (!File.Exists(path)) return null;
+            var content = File.ReadAllText(path).Trim();
+            return Regex.IsMatch(content, @"^\d+\.\d+\.\d+$") ? content : null;
+        }
+        catch { return null; }
     }
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Drawer } from 'vaul';
+import toast from 'react-hot-toast';
 import confetti from 'canvas-confetti';
 import ZestButton from 'jattac.libs.web.zest-button';
 import ZestTextbox from 'jattac.libs.web.zest-textbox';
@@ -20,6 +21,7 @@ interface Props {
   isOpen: boolean;
   onClose: () => void;
   initialBuildId?: string;
+  onVersionCreated?: () => void;
 }
 
 type Phase = 'versions' | 'pipeline' | 'done';
@@ -90,10 +92,12 @@ const fmtExpected = (s: number | null | undefined) => {
 
 let lineCounter = 0;
 
-export default function BuildWizard({ projectId, projectName, currentVersions, defaultDeployMode, isOpen, onClose, initialBuildId }: Props) {
+export default function BuildWizard({ projectId, projectName, currentVersions, defaultDeployMode, isOpen, onClose, initialBuildId, onVersionCreated }: Props) {
   const [phase, setPhase] = useState<Phase>('versions');
   const [deployModeOverride, setDeployModeOverride] = useState<DeployMode>(defaultDeployMode);
   const [newVersions, setNewVersions] = useState<Record<string, string>>({});
+  const [createVersionInputs, setCreateVersionInputs] = useState<Record<string, string>>({});
+  const [creatingService, setCreatingService] = useState<string | null>(null);
   const [buildId, setBuildId] = useState<string | null>(null);
   const [buildRecord, setBuildRecord] = useState<IBuildRecord | null>(null);
   const [lines, setLines] = useState<LogEntry[]>([]);
@@ -241,6 +245,22 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
     });
   }, [appendLine]);
 
+  const handleCreateVersionFile = async (serviceName: string) => {
+    const version = (createVersionInputs[serviceName] ?? '').trim() || '1.0.0';
+    setCreatingService(serviceName);
+    try {
+      await api.post(`/api/projects/${projectId}/create-version-file`, { serviceName, version });
+      toast.success(`${serviceName}: version.txt created (v${version})`);
+      setNewVersions(p => ({ ...p, [serviceName]: version }));
+      setCreateVersionInputs(p => { const n = { ...p }; delete n[serviceName]; return n; });
+      onVersionCreated?.();
+    } catch (e: unknown) {
+      toast.error((e as { message?: string })?.message ?? 'Failed to create version.txt');
+    } finally {
+      setCreatingService(null);
+    }
+  };
+
   const handleStartBuild = async () => {
     const serviceVersions = currentVersions.map(v => ({
       serviceName: v.serviceName,
@@ -366,20 +386,47 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
             {phase === 'versions' && (
               <>
                 <div className={styles.versionsGrid}>
-                  {currentVersions.map(v => (
-                    <div key={v.serviceName} className={styles.versionRow}>
-                      <span className={styles.versionServiceName}>{v.serviceName}</span>
-                      <span className={styles.versionCurrent}>{v.version ?? '?'}</span>
-                      <span className={styles.versionArrow}>→</span>
-                      <div className={styles.versionInputWrap}>
-                        <ZestTextbox
-                          value={newVersions[v.serviceName] ?? ''}
-                          onChange={e => setNewVersions(p => ({ ...p, [v.serviceName]: e.target.value }))}
-                          zest={{ zSize: 'sm', stretch: true }}
-                        />
+                  {currentVersions.map(v => {
+                    const isError = !!v.error && !v.version;
+                    return (
+                      <div key={v.serviceName} className={styles.versionRow}>
+                        <span className={styles.versionServiceName}>{v.serviceName}</span>
+                        {isError ? (
+                          <>
+                            <span className={styles.versionCurrent}>?</span>
+                            <span className={styles.versionArrow}>→</span>
+                            <div className={styles.versionInputWrap}>
+                              <div className={styles.versionCreateRow}>
+                                <ZestTextbox
+                                  value={createVersionInputs[v.serviceName] ?? '1.0.0'}
+                                  onChange={e => setCreateVersionInputs(p => ({ ...p, [v.serviceName]: e.target.value }))}
+                                  zest={{ zSize: 'sm', stretch: true }}
+                                />
+                                <ZestButton
+                                  zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}
+                                  onClick={() => handleCreateVersionFile(v.serviceName)}
+                                  disabled={creatingService === v.serviceName}>
+                                  {creatingService === v.serviceName ? 'Creating…' : 'Create'}
+                                </ZestButton>
+                              </div>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <span className={styles.versionCurrent}>{v.version ?? '?'}</span>
+                            <span className={styles.versionArrow}>→</span>
+                            <div className={styles.versionInputWrap}>
+                              <ZestTextbox
+                                value={newVersions[v.serviceName] ?? ''}
+                                onChange={e => setNewVersions(p => ({ ...p, [v.serviceName]: e.target.value }))}
+                                zest={{ zSize: 'sm', stretch: true }}
+                              />
+                            </div>
+                          </>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 {buildStats && buildStats.sampleCount > 0 && buildStats.totalBuildExpected && (
                   <div className={styles.timerBar}>

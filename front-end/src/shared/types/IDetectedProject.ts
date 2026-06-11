@@ -6,6 +6,7 @@ export interface IDetectedService {
   imageDetected: boolean;
   dockerRegistry: string | null;
   composeServiceName: string | null;
+  version: string | null;
 }
 
 export interface IDetectedGitRepo {

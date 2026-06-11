@@ -32,7 +32,10 @@ public static class VersionFileService
     {
         if (!SemVer.IsMatch(version))
             throw new ArgumentException($"Invalid version string: {version}");
+        var dir = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+            Directory.CreateDirectory(dir);
         await File.WriteAllTextAsync(path, version + "\n");
-        Log.Information("Version file updated: {Path} → {Version}", path, version);
+        Log.Information("Version file written: {Path} → {Version}", path, version);
     }
 }

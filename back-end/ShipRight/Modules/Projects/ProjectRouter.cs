@@ -137,7 +137,30 @@ public static class ProjectRouter
             }
             return Results.Ok(results);
         });
+
+        app.MapPost("/api/projects/{id}/create-version-file", async (string id, CreateVersionFileRequest request, IProjectStore store) =>
+        {
+            var project = await store.GetByIdAsync(id);
+            if (project is null) return Results.NotFound(Error($"Project '{id}' not found."));
+
+            var svc = project.Services.FirstOrDefault(s => s.Name == request.ServiceName);
+            if (svc is null) return Results.NotFound(Error($"Service '{request.ServiceName}' not found in project '{id}'."));
+
+            try
+            {
+                await VersionFileService.WriteAsync(svc.VersionFilePath, request.Version);
+                Log.Information("Version file created for service '{Service}' in project '{Project}': {Path} → {Version}",
+                    request.ServiceName, id, svc.VersionFilePath, request.Version);
+                return Results.Ok(new { message = $"version.txt created for '{request.ServiceName}' with version {request.Version}." });
+            }
+            catch (Exception ex)
+            {
+                return Results.BadRequest(new { isError = true, message = ex.Message });
+            }
+        });
     }
+
+    record CreateVersionFileRequest(string ServiceName, string Version);
 
     internal static object Error(string message, string? field = null) =>
         field is null

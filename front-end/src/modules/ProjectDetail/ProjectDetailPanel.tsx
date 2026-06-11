@@ -63,6 +63,8 @@ export default function ProjectDetailPanel({ projectId, onBack }: Props) {
   const [containerOptions, setContainerOptions] = useState<{ name: string; image: string }[]>([]);
   const [selectedContainer, setSelectedContainer] = useState('');
   const [savingContainer, setSavingContainer] = useState(false);
+  const [createVersionInputs, setCreateVersionInputs] = useState<Record<string, string>>({});
+  const [creatingVersion, setCreatingVersion] = useState<string | null>(null);
 
   // Deployment history + rollback
   const [deployments, setDeployments] = useState<IDeployment[]>([]);
@@ -283,6 +285,27 @@ export default function ProjectDetailPanel({ projectId, onBack }: Props) {
     setLogActive(false);
   };
 
+  const refreshVersions = () => {
+    api.get<IServiceVersion[]>(`/api/projects/${projectId}/current-versions`)
+      .then(setVersions)
+      .catch(() => {});
+  };
+
+  const handleCreateVersionFile = async (serviceName: string) => {
+    const version = (createVersionInputs[serviceName] ?? '').trim() || '1.0.0';
+    setCreatingVersion(serviceName);
+    try {
+      await api.post(`/api/projects/${projectId}/create-version-file`, { serviceName, version });
+      toast.success(`${serviceName}: version.txt created (v${version})`);
+      refreshVersions();
+      setCreateVersionInputs(p => { const n = { ...p }; delete n[serviceName]; return n; });
+    } catch (e: unknown) {
+      toast.error((e as { message?: string })?.message ?? 'Failed to create version.txt');
+    } finally {
+      setCreatingVersion(null);
+    }
+  };
+
   return (
     <>
       <Head><title>ShipRight — {project.name}</title></Head>
@@ -312,11 +335,29 @@ export default function ProjectDetailPanel({ projectId, onBack }: Props) {
             <div className={styles.serviceList}>
               {project.services.map(s => {
                 const v = versionMap[s.name];
+                const isError = !!v?.error && !v?.version;
                 return (
                   <div key={s.name} className={styles.serviceRow}>
                     <span className={styles.serviceName}>{s.name}</span>
                     {v?.version && <span className={styles.versionChip}>v{v.version}</span>}
-                    {v?.error && <span className={styles.versionError} title={v.error}>version unreadable</span>}
+                    {isError && <span className={styles.versionError} title={v.error ?? undefined}>version unreadable</span>}
+                    {isError && (
+                      <div className={styles.createVersionRow}>
+                        <input
+                          type="text"
+                          className={styles.createVersionInput}
+                          value={createVersionInputs[s.name] ?? '1.0.0'}
+                          onChange={e => setCreateVersionInputs(p => ({ ...p, [s.name]: e.target.value }))}
+                          disabled={creatingVersion === s.name}
+                        />
+                        <ZestButton
+                          zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}
+                          onClick={() => handleCreateVersionFile(s.name)}
+                          disabled={creatingVersion === s.name}>
+                          {creatingVersion === s.name ? 'Creating…' : 'Create'}
+                        </ZestButton>
+                      </div>
+                    )}
                     <span className={styles.imageLabel}>{s.dockerImageName}</span>
                   </div>
                 );
@@ -674,6 +715,7 @@ export default function ProjectDetailPanel({ projectId, onBack }: Props) {
         initialBuildId={wizardBuildId}
         isOpen={wizardOpen}
         onClose={() => { setWizardOpen(false); setWizardBuildId(undefined); }}
+        onVersionCreated={refreshVersions}
       />
     </>
   );
