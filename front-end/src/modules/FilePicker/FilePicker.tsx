@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   RiFolderLine, RiFileLine, RiArrowLeftLine,
   RiHomeLine, RiComputerLine, RiFileTextLine, RiDownloadLine,
-  RiHardDriveLine, RiTerminalLine,
+  RiHardDriveLine, RiTerminalLine, RiLoader2Line,
 } from 'react-icons/ri';
 import ZestButton from 'jattac.libs.web.zest-button';
 import { api } from '@/shared/ApiService';
@@ -188,7 +188,7 @@ export default function FilePicker({ initialPath, onSelect, dirsOnly = false, la
 
             {/* Entries */}
             <div className={styles.list}>
-              {loading && <div className={styles.loading}>Loading…</div>}
+              {loading && <span className={styles.spinnerRow}><RiLoader2Line className={styles.spinnerIcon} /> Loading…</span>}
               {error && <div className={styles.error}>{error}</div>}
 
               {!loading && !error && listing?.parent && (

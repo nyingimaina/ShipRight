@@ -29,6 +29,63 @@ public static class DatabaseRouter
             }
         });
 
+        // ── Inline container discovery (no project ID needed) ──────────────
+
+        app.MapPost("/api/servers/db/containers-inline", async (
+            InlineServerRequest request, DatabaseOrchestrator orchestrator) =>
+        {
+            var project = new ProjectConfig
+            {
+                Server = new ServerConfig
+                {
+                    Host = request.Host,
+                    Username = request.Username,
+                    SshKeyPath = request.SshKeyPath,
+                    RemoteWorkingDir = "/",
+                }
+            };
+
+            try
+            {
+                var containers = await orchestrator.ListContainersAsync(project);
+                return Results.Ok(containers);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "ListContainers inline failed");
+                return Results.BadRequest(new { isError = true, message = ex.Message });
+            }
+        });
+
+        // ── Inline database listing (no project ID needed) ──────────────────
+
+        app.MapPost("/api/servers/db/databases-inline", async (
+            DatabasesInlineRequest request, DatabaseOrchestrator orchestrator) =>
+        {
+            if (!Enum.TryParse<DbProviderType>(request.Provider, ignoreCase: true, out var providerType))
+                return Results.BadRequest(new { isError = true, message = $"Unknown provider '{request.Provider}'." });
+
+            var server = new ServerConfig
+            {
+                Host = request.Host,
+                Username = request.Username,
+                SshKeyPath = request.SshKeyPath,
+                RemoteWorkingDir = "/",
+            };
+
+            try
+            {
+                var databases = await orchestrator.ListDatabasesAsync(
+                    new ProjectConfig { Server = server }, request.Container, providerType);
+                return Results.Ok(databases);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "ListDatabases inline failed");
+                return Results.BadRequest(new { isError = true, message = ex.Message });
+            }
+        });
+
         app.MapGet("/api/projects/{id}/db/databases", async (
             string id, string container, string provider,
             IProjectStore store, DatabaseOrchestrator orchestrator) =>
@@ -249,6 +306,8 @@ public static class DatabaseRouter
         });
     }
 
+    private record InlineServerRequest(string Host, string Username, string SshKeyPath);
+    private record DatabasesInlineRequest(string Host, string Username, string SshKeyPath, string Container, string Provider);
     private record RestoreRequest(string BackupFile);
     private record QueryRequest(string LocalSqlPath);
     private record QueryRawRequest(string Sql);

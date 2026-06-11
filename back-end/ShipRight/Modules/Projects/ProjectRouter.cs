@@ -41,7 +41,12 @@ public static class ProjectRouter
         app.MapPost("/api/projects", async (ProjectConfig input, IProjectStore store) =>
         {
             var errors = await ValidateAsync(input, store, isNew: true);
-            if (errors.Count > 0) return Results.BadRequest(errors);
+            if (errors.Count > 0)
+            {
+                Log.Warning("Project creation validation failed for '{ProjectName}': {Errors}",
+                    input.Name, Newtonsoft.Json.JsonConvert.SerializeObject(errors));
+                return Results.BadRequest(errors);
+            }
 
             var id = await GenerateUniqueIdAsync(input.Name, store);
             var project = input with { Id = id, CreatedAt = DateTime.UtcNow, ModifiedAt = DateTime.UtcNow };
@@ -57,7 +62,12 @@ public static class ProjectRouter
                 return Results.NotFound(Error($"Project '{id}' not found."));
 
             var errors = await ValidateAsync(input with { Id = id }, store, isNew: false);
-            if (errors.Count > 0) return Results.BadRequest(errors);
+            if (errors.Count > 0)
+            {
+                Log.Warning("Project update validation failed for '{ProjectId}': {Errors}",
+                    id, Newtonsoft.Json.JsonConvert.SerializeObject(errors));
+                return Results.BadRequest(errors);
+            }
 
             var updated = input with { Id = id, CreatedAt = existing.CreatedAt, ModifiedAt = DateTime.UtcNow };
             await store.SaveAsync(updated);
@@ -169,12 +179,10 @@ public static class ProjectRouter
                 Err("name", $"A project named '{p.Name}' already exists.");
         }
 
-        // Services
-        if (p.Services.Count == 0)
-            Err("services", "At least one service is required.");
-        else if (p.Services.Count > 10)
+        // Services (optional for freeform projects; validated when present)
+        if (p.Services.Count > 10)
             Err("services", "A project can have at most 10 services.");
-        else
+        else if (p.Services.Count > 0)
         {
             var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             for (int i = 0; i < p.Services.Count; i++)
@@ -198,8 +206,8 @@ public static class ProjectRouter
             }
         }
 
-        // GitRepos
-        if (p.GitRepos.Count == 0)
+        // GitRepos (required only when services are present)
+        if (p.GitRepos.Count == 0 && p.Services.Count > 0)
             Err("gitRepos", "At least one git repository is required.");
         else
         {
@@ -224,11 +232,14 @@ public static class ProjectRouter
             }
         }
 
-        // WSL
-        if (string.IsNullOrWhiteSpace(p.Wsl.WorkingDir))
-            Err("wsl.workingDir", "WSL working directory is required.");
-        else if (!p.Wsl.WorkingDir.StartsWith('/'))
-            Err("wsl.workingDir", "WSL working directory must be an absolute Linux path starting with '/'.");
+        // WSL (required only when services are present)
+        if (p.Services.Count > 0)
+        {
+            if (string.IsNullOrWhiteSpace(p.Wsl.WorkingDir))
+                Err("wsl.workingDir", "WSL working directory is required.");
+            else if (!p.Wsl.WorkingDir.StartsWith('/'))
+                Err("wsl.workingDir", "WSL working directory must be an absolute Linux path starting with '/'.");
+        }
 
         // Server
         if (string.IsNullOrWhiteSpace(p.Server.Host)) Err("server.host", "Host is required.");
@@ -261,12 +272,13 @@ public static class ProjectRouter
         else if (!p.Server.RemoteWorkingDir.StartsWith('/'))
             Err("server.remoteWorkingDir", "Remote working directory must start with '/'.");
 
-        if (string.IsNullOrWhiteSpace(p.Server.RebuildScript))
-            Err("server.rebuildScript", "Rebuild script name is required.");
-        else if (p.Server.RebuildScript.Contains('/') || p.Server.RebuildScript.Contains('\\'))
-            Err("server.rebuildScript", "Rebuild script name must not contain path separators.");
-        else if (p.Server.RebuildScript.Length > 100)
-            Err("server.rebuildScript", "Rebuild script name must be 100 characters or fewer.");
+        if (!string.IsNullOrWhiteSpace(p.Server.RebuildScript))
+        {
+            if (p.Server.RebuildScript.Contains('/') || p.Server.RebuildScript.Contains('\\'))
+                Err("server.rebuildScript", "Rebuild script name must not contain path separators.");
+            else if (p.Server.RebuildScript.Length > 100)
+                Err("server.rebuildScript", "Rebuild script name must be 100 characters or fewer.");
+        }
 
         return errors;
     }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Tab, TabList, TabPanel, Tabs } from 'react-tabs';
 import Link from 'next/link';
+import CreatableSelect from 'react-select/creatable';
 import ZestButton from 'jattac.libs.web.zest-button';
 import ZestTextbox from 'jattac.libs.web.zest-textbox';
 import { RiAddLine, RiDeleteBinLine } from 'react-icons/ri';
@@ -19,6 +20,7 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [dbEnabled, setDbEnabled] = useState(!!initial?.database);
   const [db, setDb] = useState<IDatabaseConfig>(initial?.database ?? emptyDatabaseConfig());
+  const [legacyMode, setLegacyMode] = useState(false);
   const [containers, setContainers] = useState<{ name: string; image: string; status: string }[]>([]);
   const [databases, setDatabases] = useState<string[]>([]);
   const [loadingContainers, setLoadingContainers] = useState(false);
@@ -31,6 +33,12 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
       .then(setGlobalServers)
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (dbEnabled && projectId) {
+      detectContainers();
+    }
+  }, [dbEnabled, projectId]);
 
   const applyGlobalServer = (id: string) => {
     const s = globalServers.find(g => g.id === id);
@@ -111,13 +119,16 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
   };
 
   const detectDatabases = async (containerName: string, provider: DbProviderType) => {
-    if (!projectId || !containerName) return;
+    if (!containerName) return;
     setLoadingDatabases(true);
     setDatabases([]);
     try {
-      const list = await api.get<string[]>(
-        `/api/projects/${projectId}/db/databases?container=${encodeURIComponent(containerName)}&provider=${provider}`);
-      setDatabases(list);
+      const list = projectId
+        ? await api.get<string[]>(
+            `/api/projects/${projectId}/db/databases?container=${encodeURIComponent(containerName)}&provider=${provider}`)
+        : await api.post<string[]>('/api/servers/db/databases-inline',
+            { host: form.server.host, username: form.server.username, sshKeyPath: form.server.sshKeyPath, container: containerName, provider });
+      setDatabases(list ?? []);
     } catch { /* ignore */ }
     finally { setLoadingDatabases(false); }
   };
@@ -305,10 +316,20 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
             <ZestTextbox value={form.server.remoteWorkingDir} onChange={e => set('server.remoteWorkingDir', e.target.value)}
               placeholder="/home/ubuntu/jattac-sms-gateway-docker" zest={{ stretch: true }} />
           </Field>
-          <Field label="Rebuild Script" error={errors['server.rebuildScript']}>
-            <ZestTextbox value={form.server.rebuildScript} onChange={e => set('server.rebuildScript', e.target.value)}
-              placeholder="rebuild.sh" maxLength={100} zest={{ stretch: true }} />
-          </Field>
+          <div className={styles.formRow}>
+            <label className={styles.label}>Legacy project</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input type="checkbox" checked={legacyMode} onChange={e => setLegacyMode(e.target.checked)}
+                style={{ accentColor: '#C9A84C', width: 16, height: 16 }} />
+              <span style={{ fontSize: 12, color: '#637389' }}>Show rebuild script field</span>
+            </div>
+          </div>
+          {legacyMode && (
+            <Field label="Rebuild Script" error={errors['server.rebuildScript']}>
+              <ZestTextbox value={form.server.rebuildScript} onChange={e => set('server.rebuildScript', e.target.value)}
+                placeholder="rebuild.sh" maxLength={100} zest={{ stretch: true }} />
+            </Field>
+          )}
           <Field label="Deploy Mode">
             <select value={form.server.deployMode ?? 'GitScript'}
               onChange={e => set('server.deployMode', e.target.value as DeployMode)}
@@ -378,40 +399,49 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
               </Field>
 
               <Field label="Container name">
-                <div style={{ display: 'flex', gap: 8 }}>
-                  {containers.length > 0
-                    ? <select value={db.containerName}
-                        onChange={e => {
-                          setDbField('containerName', e.target.value);
-                          detectDatabases(e.target.value, db.provider);
-                        }}
-                        style={{ flex: 1, background: '#131D30', color: '#F0F2F5', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, padding: '6px 10px' }}>
-                        <option value="">Select a container…</option>
-                        {containers.map(c => (
-                          <option key={c.name} value={c.name}>{c.name} — {c.image}</option>
-                        ))}
-                      </select>
-                    : <ZestTextbox value={db.containerName} onChange={e => setDbField('containerName', e.target.value)}
-                        placeholder="e.g. jattac-database" zest={{ stretch: true }} />
-                  }
-                  <ZestButton onClick={detectContainers} disabled={loadingContainers || !projectId}
-                    zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}>
-                    {loadingContainers ? '…' : 'Detect'}
-                  </ZestButton>
-                </div>
+                {loadingContainers ? (
+                  <span style={{ color: '#637389', fontSize: 12 }}>Detecting containers…</span>
+                ) : containers.length > 0 ? (
+                  <select value={db.containerName}
+                    onChange={e => {
+                      setDbField('containerName', e.target.value);
+                      detectDatabases(e.target.value, db.provider);
+                    }}
+                    style={{ width: '100%', background: '#131D30', color: '#F0F2F5', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, padding: '6px 10px' }}>
+                    <option value="">Select a container…</option>
+                    {containers.map(c => (
+                      <option key={c.name} value={c.name}>{c.name} — {c.image}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <>
+                    <ZestTextbox value={db.containerName} onChange={e => setDbField('containerName', e.target.value)}
+                      placeholder="e.g. jattac-database" zest={{ stretch: true }} />
+                    {form.server.host && form.server.username && form.server.sshKeyPath && (
+                      <span style={{ color: '#637389', fontSize: 12, marginTop: 4 }}>
+                        No containers found on server. Type manually or check Docker is running.
+                      </span>
+                    )}
+                  </>
+                )}
               </Field>
 
               <Field label="Database name">
-                {databases.length > 0
-                  ? <select value={db.databaseName} onChange={e => setDbField('databaseName', e.target.value)}
-                      style={{ width: '100%', background: '#131D30', color: '#F0F2F5', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, padding: '6px 10px' }}>
-                      <option value="">Select a database…</option>
-                      {databases.map(d => <option key={d} value={d}>{d}</option>)}
-                    </select>
-                  : <ZestTextbox value={db.databaseName} onChange={e => setDbField('databaseName', e.target.value)}
-                      placeholder="e.g. jattac_sms" zest={{ stretch: true }} />
-                }
-                {loadingDatabases && <span style={{ color: '#637389', fontSize: 12 }}>Fetching databases…</span>}
+                <CreatableSelect
+                  options={databases.map(d => ({ value: d, label: d }))}
+                  value={db.databaseName ? { value: db.databaseName, label: db.databaseName } : null}
+                  onChange={(opt) => setDbField('databaseName', (opt as { value: string; label: string } | null)?.value ?? '')}
+                  placeholder="Select or type a database name…"
+                  isClearable
+                  isLoading={loadingDatabases}
+                  styles={{
+                    control: (b: object) => ({ ...b, background: '#131D30', border: '1px solid rgba(255,255,255,0.12)', minHeight: 36, width: '100%' }),
+                    menu: (b: object) => ({ ...b, background: '#1A2640', zIndex: 20 }),
+                    option: (b: object, s: { isFocused: boolean }) => ({ ...b, background: s.isFocused ? '#1F2E4A' : 'transparent', color: '#F0F2F5' }),
+                    singleValue: (b: object) => ({ ...b, color: '#F0F2F5' }),
+                    placeholder: (b: object) => ({ ...b, color: '#637389' }),
+                    input: (b: object) => ({ ...b, color: '#F0F2F5' }),
+                  }} />
               </Field>
 
               <Field label="Root user">

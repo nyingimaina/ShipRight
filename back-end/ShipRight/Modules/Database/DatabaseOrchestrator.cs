@@ -315,16 +315,21 @@ public class DatabaseOrchestrator
             ?? await ReadWslFileAsync(workDir.TrimEnd('/') + "/docker-compose.yaml");
         if (content is null) return null;
 
+        return await InferFromContentAsync(content, project.Server);
+    }
+
+    private async Task<InferResult?> InferFromContentAsync(string content, ServerConfig? server)
+    {
         var (provider, containerHint, databaseName, detected) = ParseDockerComposeForDatabase(content);
         if (!provider.HasValue) return null;
 
         var containerName = string.Empty;
-        if (!string.IsNullOrWhiteSpace(project.Server?.Host))
+        if (!string.IsNullOrWhiteSpace(server?.Host))
         {
             try
             {
                 var containerLines = new List<string>();
-                await _ssh.RunAsync(project.Server.Host, project.Server.Username, project.Server.SshKeyPath,
+                await _ssh.RunAsync(server.Host, server.Username, server.SshKeyPath,
                     "docker ps --format \"{{.Names}}\\t{{.Image}}\"",
                     line => { containerLines.Add(line); return Task.CompletedTask; });
 
@@ -387,7 +392,6 @@ public class DatabaseOrchestrator
         }
         catch { return null; }
     }
-
     private static (DbProviderType? Provider, string? ContainerHint, string? DatabaseName, List<string> Detected)
         ParseDockerComposeForDatabase(string content)
     {

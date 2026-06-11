@@ -3,7 +3,8 @@ import toast from 'react-hot-toast';
 import Link from 'next/link';
 import ZestButton from 'jattac.libs.web.zest-button';
 import ZestTextbox from 'jattac.libs.web.zest-textbox';
-import { RiCheckLine, RiAlertLine } from 'react-icons/ri';
+import CreatableSelect from 'react-select/creatable';
+import { RiCheckLine, RiAlertLine, RiLoader2Line } from 'react-icons/ri';
 import FilePicker from '@/modules/FilePicker/FilePicker';
 import { api } from '@/shared/ApiService';
 import { IDetectedProjectConfig } from '@/shared/types/IDetectedProject';
@@ -45,7 +46,8 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
   const [serverUser, setServerUser]     = useState(existing?.server.username ?? 'ubuntu');
   const [sshKeyPath, setSshKeyPath]     = useState(existing?.server.sshKeyPath ?? '');
   const [remoteDir, setRemoteDir]       = useState(existing?.server.remoteWorkingDir ?? '');
-  const [rebuildScript, setRebuildScript] = useState(existing?.server.rebuildScript ?? 'rebuild.sh');
+  const [rebuildScript, setRebuildScript] = useState(existing?.server.rebuildScript ?? '');
+  const [legacyMode, setLegacyMode] = useState(false);
   const [errors, setErrors]             = useState<Record<string, string>>({});
   const [globalServers, setGlobalServers] = useState<IServerConfig[]>([]);
   const [serverId, setServerId] = useState(existing?.serverId ?? '');
@@ -97,18 +99,34 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
       const list = await api.get<{ name: string; image: string }[]>(
         `/api/projects/${existing.id}/db/containers`);
       setDbContainers(list);
-    } catch { /* ignore — user can type manually */ }
+    } catch { /* ignore */ }
+    finally { setLoadingContainers(false); }
+  };
+
+  const detectContainersFromServer = async () => {
+    if (!serverHost || !serverUser || !sshKeyPath) return;
+    setLoadingContainers(true);
+    setDbContainers([]);
+    setDbDatabases([]);
+    try {
+      const list = await api.post<{ name: string; image: string }[]>(
+        '/api/servers/db/containers-inline', { host: serverHost, username: serverUser, sshKeyPath });
+      setDbContainers(list);
+    } catch { /* ignore */ }
     finally { setLoadingContainers(false); }
   };
 
   const detectDatabases = async (containerName: string, provider: DbProviderType) => {
-    if (!existing?.id || !containerName) return;
+    if (!containerName) return;
     setLoadingDatabases(true);
     setDbDatabases([]);
     try {
-      const list = await api.get<string[]>(
-        `/api/projects/${existing.id}/db/databases?container=${encodeURIComponent(containerName)}&provider=${provider}`);
-      setDbDatabases(list);
+      const list = existing?.id
+        ? await api.get<string[]>(
+            `/api/projects/${existing.id}/db/databases?container=${encodeURIComponent(containerName)}&provider=${provider}`)
+        : await api.post<string[]>('/api/servers/db/databases-inline',
+            { host: serverHost, username: serverUser, sshKeyPath, container: containerName, provider });
+      setDbDatabases(list ?? []);
     } catch { /* ignore */ }
     finally { setLoadingDatabases(false); }
   };
@@ -134,6 +152,7 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
       setSshKeyPath(s.sshKeyPath);
       setRemoteDir(s.remoteWorkingDir);
       setRebuildScript(s.rebuildScript);
+      detectContainersFromServer();
     }
   };
 
@@ -263,6 +282,9 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
                   setStep('server');
                 } else if (freeformFeatures.docker) {
                   setStep('pick');
+                } else if (freeformFeatures.database) {
+                  setDbEnabled(true);
+                  setStep('server');
                 } else {
                   // Minimal save: name only, no features
                   setErrors({});
@@ -276,7 +298,7 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
                     services: [],
                     gitRepos: [],
                     wsl: { workingDir: '' },
-                    server: { host: '', username: 'ubuntu', sshKeyPath: '', remoteWorkingDir: '', rebuildScript: 'rebuild.sh', deployMode: 'GitScript' },
+                    server: { host: '', username: 'ubuntu', sshKeyPath: '', remoteWorkingDir: '', rebuildScript: '', deployMode: 'GitScript' },
                     database: undefined,
                   };
                   try {
@@ -575,7 +597,7 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
                     onSelect={p => { setSshKeyPath(p); setShowSshPicker(false); }}
                     label="Navigate to your .pem key file"
                   />
-                : <div style={{ display: 'flex', gap: 8 }}>
+                : <div className={styles.inputRow}>
                     <ZestTextbox value={sshKeyPath} onChange={e => setSshKeyPath(e.target.value)}
                       placeholder="/home/nyingi/.../.pem" zest={{ stretch: true }} />
                     <ZestButton onClick={() => setShowSshPicker(true)} zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}>Browse</ZestButton>
@@ -592,9 +614,9 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
                     sshConfig={{ host: serverHost, user: serverUser, keyPath: sshKeyPath }}
                     initialPath={remoteDir || undefined}
                     label={`Browsing ${serverUser}@${serverHost}`}
-                    onSelect={p => { setRemoteDir(p); setShowRemotePicker(false); }}
+                    onSelect={p => { setRemoteDir(p); setShowRemotePicker(false); detectContainersFromServer(); }}
                   />
-                : <div style={{ display: 'flex', gap: 8 }}>
+                : <div className={styles.inputRow}>
                     <ZestTextbox value={remoteDir} onChange={e => setRemoteDir(e.target.value)}
                       placeholder="/home/ubuntu/jattac-sms-gateway-docker" zest={{ stretch: true }} />
                     <ZestButton
@@ -608,12 +630,20 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
               {errors['server.remoteWorkingDir'] && <p className={styles.errorText}>{errors['server.remoteWorkingDir']}</p>}
             </div>
 
-            <div className={styles.fieldRow}>
-              <label className={styles.fieldLabel}>Rebuild script</label>
-              <ZestTextbox value={rebuildScript} onChange={e => setRebuildScript(e.target.value)}
-                placeholder="rebuild.sh" zest={{ stretch: true }} />
-              {errors['server.rebuildScript'] && <p className={styles.errorText}>{errors['server.rebuildScript']}</p>}
+            <div className={styles.fieldRow} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <label className={styles.fieldLabel} style={{ marginBottom: 0 }}>Legacy project</label>
+              <input type="checkbox" checked={legacyMode} onChange={e => setLegacyMode(e.target.checked)}
+                style={{ accentColor: '#C9A84C', width: 16, height: 16 }} />
+              <span style={{ fontSize: 12, color: '#637389' }}>Show rebuild script field</span>
             </div>
+            {legacyMode && (
+              <div className={styles.fieldRow}>
+                <label className={styles.fieldLabel}>Rebuild script</label>
+                <ZestTextbox value={rebuildScript} onChange={e => setRebuildScript(e.target.value)}
+                  placeholder="rebuild.sh" zest={{ stretch: true }} />
+                {errors['server.rebuildScript'] && <p className={styles.errorText}>{errors['server.rebuildScript']}</p>}
+              </div>
+            )}
           </div>
 
           {/* ── Database ── */}
@@ -643,36 +673,42 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
                 </div>
                 <div className={styles.fieldRow}>
                   <label className={styles.fieldLabel}>Container name</label>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    {dbContainers.length > 0
-                      ? <select value={db.containerName}
-                          onChange={e => { setDbField('containerName', e.target.value); detectDatabases(e.target.value, db.provider); }}
-                          style={{ flex: 1, background: '#131D30', color: '#F0F2F5', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, padding: '6px 10px' }}>
-                          <option value="">Select a container…</option>
-                          {dbContainers.map(c => <option key={c.name} value={c.name}>{c.name} — {c.image}</option>)}
-                        </select>
-                      : <ZestTextbox value={db.containerName} onChange={e => setDbField('containerName', e.target.value)}
-                          placeholder="e.g. jattac-database" zest={{ stretch: true }} />
-                    }
-                    <ZestButton onClick={detectContainers} disabled={loadingContainers || !existing?.id}
-                      zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}>
-                      {loadingContainers ? '…' : 'Detect'}
-                    </ZestButton>
-                  </div>
-                  {!existing?.id && <p className={styles.stepSub} style={{ marginTop: 4 }}>Save the project first to enable auto-detect.</p>}
+                  {loadingContainers ? (
+                    <span className={styles.spinnerRow}><RiLoader2Line className={styles.spinnerIcon} /> Detecting containers…</span>
+                  ) : dbContainers.length > 0 ? (
+                    <select value={db.containerName}
+                      onChange={e => { setDbField('containerName', e.target.value); detectDatabases(e.target.value, db.provider); }}
+                      style={{ width: '100%', background: '#131D30', color: '#F0F2F5', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, padding: '6px 10px' }}>
+                      <option value="">Select a container…</option>
+                      {dbContainers.map(c => <option key={c.name} value={c.name}>{c.name} — {c.image}</option>)}
+                    </select>
+                  ) : (
+                    <>
+                      <ZestTextbox value={db.containerName} onChange={e => setDbField('containerName', e.target.value)}
+                        placeholder="e.g. jattac-database" zest={{ stretch: true }} />
+                      {serverHost && serverUser && sshKeyPath && (
+                        <p className={styles.stepSub} style={{ marginTop: 4 }}>No containers found on server. Type manually or check Docker is running.</p>
+                      )}
+                    </>
+                  )}
                 </div>
                 <div className={styles.fieldRow}>
                   <label className={styles.fieldLabel}>Database name</label>
-                  {dbDatabases.length > 0
-                    ? <select value={db.databaseName} onChange={e => setDbField('databaseName', e.target.value)}
-                        style={{ width: '100%', background: '#131D30', color: '#F0F2F5', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, padding: '6px 10px' }}>
-                        <option value="">Select a database…</option>
-                        {dbDatabases.map(d => <option key={d} value={d}>{d}</option>)}
-                      </select>
-                    : <ZestTextbox value={db.databaseName} onChange={e => setDbField('databaseName', e.target.value)}
-                        placeholder="e.g. jattac_sms" zest={{ stretch: true }} />
-                  }
-                  {loadingDatabases && <p className={styles.stepSub} style={{ marginTop: 4 }}>Fetching databases…</p>}
+                  <CreatableSelect
+                    options={dbDatabases.map(d => ({ value: d, label: d }))}
+                    value={db.databaseName ? { value: db.databaseName, label: db.databaseName } : null}
+                    onChange={(opt) => setDbField('databaseName', (opt as { value: string; label: string } | null)?.value ?? '')}
+                    placeholder="Select or type a database name…"
+                    isClearable
+                    isLoading={loadingDatabases}
+                    styles={{
+                      control: (b: object) => ({ ...b, background: '#131D30', border: '1px solid rgba(255,255,255,0.12)', minHeight: 36, width: '100%' }),
+                      menu: (b: object) => ({ ...b, background: '#1A2640', zIndex: 20 }),
+                      option: (b: object, s: { isFocused: boolean }) => ({ ...b, background: s.isFocused ? '#1F2E4A' : 'transparent', color: '#F0F2F5' }),
+                      singleValue: (b: object) => ({ ...b, color: '#F0F2F5' }),
+                      placeholder: (b: object) => ({ ...b, color: '#637389' }),
+                      input: (b: object) => ({ ...b, color: '#F0F2F5' }),
+                    }} />
                 </div>
                 <div className={styles.fieldRow}>
                   <label className={styles.fieldLabel}>Root user</label>
@@ -694,7 +730,9 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
             {!existing && <ZestButton onClick={() => setStep('type')} zest={{ buttonStyle: 'outline' }}>← Back</ZestButton>}
             {existing
               ? <ZestButton onClick={handleSave} zest={{ visualOptions: { variant: 'standard' }, semanticType: 'save' }}>Save Changes</ZestButton>
-              : <ZestButton onClick={() => setStep('pick')} zest={{ visualOptions: { variant: 'standard' } }}>Source code →</ZestButton>
+              : projectType === 'freeform' && !freeformFeatures.docker && !freeformFeatures.git
+                ? <ZestButton onClick={handleSave} zest={{ visualOptions: { variant: 'standard' }, semanticType: 'save' }}>Create Project</ZestButton>
+                : <ZestButton onClick={() => setStep('pick')} zest={{ visualOptions: { variant: 'standard' } }}>Source code →</ZestButton>
             }
             <ZestButton onClick={onCancel} zest={{ buttonStyle: 'outline', semanticType: 'cancel' }}>Cancel</ZestButton>
           </div>

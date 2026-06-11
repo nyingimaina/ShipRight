@@ -22,15 +22,15 @@ import styles from './Styles/ProjectDetail.module.css';
 type ProjectTab = 'overview' | 'build' | 'database' | 'logs' | 'terminal';
 
 function projectTabs(project: IProject): ZestTabItem<ProjectTab>[] {
+  const hasServer   = !!project.server.host;
+  const hasServices = project.services.length > 0;
   const tabs: ZestTabItem<ProjectTab>[] = [
-    { label: 'Overview',       value: 'overview'  },
-    { label: 'Build & Deploy', value: 'build'     },
+    { label: 'Overview', value: 'overview' },
   ];
-  if (project.database) tabs.push({ label: 'Database', value: 'database' });
-  tabs.push(
-    { label: 'Logs',     value: 'logs'     },
-    { label: 'Terminal', value: 'terminal'  },
-  );
+  if (hasServices)      tabs.push({ label: 'Build & Deploy', value: 'build' });
+  if (project.database) tabs.push({ label: 'Database',        value: 'database' });
+  if (hasServer)        tabs.push({ label: 'Logs',            value: 'logs' });
+  if (hasServer)        tabs.push({ label: 'Terminal',        value: 'terminal' });
   return tabs;
 }
 
@@ -102,7 +102,8 @@ export default function ProjectDetail() {
 
   // Keep activeTab valid when tabs change (e.g. project has no database)
   useEffect(() => {
-    const valid = projectTabs(project!).some(t => t.value === activeTab);
+    if (!project) return;
+    const valid = projectTabs(project).some(t => t.value === activeTab);
     if (!valid) setActiveTab('overview');
   }, [project?.database]);
 

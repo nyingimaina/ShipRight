@@ -152,6 +152,26 @@
   margin-right: 8px;
 }
 
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.spinnerRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 20px 12px;
+  font-size: 13px;
+  color: #637389;
+}
+
+.spinnerIcon {
+  animation: spin 1s linear infinite;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
 .loading { padding: 20px 12px; color: #637389; font-size: 13px; text-align: center; }
 .error   { padding: 12px; color: #B84040; font-size: 12px; }
 .empty   { padding: 20px 12px; color: #637389; font-size: 13px; text-align: center; }

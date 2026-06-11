@@ -96,15 +96,6 @@ public class ProjectRouterTests : IDisposable
     // ── Services ────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Validate_NoServices_ReturnsServicesError()
-    {
-        var p = ValidProject() with { Services = [] };
-        var errors = await ProjectRouter.ValidateAsync(p, _store, isNew: true);
-
-        Assert.Contains(errors, e => FieldValue<string>(e, "field") == "services");
-    }
-
-    [Fact]
     public async Task Validate_ServiceMissingDockerImageName_ReturnsFieldError()
     {
         var svc = new ServiceConfig
