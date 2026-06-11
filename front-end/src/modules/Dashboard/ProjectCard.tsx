@@ -37,7 +37,7 @@ export default function ProjectCard({ summary, onBuild, onPush, onDeploy }: Prop
   return (
     <div className={styles.card}>
       <div className={styles.cardHeader}>
-        <Link href={`/projects/${summary.projectId}/`} className={styles.projectName}>
+        <Link href={`/projects/?detail=${summary.projectId}`} className={styles.projectName}>
           {summary.projectName}
         </Link>
         <div className={styles.buildBtn}>
@@ -57,8 +57,7 @@ export default function ProjectCard({ summary, onBuild, onPush, onDeploy }: Prop
           </span>
         ))}
         {summary.hasDatabase && (
-          <Link href={`/projects/${summary.projectId}/#database`}
-            onClick={e => e.stopPropagation()}
+          <Link href={`/projects/?detail=${summary.projectId}`}
             className={styles.chipDb}>
             DB{summary.databaseName ? ` · ${summary.databaseName}` : ''}
           </Link>

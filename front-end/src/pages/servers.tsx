@@ -125,7 +125,7 @@ export default function ServersPage() {
                       <div className={styles.projectsLabel}>Projects ({linked.length})</div>
                       <div>
                         {linked.map(p => (
-                          <Link key={p.id} href={`/projects/${p.id}/`} className={styles.projectChip}>
+                          <Link key={p.id} href={`/projects/?detail=${p.id}`} className={styles.projectChip}>
                             {p.name}
                           </Link>
                         ))}
