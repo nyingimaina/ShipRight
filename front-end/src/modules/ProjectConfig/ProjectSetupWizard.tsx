@@ -685,6 +685,17 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
                   </select>
                 </div>
                 <div className={styles.fieldRow}>
+                  <label className={styles.fieldLabel}>Root user</label>
+                  <ZestTextbox value={db.rootUser} onChange={e => setDbField('rootUser', e.target.value)}
+                    placeholder="root" zest={{ stretch: true }} />
+                </div>
+                <div className={styles.fieldRow}>
+                  <label className={styles.fieldLabel}>Password <span style={{ color: '#637389', fontWeight: 400 }}>(optional)</span></label>
+                  <ZestTextbox value={db.rootPassword ?? ''} onChange={e => setDbField('rootPassword', e.target.value)}
+                    placeholder={`Leave blank to use $${db.provider === 'MariaDb' ? 'MYSQL_ROOT_PASSWORD' : 'SA_PASSWORD'} env var`}
+                    type="password" zest={{ stretch: true }} />
+                </div>
+                <div className={styles.fieldRow}>
                   <label className={styles.fieldLabel}>Container name</label>
                   {loadingContainers ? (
                     <span className={styles.spinnerRow}><RiLoader2Line className={styles.spinnerIcon} /> Detecting containers…</span>
@@ -722,11 +733,6 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
                       placeholder: (b: object) => ({ ...b, color: '#637389' }),
                       input: (b: object) => ({ ...b, color: '#F0F2F5' }),
                     }} />
-                </div>
-                <div className={styles.fieldRow}>
-                  <label className={styles.fieldLabel}>Root user</label>
-                  <ZestTextbox value={db.rootUser} onChange={e => setDbField('rootUser', e.target.value)}
-                    placeholder="root" zest={{ stretch: true }} />
                 </div>
               </>
             )}

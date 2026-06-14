@@ -88,7 +88,11 @@ public class JsonProjectStore : IProjectStore
             Services = p.Services.Select(s => s with
             {
                 DockerPassword = string.IsNullOrEmpty(s.DockerPassword) ? "" : SecureStore.Encrypt(s.DockerPassword, _dataDir)
-            }).ToList()
+            }).ToList(),
+            Database = p.Database is null ? null : p.Database with
+            {
+                RootPassword = string.IsNullOrEmpty(p.Database.RootPassword) ? "" : SecureStore.Encrypt(p.Database.RootPassword, _dataDir)
+            }
         }).ToList();
     }
 
@@ -99,7 +103,11 @@ public class JsonProjectStore : IProjectStore
             Services = p.Services.Select(s => s with
             {
                 DockerPassword = string.IsNullOrEmpty(s.DockerPassword) ? "" : SecureStore.Decrypt(s.DockerPassword, _dataDir)
-            }).ToList()
+            }).ToList(),
+            Database = p.Database is null ? null : p.Database with
+            {
+                RootPassword = string.IsNullOrEmpty(p.Database.RootPassword) ? "" : SecureStore.Decrypt(p.Database.RootPassword, _dataDir)
+            }
         }).ToList();
     }
 

@@ -398,6 +398,17 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
                 </select>
               </Field>
 
+              <Field label="Root user">
+                <ZestTextbox value={db.rootUser} onChange={e => setDbField('rootUser', e.target.value)}
+                  placeholder="root" zest={{ stretch: true }} />
+              </Field>
+
+              <Field label="Password (optional)">
+                <ZestTextbox value={db.rootPassword ?? ''} onChange={e => setDbField('rootPassword', e.target.value)}
+                  placeholder={`Leave blank to use $${db.provider === 'MariaDb' ? 'MYSQL_ROOT_PASSWORD' : 'SA_PASSWORD'} env var`}
+                  type="password" zest={{ stretch: true }} />
+              </Field>
+
               <Field label="Container name">
                 {loadingContainers ? (
                   <span style={{ color: '#637389', fontSize: 12 }}>Detecting containers…</span>
@@ -442,11 +453,6 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
                     placeholder: (b: object) => ({ ...b, color: '#637389' }),
                     input: (b: object) => ({ ...b, color: '#F0F2F5' }),
                   }} />
-              </Field>
-
-              <Field label="Root user">
-                <ZestTextbox value={db.rootUser} onChange={e => setDbField('rootUser', e.target.value)}
-                  placeholder="root" zest={{ stretch: true }} />
               </Field>
 
               <Field label="Backup retain count">

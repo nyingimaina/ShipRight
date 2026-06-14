@@ -149,11 +149,6 @@ export default function DatabasesPage() {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: 11, color: '#637389', marginBottom: 4 }}>Database name *</label>
-                  <input style={inputStyle} placeholder="e.g. myapp" value={dbConfig.databaseName}
-                    onChange={e => setCfg('databaseName', e.target.value)} />
-                </div>
-                <div>
                   <label style={{ display: 'block', fontSize: 11, color: '#637389', marginBottom: 4 }}>Provider</label>
                   <select style={inputStyle} value={dbConfig.provider}
                     onChange={e => setCfg('provider', e.target.value as DbProviderType)}>
@@ -165,6 +160,19 @@ export default function DatabasesPage() {
                   <label style={{ display: 'block', fontSize: 11, color: '#637389', marginBottom: 4 }}>Root user</label>
                   <input style={inputStyle} value={dbConfig.rootUser}
                     onChange={e => setCfg('rootUser', e.target.value)} />
+                </div>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={{ display: 'block', fontSize: 11, color: '#637389', marginBottom: 4 }}>
+                    Password <span style={{ color: '#637389', fontStyle: 'italic' }}>(optional — overrides env var)</span>
+                  </label>
+                  <input style={inputStyle} type="password" value={dbConfig.rootPassword ?? ''}
+                    placeholder={dbConfig.provider === 'MariaDb' ? '$MYSQL_ROOT_PASSWORD' : '$SA_PASSWORD'}
+                    onChange={e => setCfg('rootPassword', e.target.value)} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 11, color: '#637389', marginBottom: 4 }}>Database name *</label>
+                  <input style={inputStyle} placeholder="e.g. myapp" value={dbConfig.databaseName}
+                    onChange={e => setCfg('databaseName', e.target.value)} />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: 11, color: '#637389', marginBottom: 4 }}>Backup retention</label>

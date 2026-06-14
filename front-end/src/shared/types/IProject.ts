@@ -39,6 +39,7 @@ export interface IDatabaseConfig {
   databaseName: string;
   rootUser: string;
   backupRetainCount: number;
+  rootPassword?: string;
 }
 
 export interface IProject {

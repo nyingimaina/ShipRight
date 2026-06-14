@@ -11,6 +11,11 @@ public record DatabaseConfig
     public string DatabaseName        { get; init; } = string.Empty;
     public string RootUser            { get; init; } = "root";
     public int    BackupRetainCount   { get; init; } = 10;
+    /// <summary>
+    /// Optional explicit password. When set, overrides the container's env-var
+    /// (MYSQL_ROOT_PASSWORD / SA_PASSWORD). Stored encrypted at rest.
+    /// </summary>
+    public string RootPassword        { get; init; } = string.Empty;
 }
 
 public record ServiceConfig
