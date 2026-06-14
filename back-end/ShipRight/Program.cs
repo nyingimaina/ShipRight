@@ -86,6 +86,7 @@ try
 
     // v2: Insert JWT/session auth middleware here
     app.UseCors("ShipRightPolicy");
+    app.UseDefaultFiles();
     app.UseStaticFiles();
 
     app.MapHealthRoutes();
@@ -105,7 +106,7 @@ try
 
     var projectCount = app.Services.GetRequiredService<IProjectStore>().Count;
     var buildCount   = app.Services.GetRequiredService<IBuildStore>().Count;
-    Log.Information("ShipRight {Version} starting on port {Port}", "1.2.0", 5200);
+    Log.Information("ShipRight {Version} starting on port {Port}", "1.3.1", 5200);
     Log.Information("Data directory: {DataDir}", dataDir);
     Log.Information("{ProjectCount} projects, {BuildCount} builds loaded", projectCount, buildCount);
 

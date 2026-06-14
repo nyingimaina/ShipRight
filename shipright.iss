@@ -3,7 +3,7 @@
 ; Builds frontend + backend from source, then packages into setup.exe
 
 #define AppName "ShipRight"
-#define AppVersion "1.2.0"
+#define AppVersion "1.3.1"
 #define AppPublisher "ShipRight"
 #define OutputDir "installer"
 #define S SourcePath
@@ -27,7 +27,7 @@
 
 ; 3. Clean and copy wwwroot from front-end/out/ to back-end/ShipRight/wwwroot/
 #define CleanWwwResult = Exec("cmd.exe", "/c if exist """ + S + "\back-end\ShipRight\wwwroot"" rd /s /q """ + S + "\back-end\ShipRight\wwwroot""", "", 0, 1)
-#define CopyWwwResult = Exec("cmd.exe", "/c xcopy /e /i /y """ + S + "\front-end\out\*"" """ + S + "\back-end\ShipRight\wwwroot\"" & exit 0", "", 0, 1)
+#define CopyWwwResult = Exec("cmd.exe", "/c robocopy """ + S + "\front-end\out"" """ + S + "\back-end\ShipRight\wwwroot"" /e /nfl /ndl & exit 0", "", 0, 1)
 
 ; 4. Publish .NET backend as single-file self-contained exe
 #define PublishResult = Exec("dotnet", "publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true """ + S + "\back-end\ShipRight\ShipRight.csproj"" -o """ + S + "\publish\win-x64""", "", 1, 1)
