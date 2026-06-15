@@ -240,23 +240,15 @@ public static class ServerRouter
         // ── List backups (standalone) ────────────────────────────────────────
 
         app.MapGet("/api/servers/{serverId}/db/backups", async (
-            string serverId, string container, string database, string provider, string rootUser, int? backupRetainCount,
+            string serverId, string? container, string? database,
             IServerStore store, DatabaseOrchestrator orchestrator) =>
         {
             var server = await store.GetByIdAsync(serverId);
             if (server is null)
                 return Results.NotFound(new { isError = true, message = $"Server '{serverId}' not found." });
 
-            var dbConfig = new DatabaseConfig
-            {
-                ContainerName = container,
-                DatabaseName = database,
-                Provider = Enum.TryParse<DbProviderType>(provider, ignoreCase: true, out var pt) ? pt : DbProviderType.MariaDb,
-                RootUser = rootUser,
-                BackupRetainCount = backupRetainCount ?? 10,
-            };
-            var project = ProjectFromServer(server, dbConfig);
-            var backups = orchestrator.ListBackups(project.Id);
+            var projectId = $"standalone-{serverId}-{container ?? ""}-{database ?? ""}";
+            var backups = orchestrator.ListBackups(projectId);
             return Results.Ok(backups);
         });
 
@@ -291,6 +283,40 @@ public static class ServerRouter
             {
                 return Results.BadRequest(new { isError = true, message = ex.Message });
             }
+        });
+
+        // ── Open backup folder in Explorer (standalone) ───────────────────────
+
+        app.MapGet("/api/servers/{serverId}/db/backups/open-folder", async (
+            string serverId, string file, string? container, string? database,
+            IServerStore store, DatabaseOrchestrator orchestrator) =>
+        {
+            var server = await store.GetByIdAsync(serverId);
+            if (server is null)
+                return Results.NotFound(new { isError = true, message = $"Server '{serverId}' not found." });
+
+            var projectId = $"standalone-{serverId}-{container ?? ""}-{database ?? ""}";
+            var filePath = orchestrator.ResolveBackupFile(projectId, file);
+            if (filePath is null)
+                return Results.NotFound(new { isError = true, message = "Backup file not found." });
+
+            global::System.Diagnostics.Process.Start(new global::System.Diagnostics.ProcessStartInfo(
+                "explorer.exe", $"/select,\"{filePath}\"") { UseShellExecute = true });
+
+            return Results.Ok(new { message = "Opened." });
+        });
+
+        // ── Active operation query (standalone) ───────────────────────────────
+
+        app.MapGet("/api/servers/{serverId}/db/ops/active", (
+            string serverId, string? container, string? database,
+            DatabaseOrchestrator orchestrator) =>
+        {
+            var projectId = $"standalone-{serverId}-{container ?? ""}-{database ?? ""}";
+            var opId = orchestrator.GetActiveOpId(projectId);
+            return opId is null
+                ? Results.NoContent()
+                : Results.Ok(new { opId });
         });
 
         // ── SSE stream for standalone DB ops ─────────────────────────────────

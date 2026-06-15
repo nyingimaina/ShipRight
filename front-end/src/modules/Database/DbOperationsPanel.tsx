@@ -41,14 +41,30 @@ export default function DbOperationsPanel({ apiBase, dbConfig }: Props) {
   const elapsed = useElapsedTimer(dbStatus === 'running');
 
   useEffect(() => {
+    refreshBackups();
+    // Reconnect to a backup that was already in progress (e.g. after page refresh)
+    api.get<{ opId: string }>(
+      `${apiBase}/ops/active?container=${encodeURIComponent(dbConfig.containerName)}&database=${encodeURIComponent(dbConfig.databaseName)}`
+    )
+      .then(res => {
+        if (res?.opId) {
+          setDbStatus('running');
+          setDbRunning(true);
+          setDbLogs(['Reconnecting to in-progress backup…']);
+          subscribeToOp(res.opId, () => refreshBackups());
+        }
+      })
+      .catch(() => {});
     return () => {
       esRef.current?.close();
       if (deleteTimerRef.current) clearInterval(deleteTimerRef.current);
     };
-  }, []);
+  }, [apiBase]);
 
   const refreshBackups = () =>
-    api.get<BackupInfo[]>(`${apiBase}/backups`).catch(() => []).then(setBackups);
+    api.get<BackupInfo[]>(
+      `${apiBase}/backups?container=${encodeURIComponent(dbConfig.containerName)}&database=${encodeURIComponent(dbConfig.databaseName)}`
+    ).catch(() => []).then(setBackups);
 
   const subscribeToOp = (opId: string, onDone: () => void) => {
     esRef.current?.close();
@@ -150,7 +166,7 @@ export default function DbOperationsPanel({ apiBase, dbConfig }: Props) {
       <div className={`${styles.dbOpSection}${dbStatus === 'running' ? ' alive' : ''}`}>
         <div className={styles.buildActions} style={{ alignItems: 'center' }}>
           <ZestButton
-            zest={{ visualOptions: { variant: 'standard' } }}
+            zest={{ visualOptions: { variant: 'standard' }, semanticType: 'submit' }}
             onClick={startBackup}
             disabled={dbRunning}>
             {dbRunning ? 'Running…' : 'Backup Now'}
@@ -176,43 +192,65 @@ export default function DbOperationsPanel({ apiBase, dbConfig }: Props) {
       {backups.length > 0 && (
         <div style={{ marginTop: 16 }}>
           <h3 className={styles.sectionTitle}>Backups</h3>
-          {backups.map(b => (
-            <div key={b.filePath} style={{ display: 'flex', alignItems: 'center', gap: 12,
-              padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', flexWrap: 'wrap' }}>
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#C9A84C', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {b.fileName}
-              </span>
-              <span style={{ fontSize: 12, color: '#637389', flexShrink: 0 }}>
-                {(b.sizeBytes / 1024).toFixed(1)} KB
-              </span>
-              <ZestButton
-                zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}
-                onClick={() => startRestore(b.filePath)}>
-                Restore
-              </ZestButton>
-              {confirmingDelete === b.filePath ? (
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <span style={{ fontSize: 12, color: '#B84040', fontFamily: "'JetBrains Mono', monospace" }}>
-                    {deletingBackup === b.filePath ? 'Deleting…' : `Deleting in ${deleteCountdown}s`}
+          {backups.map(b => {
+            const sizeMb = b.sizeBytes / (1024 * 1024);
+            const sizeLabel = sizeMb >= 1
+              ? `${sizeMb.toFixed(1)} MB`
+              : `${(b.sizeBytes / 1024).toFixed(1)} KB`;
+            const createdLabel = new Date(b.createdAt).toLocaleString();
+            return (
+              <div key={b.filePath} style={{ padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                {/* File name + size + date */}
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 4 }}>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#C9A84C', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {b.fileName}
                   </span>
-                  {!deletingBackup && (
+                  <span style={{ fontSize: 11, color: '#637389', flexShrink: 0 }}>{sizeLabel}</span>
+                  <span style={{ fontSize: 11, color: '#637389', flexShrink: 0 }}>{createdLabel}</span>
+                </div>
+                {/* Local path */}
+                <div style={{ fontSize: 11, color: '#4A5568', fontFamily: "'JetBrains Mono', monospace", marginBottom: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {b.filePath}
+                </div>
+                {/* Actions */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <ZestButton
+                    zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' }, semanticType: 'edit' }}
+                    onClick={() => api.get(
+                      `${apiBase}/backups/open-folder?file=${encodeURIComponent(b.fileName)}&container=${encodeURIComponent(dbConfig.containerName)}&database=${encodeURIComponent(dbConfig.databaseName)}`
+                    ).catch(() => {})}>
+                    Open Folder
+                  </ZestButton>
+                  <ZestButton
+                    zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' }, semanticType: 'submit' }}
+                    onClick={() => startRestore(b.filePath)}>
+                    Restore
+                  </ZestButton>
+                  {confirmingDelete === b.filePath ? (
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <span style={{ fontSize: 12, color: '#B84040', fontFamily: "'JetBrains Mono', monospace" }}>
+                        {deletingBackup === b.filePath ? 'Deleting…' : `Deleting in ${deleteCountdown}s`}
+                      </span>
+                      {!deletingBackup && (
+                        <ZestButton
+                          zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' }, semanticType: 'cancel' }}
+                          onClick={cancelDelete}>
+                          Cancel
+                        </ZestButton>
+                      )}
+                    </div>
+                  ) : (
                     <ZestButton
-                      zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}
-                      onClick={cancelDelete}>
-                      Cancel
+                      zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' }, semanticType: 'delete' }}
+                      onClick={() => startDeleteCountdown(b.filePath)}
+                      disabled={!!deletingBackup}>
+                      Delete
                     </ZestButton>
                   )}
                 </div>
-              ) : (
-                <ZestButton
-                  zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' }, semanticType: 'delete' }}
-                  onClick={() => startDeleteCountdown(b.filePath)}
-                  disabled={!!deletingBackup}>
-                  Delete
-                </ZestButton>
-              )}
-            </div>
-          ))}
+              </div>
+            );
+          })}
         </div>
       )}
 

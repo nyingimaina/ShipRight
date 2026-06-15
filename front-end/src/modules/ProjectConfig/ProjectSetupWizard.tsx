@@ -124,10 +124,10 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
     setDbDatabases([]);
     try {
       const list = existing?.id
-        ? await api.get<string[]>(
-            `/api/projects/${existing.id}/db/databases?container=${encodeURIComponent(containerName)}&provider=${provider}`)
+        ? await api.post<string[]>(`/api/projects/${existing.id}/db/databases`,
+            { container: containerName, provider, rootUser: db.rootUser, rootPassword: db.rootPassword ?? '' })
         : await api.post<string[]>('/api/servers/db/databases-inline',
-            { host: serverHost, username: serverUser, sshKeyPath, container: containerName, provider });
+            { host: serverHost, username: serverUser, sshKeyPath, container: containerName, provider, rootUser: db.rootUser, rootPassword: db.rootPassword ?? '' });
       setDbDatabases(list ?? []);
     } catch { /* ignore */ }
     finally { setLoadingDatabases(false); }

@@ -76,7 +76,8 @@ public static class DatabaseRouter
             try
             {
                 var databases = await orchestrator.ListDatabasesAsync(
-                    new ProjectConfig { Server = server }, request.Container, providerType);
+                    new ProjectConfig { Server = server }, request.Container, providerType,
+                    request.RootUser, request.RootPassword);
                 return Results.Ok(databases);
             }
             catch (Exception ex)
@@ -86,25 +87,26 @@ public static class DatabaseRouter
             }
         });
 
-        app.MapGet("/api/projects/{id}/db/databases", async (
-            string id, string container, string provider,
+        app.MapPost("/api/projects/{id}/db/databases", async (
+            string id, DatabasesProjectRequest request,
             IProjectStore store, DatabaseOrchestrator orchestrator) =>
         {
             var project = await store.GetByIdAsync(id);
             if (project is null)
                 return Results.NotFound(new { isError = true, message = $"Project '{id}' not found." });
 
-            if (!Enum.TryParse<DbProviderType>(provider, ignoreCase: true, out var providerType))
-                return Results.BadRequest(new { isError = true, message = $"Unknown provider '{provider}'." });
+            if (!Enum.TryParse<DbProviderType>(request.Provider, ignoreCase: true, out var providerType))
+                return Results.BadRequest(new { isError = true, message = $"Unknown provider '{request.Provider}'." });
 
             try
             {
-                var databases = await orchestrator.ListDatabasesAsync(project, container, providerType);
+                var databases = await orchestrator.ListDatabasesAsync(project, request.Container, providerType,
+                    request.RootUser, request.RootPassword);
                 return Results.Ok(databases);
             }
             catch (Exception ex)
             {
-                Log.Error(ex, "ListDatabases failed for {ProjectId} container={Container}", id, container);
+                Log.Error(ex, "ListDatabases failed for {ProjectId} container={Container}", id, request.Container);
                 return Results.BadRequest(new { isError = true, message = ex.Message });
             }
         });
@@ -238,6 +240,41 @@ public static class DatabaseRouter
             return Results.Ok(backups);
         });
 
+        // ── Open backup folder in Explorer ────────────────────────────────────
+
+        app.MapGet("/api/projects/{id}/db/backups/open-folder", async (
+            string id, string file, IProjectStore store, DatabaseOrchestrator orchestrator) =>
+        {
+            var project = await store.GetByIdAsync(id);
+            if (project is null)
+                return Results.NotFound(new { isError = true, message = $"Project '{id}' not found." });
+
+            var filePath = orchestrator.ResolveBackupFile(id, file);
+            if (filePath is null)
+                return Results.NotFound(new { isError = true, message = "Backup file not found." });
+
+            global::System.Diagnostics.Process.Start(new global::System.Diagnostics.ProcessStartInfo(
+                "explorer.exe", $"/select,\"{filePath}\"") { UseShellExecute = true });
+
+            return Results.Ok(new { message = "Opened." });
+        });
+
+        // ── Download backup ───────────────────────────────────────────────────
+
+        app.MapGet("/api/projects/{id}/db/backups/download", async (
+            string id, string file, IProjectStore store, DatabaseOrchestrator orchestrator) =>
+        {
+            var project = await store.GetByIdAsync(id);
+            if (project is null)
+                return Results.NotFound(new { isError = true, message = $"Project '{id}' not found." });
+
+            var filePath = orchestrator.ResolveBackupFile(id, file);
+            if (filePath is null)
+                return Results.NotFound(new { isError = true, message = "Backup file not found." });
+
+            return Results.File(filePath, "application/octet-stream", file);
+        });
+
         // ── Delete backup ─────────────────────────────────────────────────────
 
         app.MapDelete("/api/projects/{id}/db/backups", async (
@@ -259,6 +296,17 @@ public static class DatabaseRouter
             {
                 return Results.BadRequest(new { isError = true, message = ex.Message });
             }
+        });
+
+        // ── Active operation query ────────────────────────────────────────────
+
+        app.MapGet("/api/projects/{id}/db/ops/active", (
+            string id, DatabaseOrchestrator orchestrator) =>
+        {
+            var opId = orchestrator.GetActiveOpId(id);
+            return opId is null
+                ? Results.NoContent()
+                : Results.Ok(new { opId });
         });
 
         // ── SSE stream for db operations ──────────────────────────────────────
@@ -307,7 +355,8 @@ public static class DatabaseRouter
     }
 
     private record InlineServerRequest(string Host, string Username, string SshKeyPath);
-    private record DatabasesInlineRequest(string Host, string Username, string SshKeyPath, string Container, string Provider);
+    private record DatabasesInlineRequest(string Host, string Username, string SshKeyPath, string Container, string Provider, string RootUser = "root", string RootPassword = "");
+    private record DatabasesProjectRequest(string Container, string Provider, string RootUser = "root", string RootPassword = "");
     private record RestoreRequest(string BackupFile);
     private record QueryRequest(string LocalSqlPath);
     private record QueryRawRequest(string Sql);

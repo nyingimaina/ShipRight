@@ -124,10 +124,10 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
     setDatabases([]);
     try {
       const list = projectId
-        ? await api.get<string[]>(
-            `/api/projects/${projectId}/db/databases?container=${encodeURIComponent(containerName)}&provider=${provider}`)
+        ? await api.post<string[]>(`/api/projects/${projectId}/db/databases`,
+            { container: containerName, provider, rootUser: db.rootUser, rootPassword: db.rootPassword ?? '' })
         : await api.post<string[]>('/api/servers/db/databases-inline',
-            { host: form.server.host, username: form.server.username, sshKeyPath: form.server.sshKeyPath, container: containerName, provider });
+            { host: form.server.host, username: form.server.username, sshKeyPath: form.server.sshKeyPath, container: containerName, provider, rootUser: db.rootUser, rootPassword: db.rootPassword ?? '' });
       setDatabases(list ?? []);
     } catch { /* ignore */ }
     finally { setLoadingDatabases(false); }

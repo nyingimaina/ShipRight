@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -20,6 +21,7 @@ public class DatabaseOrchestrator
     private readonly ISshRunner _ssh;
     private readonly KnownHostsStore _knownHosts;
     private readonly BuildEventBus _bus;
+    private readonly ConcurrentDictionary<string, string> _activeOps = new();
 
     public DatabaseOrchestrator(
         IDbProviderResolver resolver,
@@ -43,6 +45,7 @@ public class DatabaseOrchestrator
         var backupDir = BackupDirFor(project.Id);
         Directory.CreateDirectory(backupDir);
 
+        _activeOps[project.Id] = opId;
         try
         {
             await EmitLog(opId, $"Starting {provider.ProviderName} backup of {cfg.DatabaseName}…");
@@ -52,15 +55,26 @@ public class DatabaseOrchestrator
 
             if (provider.Transfer == BackupTransfer.StreamStdout)
             {
-                var content = new global::System.Text.StringBuilder();
                 var cmd = provider.BackupCommand(cfg);
                 Log.Information("Backup command for {DB}: {Cmd}", cfg.DatabaseName, cmd);
                 await EmitLog(opId, "Running backup command…");
 
-                // stdout → SQL file only; stderr → Serilog + SSE log
+                // Stream stdout directly to disk — avoids holding entire dump in RAM
+                await using var writer = new StreamWriter(localFile, append: false, Encoding.UTF8);
+                long lineCount = 0, lastReported = 0;
+
                 var exit = await _ssh.RunAsync(
                     server.Host, server.Username, server.SshKeyPath, cmd,
-                    onOutput: line => { content.Append(line).Append('\n'); return Task.CompletedTask; },
+                    onOutput: async line =>
+                    {
+                        await writer.WriteLineAsync(line);
+                        lineCount++;
+                        if (lineCount - lastReported >= 10_000)
+                        {
+                            lastReported = lineCount;
+                            await EmitLog(opId, $"Streaming… {lineCount:N0} lines received");
+                        }
+                    },
                     onStderr: async line =>
                     {
                         Log.Warning("Backup stderr [{DB}]: {Line}", cfg.DatabaseName, line);
@@ -68,10 +82,10 @@ public class DatabaseOrchestrator
                     },
                     ct: ct);
 
+                await writer.FlushAsync(ct);
+
                 if (exit != 0)
                     throw new InvalidOperationException($"Backup command exited with code {exit}.");
-
-                await File.WriteAllTextAsync(localFile, content.ToString(), ct);
             }
             else // SftpFile
             {
@@ -105,9 +119,13 @@ public class DatabaseOrchestrator
         }
         finally
         {
+            _activeOps.TryRemove(project.Id, out _);
             _bus.Complete(opId);
         }
     }
+
+    public string? GetActiveOpId(string projectId) =>
+        _activeOps.TryGetValue(projectId, out var id) ? id : null;
 
     // ── Restore ────────────────────────────────────────────────────────────────
 
@@ -242,13 +260,14 @@ public class DatabaseOrchestrator
             .ToList();
     }
 
-    public async Task<List<string>> ListDatabasesAsync(ProjectConfig project, string containerName, DbProviderType providerType)
+    public async Task<List<string>> ListDatabasesAsync(ProjectConfig project, string containerName, DbProviderType providerType, string? rootUser = null, string? rootPassword = null)
     {
         var cfg = new DatabaseConfig
         {
             Provider      = providerType,
             ContainerName = containerName,
-            RootUser      = providerType == DbProviderType.MariaDb ? "root" : "sa"
+            RootUser      = rootUser ?? (providerType == DbProviderType.MariaDb ? "root" : "sa"),
+            RootPassword  = rootPassword ?? string.Empty
         };
         var provider = _resolver.Resolve(providerType);
         var server   = project.Server;
@@ -301,6 +320,14 @@ public class DatabaseOrchestrator
 
         File.Delete(resolvedPath);
         Log.Information("Backup deleted: {File}", Path.GetFileName(resolvedPath));
+    }
+
+    public string? ResolveBackupFile(string projectId, string fileName)
+    {
+        var backupDir    = Path.GetFullPath(BackupDirFor(projectId));
+        var resolvedPath = Path.GetFullPath(Path.Combine(backupDir, fileName));
+        if (!resolvedPath.StartsWith(backupDir, StringComparison.OrdinalIgnoreCase)) return null;
+        return File.Exists(resolvedPath) ? resolvedPath : null;
     }
 
     // ── Infer from docker-compose ──────────────────────────────────────────────
