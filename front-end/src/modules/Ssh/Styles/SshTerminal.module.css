@@ -22,22 +22,8 @@
   white-space: nowrap;
 }
 
-.input {
-  flex: 1;
-  background: transparent;
-  border: none;
-  outline: none;
-  color: #F0F2F5;
-  font-family: inherit;
-  font-size: 13px;
-  caret-color: #C9A84C;
-}
-
-.input::placeholder {
-  color: rgba(255, 255, 255, 0.2);
-}
-
 .output {
+  position: relative;
   background: #0A1020;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
@@ -49,10 +35,39 @@
   font-size: 12px;
   line-height: 1.6;
   scroll-behavior: smooth;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .outputRunning {
   border-color: rgba(201, 168, 76, 0.3);
+}
+
+.copyBtn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 3px 10px;
+  font-family: inherit;
+  font-size: 11px;
+  color: #637389;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+  line-height: 1.4;
+}
+
+.output:hover .copyBtn {
+  opacity: 1;
+}
+
+.copyBtn:hover {
+  color: #C9D6E3;
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
 .empty {
@@ -99,6 +114,15 @@
   gap: 10px;
   font-size: 12px;
   color: #637389;
+}
+
+.cwdDisplay {
+  margin-left: auto;
+  color: #C9A84C;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 11px;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .statusDot {

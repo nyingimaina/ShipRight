@@ -18,7 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\ShipRight\ShipRight.csproj" />
+    <ProjectReference Include="..\ShipRight.Server\ShipRight.Server.csproj" />
   </ItemGroup>
 
 </Project>
