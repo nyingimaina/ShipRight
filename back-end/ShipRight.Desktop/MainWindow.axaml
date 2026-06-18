@@ -16,6 +16,13 @@
         <MenuItem Header="_About ShipRight Desktop" Click="OnAboutClick" />
       </MenuItem>
     </Menu>
+    <Border DockPanel.Dock="Bottom" x:Name="StatusBar" Padding="12,6" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <ProgressBar x:Name="StatusProgress" Grid.Column="0" IsIndeterminate="True"
+                     Width="120" Height="6" Margin="0,0,12,0" VerticalAlignment="Center" />
+        <TextBlock x:Name="StatusText" Grid.Column="1" VerticalAlignment="Center" FontSize="13" />
+      </Grid>
+    </Border>
     <web:NativeWebView x:Name="Browser" />
   </DockPanel>
 </Window>

@@ -21,7 +21,6 @@ internal static class Program
 
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
 
-        // WebView2 needs a writable user data folder — can't use Program Files
         Environment.SetEnvironmentVariable("WEBVIEW2_USER_DATA_FOLDER",
             Path.Combine(appData, "ShipRight", "WebView2"));
 
@@ -33,6 +32,15 @@ internal static class Program
                 rollingInterval: RollingInterval.Day,
                 retainedFileCountLimit: 7)
             .CreateLogger();
+
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            Log.Fatal((Exception?)e.ExceptionObject, "Unhandled AppDomain exception");
+
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            Log.Fatal(e.Exception, "Unobserved task exception");
+            e.SetObserved();
+        };
 
         try
         {

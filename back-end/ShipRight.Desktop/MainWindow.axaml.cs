@@ -2,30 +2,57 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Serilog;
+using ShipRight.Desktop.Services;
 
 namespace ShipRight.Desktop;
 
 public partial class MainWindow : Window
 {
     private readonly Services.ServerProcessManager _serverManager;
+    private readonly IWebView2Probe _probe;
     private bool _forceClose;
 
-    public MainWindow(Services.ServerProcessManager serverManager)
+    public MainWindow(Services.ServerProcessManager serverManager) : this(serverManager, null) { }
+
+    public MainWindow(Services.ServerProcessManager serverManager, IWebView2Probe? probe)
     {
         _serverManager = serverManager;
         InitializeComponent();
+        _probe = probe ?? new WebView2Probe(Browser);
         Opened += async (_, _) =>
         {
             try
             {
+                SetStatus("Starting server...", showProgress: true);
                 await _serverManager.StartAsync();
-                NavigateToDashboard();
+
+                var drift = ServerProcessManager.CheckVersionDrift(
+                    _serverManager.GetDesktopVersion(), _serverManager.ServerVersion);
+                if (drift != ServerProcessManager.VersionDrift.None)
+                {
+                    Log.Warning("Version drift detected: {Drift} (Desktop v{Dv}, Server v{Sv})",
+                        drift, _serverManager.GetDesktopVersion(), _serverManager.ServerVersion);
+                }
+
+                SetStatus("Connecting to dashboard...", showProgress: true);
+                var dashboardUrl = new Uri("http://127.0.0.1:5200");
+                var available = await _probe.ProbeAsync(TimeSpan.FromSeconds(5), dashboardUrl);
+                SetStatus(available ? "Connected" : "Opening in browser...", showProgress: false);
+                if (!available)
+                    OpenBrowser();
             }
             catch (Exception ex)
             {
+                SetStatus("Failed to connect", showProgress: false);
                 Log.Error(ex, "Server startup failed");
             }
         };
+    }
+
+    private void SetStatus(string text, bool showProgress)
+    {
+        StatusText.Text = text;
+        StatusProgress.IsVisible = showProgress;
     }
 
     public void NavigateToDashboard()
@@ -37,6 +64,18 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             Log.Warning(ex, "Failed to navigate");
+        }
+    }
+
+    public static void OpenBrowser()
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("http://127.0.0.1:5200") { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to open browser");
         }
     }
 
@@ -134,7 +173,11 @@ public partial class MainWindow : Window
                 @"SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}");
             return key?.GetValue("pv")?.ToString();
         }
-        catch { return null; }
+        catch
+        {
+            Log.Warning("Failed to read WebView2 version from registry");
+            return null;
+        }
     }
 
     private void OnAboutClick(object? sender, RoutedEventArgs e) => ShowAboutDialog();

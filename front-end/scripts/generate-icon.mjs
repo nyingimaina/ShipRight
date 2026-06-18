@@ -72,8 +72,8 @@ function buildIco(pngBuffers, sizes) {
     header.writeUInt8(h, entryOffset + 1);
     header.writeUInt8(0, entryOffset + 2);
     header.writeUInt8(0, entryOffset + 3);
-    header.writeUInt16LE(1, entryOffset + 4);
-    header.writeUInt16LE(32, entryOffset + 6);
+    header.writeUInt16LE(0, entryOffset + 4);
+    header.writeUInt16LE(0, entryOffset + 6);
     header.writeUInt32LE(png.length, entryOffset + 8);
     header.writeUInt32LE(offset, entryOffset + 12);
     offset += png.length;

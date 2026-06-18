@@ -1,5 +1,7 @@
 using System.Diagnostics;
+using System.Net;
 using System.Net.Http;
+using System.Net.NetworkInformation;
 using System.Reflection;
 using System.Text.Json;
 using Serilog;
@@ -8,6 +10,8 @@ namespace ShipRight.Desktop.Services;
 
 public class ServerProcessManager : IDisposable
 {
+    public enum VersionDrift { None, Minor, Major, Unknown }
+
     private Process? _serverProcess;
     private readonly HttpClient _httpClient;
     private bool _disposed;
@@ -33,6 +37,11 @@ public class ServerProcessManager : IDisposable
             await FetchHealthAsync();
             Log.Information("Server already running (v{Version}), connecting", ServerVersion);
             return;
+        }
+
+        if (IsPortInUse(Port))
+        {
+            Log.Warning("Port {Port} is already in use by another process; the server may fail to start", Port);
         }
 
         var serverPath = LocateServerBinary();
@@ -65,9 +74,9 @@ public class ServerProcessManager : IDisposable
         _serverProcess.Start();
         Log.Information("Server process started (PID: {Pid})", _serverProcess.Id);
 
-        if (!await PollHealthAsync(TimeSpan.FromMilliseconds(500), 20))
+        if (!await PollHealthAsync())
         {
-            throw new TimeoutException("Server failed to become ready within 10 seconds.");
+            throw new TimeoutException("Server failed to become ready within the expected time.");
         }
 
         await FetchHealthAsync();
@@ -109,21 +118,57 @@ public class ServerProcessManager : IDisposable
             var response = await _httpClient.GetAsync("/api/health");
             return response.IsSuccessStatusCode;
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Warning(ex, "Health check failed before server started");
             return false;
         }
     }
 
-    private async Task<bool> PollHealthAsync(TimeSpan interval, int maxRetries)
+    private async Task<bool> PollHealthAsync(int maxRetries = 10)
     {
+        return await PollWithExponentialBackoffAsync(HealthCheckAsync, maxRetries);
+    }
+
+    internal static TimeSpan ComputeBackoffDelay(int attemptIndex, TimeSpan baseDelay, TimeSpan maxDelay)
+    {
+        var exponentialMs = baseDelay.TotalMilliseconds * Math.Pow(2, attemptIndex);
+        var clamped = Math.Min(exponentialMs, maxDelay.TotalMilliseconds);
+        return TimeSpan.FromMilliseconds(clamped);
+    }
+
+    internal static async Task<bool> PollWithExponentialBackoffAsync(Func<Task<bool>> check, int maxRetries = 10)
+    {
+        var baseDelay = TimeSpan.FromMilliseconds(50);
+        var maxDelay = TimeSpan.FromMilliseconds(2000);
+        var rng = new Random();
+
         for (var i = 0; i < maxRetries; i++)
         {
-            if (await HealthCheckAsync())
+            if (await check())
                 return true;
-            await Task.Delay(interval);
+
+            var delay = ComputeBackoffDelay(i, baseDelay, maxDelay);
+            var jitter = rng.Next(
+                (int)(-delay.TotalMilliseconds * 0.25),
+                (int)(delay.TotalMilliseconds * 0.25) + 1);
+            await Task.Delay(delay + TimeSpan.FromMilliseconds(jitter));
         }
+
         return false;
+    }
+
+    internal static bool IsPortInUse(int port)
+    {
+        try
+        {
+            var listeners = IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners();
+            return listeners.Any(l => l.Port == port);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private async Task FetchHealthAsync()
@@ -141,7 +186,10 @@ public class ServerProcessManager : IDisposable
             if (root.TryGetProperty("webVersion", out var wv))
                 WebVersion = wv.GetString();
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to fetch health info from server");
+        }
     }
 
     public string GetDesktopVersion()
@@ -151,6 +199,18 @@ public class ServerProcessManager : IDisposable
             .InformationalVersion ?? "0.0.0";
         var plusIdx = version.IndexOf('+');
         return plusIdx >= 0 ? version[..plusIdx] : version;
+    }
+
+    public static VersionDrift CheckVersionDrift(string? desktopVersion, string? serverVersion)
+    {
+        if (desktopVersion == null || serverVersion == null) return VersionDrift.Unknown;
+
+        if (!Version.TryParse(desktopVersion, out var dv) || !Version.TryParse(serverVersion, out var sv))
+            return VersionDrift.Unknown;
+
+        if (dv.Major != sv.Major) return VersionDrift.Major;
+        if (dv.Minor != sv.Minor) return VersionDrift.Minor;
+        return VersionDrift.None;
     }
 
     private static string? LocateServerBinary()
