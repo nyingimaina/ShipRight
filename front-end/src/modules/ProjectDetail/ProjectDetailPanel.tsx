@@ -107,7 +107,7 @@ export default function ProjectDetailPanel({ projectId, onBack }: Props) {
     if (!project) return;
     const valid = projectTabs(project).some(t => t.value === activeTab);
     if (!valid) setActiveTab('overview');
-  }, [project?.database]);
+  }, [project?.database?.databaseName]);
 
   // Cleanup EventSource on unmount
   useEffect(() => {

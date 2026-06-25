@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Drawer } from 'vaul';
 import toast from 'react-hot-toast';
 import confetti from 'canvas-confetti';
@@ -113,6 +113,8 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
   const [serviceBuildProgress, setServiceBuildProgress] = useState<{ current: number; total: number; serviceName: string } | null>(null);
   const sseConnected = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const handledPauseKeys = useRef(new Set<string>());
 
   useEffect(() => {
     const map: Record<string, string> = {};
@@ -197,50 +199,66 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
           return p;
         });
       },
-      onPauseRequested: e => setPause({
-        reason: e.reason, prompt: e.prompt, options: e.options, selected: null,
-        fields: e.fields, fieldValues: {},
-        checkboxes: e.checkboxes,
-        checkboxValues: e.checkboxes ? Object.fromEntries(e.checkboxes.map(c => [c, true])) : undefined,
+      onPauseRequested: e => setPause(prev => {
+        if (prev?.reason === e.reason) return prev;
+        if (handledPauseKeys.current.has(`${id}:${e.reason}`)) return null;
+        return {
+          reason: e.reason, prompt: e.prompt, options: e.options, selected: null,
+          fields: e.fields,
+          fieldValues: prev?.fieldValues ?? {},
+          commitMessage: prev?.commitMessage,
+          checkboxes: e.checkboxes,
+          checkboxValues: prev?.checkboxValues
+            ?? (e.checkboxes ? Object.fromEntries(e.checkboxes.map(c => [c, true])) : undefined),
+        };
       }),
       onServiceBuildProgress: e => setServiceBuildProgress(e),
       onBuildCompleted: e => {
-        api.get<IBuildRecord>(`/api/builds/${id}`).then(fresh => {
-          if (fresh) setBuildRecord(fresh);
-        }).catch(() => {
-          setBuildRecord(prev => prev ? { ...prev, status: e.status as IBuildRecord['status'], gitTag: e.gitTag ?? prev.gitTag } : null);
-        });
+        setBuildRecord(prev => prev ? {
+          ...prev, status: e.status as IBuildRecord['status'], gitTag: e.gitTag ?? prev.gitTag,
+        } : null);
         if (e.status === 'ImageBuilt' || e.status === 'BuildFailed' ||
             e.status === 'Aborted' || e.status === 'Interrupted')
           setPhase('done');
       },
       onPushCompleted: e => {
-        setBuildRecord(prev => prev ? { ...prev, status: e.status as IBuildRecord['status'] } : null);
+        setBuildRecord(prev => {
+          if (!prev) return null;
+          if (prev.status === e.status) return prev;
+          return { ...prev, status: e.status as IBuildRecord['status'] };
+        });
         setActivePushPhase(false);
         setPhase('done');
       },
       onDeployCompleted: e => {
-        api.get<IBuildRecord>(`/api/builds/${id}`).then(fresh => {
-          if (fresh) setBuildRecord(fresh);
-        }).catch(() => {
-          setBuildRecord(prev => prev ? { ...prev, status: e.status as IBuildRecord['status'] } : null);
+        setBuildRecord(prev => {
+          if (!prev) return null;
+          if (prev.status === e.status) return prev;
+          return { ...prev, status: e.status as IBuildRecord['status'] };
         });
         setPhase('done');
       },
       onConnectionChange: s => {
         setConnState(s);
-        if (s === 'connected' && id)
-          buildSse.catchUp(id).then(r => {
-            if (!r) return;
-            setBuildRecord(r);
-            // If the server-side record is already in a terminal state (build finished
-            // before or during reconnect), drive the UI out of the spinning pipeline phase.
-            const terminal: string[] = [
-              'ImageBuilt', 'BuildFailed', 'Aborted', 'Interrupted',
-              'PushSucceeded', 'PushFailed', 'Deployed', 'DeployFailed',
-            ];
-            if (terminal.includes(r.status)) setPhase('done');
-          });
+        if (s === 'connected' && id) {
+          clearTimeout(reconnectTimerRef.current);
+          reconnectTimerRef.current = setTimeout(() => {
+            buildSse.catchUp(id).then(r => {
+              if (!r) return;
+              setBuildRecord(prev => {
+                if (prev && prev.status === r.status && prev.gitTag === r.gitTag
+                    && prev.errorSummary === r.errorSummary && prev.id === r.id)
+                  return prev;
+                return r;
+              });
+              const terminal: string[] = [
+                'ImageBuilt', 'BuildFailed', 'Aborted', 'Interrupted',
+                'PushSucceeded', 'PushFailed', 'Deployed', 'DeployFailed',
+              ];
+              if (terminal.includes(r.status)) setPhase('done');
+            });
+          }, 300);
+        }
       },
     });
   }, [appendLine]);
@@ -262,6 +280,7 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
   };
 
   const handleStartBuild = async () => {
+    handledPauseKeys.current.clear();
     const serviceVersions = currentVersions.map(v => ({
       serviceName: v.serviceName,
       newVersion: newVersions[v.serviceName] ?? '',
@@ -277,6 +296,8 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
   const handlePauseRespond = async () => {
     if (!buildId || !pause) return;
     if (!pause.selected && pause.options.length > 0) return;
+    handledPauseKeys.current.add(`${buildId}:${pause.reason}`);
+    setPause(null);
     const data: Record<string, string> = {};
     if (pause.commitMessage) data.commitMessage = pause.commitMessage;
     if (pause.fieldValues) Object.assign(data, pause.fieldValues);
@@ -284,12 +305,12 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
       Object.entries(pause.checkboxValues).forEach(([k, v]) => { data[k] = v ? 'true' : 'false'; });
     }
     const choice = pause.selected ?? 'confirm';
-    await api.post(`/api/builds/${buildId}/respond`, { reason: pause.reason, choice, data });
-    setPause(null);
+    await api.post(`/api/builds/${buildId}/respond`, { reason: pause.reason, choice, data }).catch(() => {});
   };
 
   const handlePush = async () => {
     if (!buildId) return;
+    handledPauseKeys.current.clear();
     setActivePushPhase(true);
     setStepStatuses({});
     setCurrentStepName(null);
@@ -308,6 +329,7 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
 
   const handleDeploy = async () => {
     if (!buildId) return;
+    handledPauseKeys.current.clear();
     setElapsed(0);
     await api.post(`/api/builds/${buildId}/deploy`, { deployModeOverride });
     sseConnected.current = false;
@@ -318,6 +340,7 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
   // close animation doesn't flash back to the version-picker mid-animation.
   useEffect(() => {
     if (!isOpen) {
+      handledPauseKeys.current.clear();
       setPhase('versions');
       setLines([]);
       setStepStatuses({});
@@ -356,13 +379,12 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
     ? buildStats?.totalPushExpected
     : buildStats?.totalBuildExpected;
 
-  // Build picker options for pause
-  const pickerOptions: PickerOption[] = pause?.options.map(opt => ({
+  const pickerOptions = useMemo(() => pause?.options.map(opt => ({
     value: opt,
     label: OPTION_LABELS[opt] ?? opt,
     desc: OPTION_DESCS[opt],
     danger: opt === 'abort',
-  })) ?? [];
+  })) ?? [], [pause?.options]);
 
   return (
     <Drawer.Root open={isOpen} onOpenChange={open => { if (!open) handleClose(); }}>
