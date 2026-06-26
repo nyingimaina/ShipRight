@@ -6,6 +6,7 @@ import ZestButton from 'jattac.libs.web.zest-button';
 import ZestTextbox from 'jattac.libs.web.zest-textbox';
 import { api } from '@/shared/ApiService';
 import { buildSse } from '@/shared/SseService';
+import { notificationService } from '@/shared/notifications/defaultService';
 import { IBuildRecord } from '@/shared/types/IBuildRecord';
 import { IServiceVersion } from '@/shared/types/IBuildRecord';
 import { DeployMode } from '@/shared/types/IProject';
@@ -115,6 +116,7 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const handledPauseKeys = useRef(new Set<string>());
+  const buildStartTimeRef = useRef(0);
 
   useEffect(() => {
     const map: Record<string, string> = {};
@@ -199,19 +201,22 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
           return p;
         });
       },
-      onPauseRequested: e => setPause(prev => {
-        if (prev?.reason === e.reason) return prev;
-        if (handledPauseKeys.current.has(`${id}:${e.reason}`)) return null;
-        return {
-          reason: e.reason, prompt: e.prompt, options: e.options, selected: null,
-          fields: e.fields,
+      onPauseRequested: e => {
+        notificationService.show({ type: 'pause_required', title: 'Action Required', message: e.prompt, tag: id });
+        setPause(prev => {
+          if (prev?.reason === e.reason) return prev;
+          if (handledPauseKeys.current.has(`${id}:${e.reason}`)) return null;
+          return {
+            reason: e.reason, prompt: e.prompt, options: e.options, selected: null,
+            fields: e.fields,
           fieldValues: prev?.fieldValues ?? {},
           commitMessage: prev?.commitMessage,
           checkboxes: e.checkboxes,
           checkboxValues: prev?.checkboxValues
             ?? (e.checkboxes ? Object.fromEntries(e.checkboxes.map(c => [c, true])) : undefined),
         };
-      }),
+      });
+      },
       onServiceBuildProgress: e => setServiceBuildProgress(e),
       onBuildCompleted: e => {
         setBuildRecord(prev => prev ? {
@@ -220,6 +225,11 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
         if (e.status === 'ImageBuilt' || e.status === 'BuildFailed' ||
             e.status === 'Aborted' || e.status === 'Interrupted')
           setPhase('done');
+        const elapsed = buildStartTimeRef.current ? Date.now() - buildStartTimeRef.current : Infinity;
+        const isSuccess = e.status === 'ImageBuilt';
+        const notifType = isSuccess ? 'build_success' : 'build_failed';
+        if (notificationService.shouldNotify(notifType, elapsed))
+          notificationService.show({ type: notifType, title: isSuccess ? 'Build Complete' : 'Build Failed', message: `${e.gitTag ?? 'Build'} ${isSuccess ? 'built — ready to push' : e.status}`, tag: id });
       },
       onPushCompleted: e => {
         setBuildRecord(prev => {
@@ -229,6 +239,11 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
         });
         setActivePushPhase(false);
         setPhase('done');
+        const elapsed = buildStartTimeRef.current ? Date.now() - buildStartTimeRef.current : Infinity;
+        const isSuccess = e.status === 'PushSucceeded';
+        const notifType = isSuccess ? 'push_success' : 'push_failed';
+        if (notificationService.shouldNotify(notifType, elapsed))
+          notificationService.show({ type: notifType, title: isSuccess ? 'Push Complete' : 'Push Failed', message: `Push to registry ${isSuccess ? 'succeeded' : 'failed'}`, tag: id });
       },
       onDeployCompleted: e => {
         setBuildRecord(prev => {
@@ -237,6 +252,11 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
           return { ...prev, status: e.status as IBuildRecord['status'] };
         });
         setPhase('done');
+        const elapsed = buildStartTimeRef.current ? Date.now() - buildStartTimeRef.current : Infinity;
+        const isSuccess = e.status === 'Deployed';
+        const notifType = isSuccess ? 'deploy_success' : 'deploy_failed';
+        if (notificationService.shouldNotify(notifType, elapsed))
+          notificationService.show({ type: notifType, title: isSuccess ? 'Deployed' : 'Deploy Failed', message: `Deployment ${isSuccess ? 'succeeded' : 'failed'}`, tag: id });
       },
       onConnectionChange: s => {
         setConnState(s);
@@ -281,6 +301,7 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
 
   const handleStartBuild = async () => {
     handledPauseKeys.current.clear();
+    buildStartTimeRef.current = Date.now();
     const serviceVersions = currentVersions.map(v => ({
       serviceName: v.serviceName,
       newVersion: newVersions[v.serviceName] ?? '',
