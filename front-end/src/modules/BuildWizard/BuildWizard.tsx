@@ -537,7 +537,13 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
 
                 {/* Log viewer */}
                 <LogViewer lines={lines} isLive={phase === 'pipeline'} />
+              </>
+            )}
+          </div>
 
+          <div className={styles.actionBar}>
+            {(phase === 'pipeline' || phase === 'done') && (
+              <>
                 {/* Error summary */}
                 {buildRecord?.errorSummary && (
                   <div className={styles.errorBanner}>{buildRecord.errorSummary}</div>

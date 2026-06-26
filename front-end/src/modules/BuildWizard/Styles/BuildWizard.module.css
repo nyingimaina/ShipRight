@@ -54,11 +54,19 @@
 
 .body {
   flex: 1;
-  overflow: hidden;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   padding: 20px 24px;
   gap: 16px;
+}
+
+.actionBar {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 24px 20px;
 }
 
 @media (max-width: 480px) {
