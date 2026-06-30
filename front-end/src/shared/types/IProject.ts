@@ -3,7 +3,10 @@ export interface IServiceConfig {
   versionFilePath: string;
   buildContextPath: string;
   dockerImageName: string;
+  dockerRegistry?: string;
   composeServiceName: string;
+  dockerUsername?: string;
+  dockerPassword?: string;
 }
 
 export interface IGitConfig {
@@ -18,6 +21,8 @@ export interface IWslConfig {
 export type DeployMode = 'GitScript' | 'GitCompose' | 'EnvCompose';
 
 export interface IServerConfig {
+  id?: string;
+  name?: string;
   host: string;
   username: string;
   sshKeyPath: string;
@@ -34,11 +39,14 @@ export interface IDatabaseConfig {
   databaseName: string;
   rootUser: string;
   backupRetainCount: number;
+  rootPassword?: string;
 }
 
 export interface IProject {
   id: string;
   name: string;
+  version?: number;
+  serverId?: string;
   services: IServiceConfig[];
   gitRepos: IGitConfig[];
   wsl: IWslConfig;
@@ -60,7 +68,7 @@ export const emptyDatabaseConfig = (): IDatabaseConfig => ({
 
 export const emptyProjectInput = (): IProjectInput => ({
   name: '',
-  services: [{ name: '', versionFilePath: '', buildContextPath: '', dockerImageName: '', composeServiceName: '' }],
+  services: [{ name: '', versionFilePath: '', buildContextPath: '', dockerImageName: '', dockerRegistry: '', composeServiceName: '', dockerUsername: '', dockerPassword: '' }],
   gitRepos: [],
   wsl: { workingDir: '' },
   server: { host: '', username: 'ubuntu', sshKeyPath: '', remoteWorkingDir: '', rebuildScript: 'rebuild.sh', deployMode: 'GitScript' },

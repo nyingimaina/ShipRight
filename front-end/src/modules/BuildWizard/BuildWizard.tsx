@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Drawer } from 'vaul';
+import toast from 'react-hot-toast';
 import confetti from 'canvas-confetti';
 import ZestButton from 'jattac.libs.web.zest-button';
 import ZestTextbox from 'jattac.libs.web.zest-textbox';
 import { api } from '@/shared/ApiService';
 import { buildSse } from '@/shared/SseService';
+import { notificationService } from '@/shared/notifications/defaultService';
 import { IBuildRecord } from '@/shared/types/IBuildRecord';
 import { IServiceVersion } from '@/shared/types/IBuildRecord';
 import { DeployMode } from '@/shared/types/IProject';
@@ -20,9 +22,11 @@ interface Props {
   isOpen: boolean;
   onClose: () => void;
   initialBuildId?: string;
+  onVersionCreated?: () => void;
 }
 
 type Phase = 'versions' | 'pipeline' | 'done';
+type ActiveOp = 'idle' | 'build' | 'push' | 'deploy';
 type StepStatus = 'pending' | 'running' | 'done' | 'failed';
 
 interface BuildStats {
@@ -90,10 +94,12 @@ const fmtExpected = (s: number | null | undefined) => {
 
 let lineCounter = 0;
 
-export default function BuildWizard({ projectId, projectName, currentVersions, defaultDeployMode, isOpen, onClose, initialBuildId }: Props) {
+export default function BuildWizard({ projectId, projectName, currentVersions, defaultDeployMode, isOpen, onClose, initialBuildId, onVersionCreated }: Props) {
   const [phase, setPhase] = useState<Phase>('versions');
   const [deployModeOverride, setDeployModeOverride] = useState<DeployMode>(defaultDeployMode);
   const [newVersions, setNewVersions] = useState<Record<string, string>>({});
+  const [createVersionInputs, setCreateVersionInputs] = useState<Record<string, string>>({});
+  const [creatingService, setCreatingService] = useState<string | null>(null);
   const [buildId, setBuildId] = useState<string | null>(null);
   const [buildRecord, setBuildRecord] = useState<IBuildRecord | null>(null);
   const [lines, setLines] = useState<LogEntry[]>([]);
@@ -107,8 +113,12 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
   const [elapsed, setElapsed] = useState(0);
   const [buildStats, setBuildStats] = useState<BuildStats | null>(null);
   const [serviceBuildProgress, setServiceBuildProgress] = useState<{ current: number; total: number; serviceName: string } | null>(null);
+  const [activeOp, setActiveOp] = useState<ActiveOp>('idle');
   const sseConnected = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const handledPauseKeys = useRef(new Set<string>());
+  const buildStartTimeRef = useRef(0);
 
   useEffect(() => {
     const map: Record<string, string> = {};
@@ -193,70 +203,140 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
           return p;
         });
       },
-      onPauseRequested: e => setPause({
-        reason: e.reason, prompt: e.prompt, options: e.options, selected: null,
-        fields: e.fields, fieldValues: {},
-        checkboxes: e.checkboxes,
-        checkboxValues: e.checkboxes ? Object.fromEntries(e.checkboxes.map(c => [c, true])) : undefined,
-      }),
+      onPauseRequested: e => {
+        notificationService.show({ type: 'pause_required', title: 'Action Required', message: e.prompt, tag: id });
+        setPause(prev => {
+          if (prev?.reason === e.reason) return prev;
+          if (handledPauseKeys.current.has(`${id}:${e.reason}`)) return null;
+          return {
+            reason: e.reason, prompt: e.prompt, options: e.options, selected: null,
+            fields: e.fields,
+          fieldValues: prev?.fieldValues ?? {},
+          commitMessage: prev?.commitMessage,
+          checkboxes: e.checkboxes,
+          checkboxValues: prev?.checkboxValues
+            ?? (e.checkboxes ? Object.fromEntries(e.checkboxes.map(c => [c, true])) : undefined),
+        };
+      });
+      },
       onServiceBuildProgress: e => setServiceBuildProgress(e),
       onBuildCompleted: e => {
-        api.get<IBuildRecord>(`/api/builds/${id}`).then(fresh => {
-          if (fresh) setBuildRecord(fresh);
-        }).catch(() => {
-          setBuildRecord(prev => prev ? { ...prev, status: e.status as IBuildRecord['status'], gitTag: e.gitTag ?? prev.gitTag } : null);
-        });
+        setActiveOp('idle');
+        setBuildRecord(prev => prev ? {
+          ...prev, status: e.status as IBuildRecord['status'], gitTag: e.gitTag ?? prev.gitTag,
+        } : null);
         if (e.status === 'ImageBuilt' || e.status === 'BuildFailed' ||
-            e.status === 'Aborted' || e.status === 'Interrupted')
+            e.status === 'Aborted' || e.status === 'Interrupted') {
           setPhase('done');
+          buildSse.disconnect();
+          sseConnected.current = false;
+        }
+        const elapsed = buildStartTimeRef.current ? Date.now() - buildStartTimeRef.current : Infinity;
+        const isSuccess = e.status === 'ImageBuilt';
+        const notifType = isSuccess ? 'build_success' : 'build_failed';
+        if (notificationService.shouldNotify(notifType, elapsed))
+          notificationService.show({ type: notifType, title: isSuccess ? 'Build Complete' : 'Build Failed', message: `${e.gitTag ?? 'Build'} ${isSuccess ? 'built — ready to push' : e.status}`, tag: id });
       },
       onPushCompleted: e => {
-        setBuildRecord(prev => prev ? { ...prev, status: e.status as IBuildRecord['status'] } : null);
+        setActiveOp('idle');
+        setBuildRecord(prev => {
+          if (!prev) return null;
+          if (prev.status === e.status) return prev;
+          return { ...prev, status: e.status as IBuildRecord['status'] };
+        });
         setActivePushPhase(false);
         setPhase('done');
+        buildSse.disconnect();
+        sseConnected.current = false;
+        const elapsed = buildStartTimeRef.current ? Date.now() - buildStartTimeRef.current : Infinity;
+        const isSuccess = e.status === 'PushSucceeded';
+        const notifType = isSuccess ? 'push_success' : 'push_failed';
+        if (notificationService.shouldNotify(notifType, elapsed))
+          notificationService.show({ type: notifType, title: isSuccess ? 'Push Complete' : 'Push Failed', message: `Push to registry ${isSuccess ? 'succeeded' : 'failed'}`, tag: id });
       },
       onDeployCompleted: e => {
-        api.get<IBuildRecord>(`/api/builds/${id}`).then(fresh => {
-          if (fresh) setBuildRecord(fresh);
-        }).catch(() => {
-          setBuildRecord(prev => prev ? { ...prev, status: e.status as IBuildRecord['status'] } : null);
+        setActiveOp('idle');
+        setBuildRecord(prev => {
+          if (!prev) return null;
+          if (prev.status === e.status) return prev;
+          return { ...prev, status: e.status as IBuildRecord['status'] };
         });
         setPhase('done');
+        buildSse.disconnect();
+        sseConnected.current = false;
+        const elapsed = buildStartTimeRef.current ? Date.now() - buildStartTimeRef.current : Infinity;
+        const isSuccess = e.status === 'Deployed';
+        const notifType = isSuccess ? 'deploy_success' : 'deploy_failed';
+        if (notificationService.shouldNotify(notifType, elapsed))
+          notificationService.show({ type: notifType, title: isSuccess ? 'Deployed' : 'Deploy Failed', message: `Deployment ${isSuccess ? 'succeeded' : 'failed'}`, tag: id });
       },
       onConnectionChange: s => {
         setConnState(s);
-        if (s === 'connected' && id)
-          buildSse.catchUp(id).then(r => {
-            if (!r) return;
-            setBuildRecord(r);
-            // If the server-side record is already in a terminal state (build finished
-            // before or during reconnect), drive the UI out of the spinning pipeline phase.
-            const terminal: string[] = [
-              'ImageBuilt', 'BuildFailed', 'Aborted', 'Interrupted',
-              'PushSucceeded', 'PushFailed', 'Deployed', 'DeployFailed',
-            ];
-            if (terminal.includes(r.status)) setPhase('done');
-          });
+        if (s === 'connected' && id) {
+          clearTimeout(reconnectTimerRef.current);
+          reconnectTimerRef.current = setTimeout(() => {
+            buildSse.catchUp(id).then(r => {
+              if (!r) return;
+              setBuildRecord(prev => {
+                if (prev && prev.status === r.status && prev.gitTag === r.gitTag
+                    && prev.errorSummary === r.errorSummary && prev.id === r.id)
+                  return prev;
+                return r;
+              });
+              const terminal: string[] = [
+                'ImageBuilt', 'BuildFailed', 'Aborted', 'Interrupted',
+                'PushSucceeded', 'PushFailed', 'Deployed', 'DeployFailed',
+              ];
+              if (terminal.includes(r.status)) { setPhase('done'); setActiveOp('idle'); }
+            });
+          }, 300);
+        }
       },
     });
   }, [appendLine]);
 
+  const handleCreateVersionFile = async (serviceName: string) => {
+    const version = (createVersionInputs[serviceName] ?? '').trim() || '1.0.0';
+    setCreatingService(serviceName);
+    try {
+      await api.post(`/api/projects/${projectId}/create-version-file`, { serviceName, version });
+      toast.success(`${serviceName}: version.txt created (v${version})`);
+      setNewVersions(p => ({ ...p, [serviceName]: version }));
+      setCreateVersionInputs(p => { const n = { ...p }; delete n[serviceName]; return n; });
+      onVersionCreated?.();
+    } catch (e: unknown) {
+      toast.error((e as { message?: string })?.message ?? 'Failed to create version.txt');
+    } finally {
+      setCreatingService(null);
+    }
+  };
+
   const handleStartBuild = async () => {
-    const serviceVersions = currentVersions.map(v => ({
-      serviceName: v.serviceName,
-      newVersion: newVersions[v.serviceName] ?? '',
-    }));
-    const result = await api.post<{ buildId: string }>('/api/builds/start', { projectId, serviceVersions });
-    setBuildId(result.buildId);
-    const record = await api.get<IBuildRecord>(`/api/builds/${result.buildId}`);
-    setBuildRecord(record);
-    setPhase('pipeline');
-    connectSse(result.buildId);
+    handledPauseKeys.current.clear();
+    buildStartTimeRef.current = Date.now();
+    setActiveOp('build');
+    try {
+      const serviceVersions = currentVersions.map(v => ({
+        serviceName: v.serviceName,
+        newVersion: newVersions[v.serviceName] ?? '',
+      }));
+      const result = await api.post<{ buildId: string }>('/api/builds/start', { projectId, serviceVersions });
+      setBuildId(result.buildId);
+      const record = await api.get<IBuildRecord>(`/api/builds/${result.buildId}`);
+      setBuildRecord(record);
+      setPhase('pipeline');
+      connectSse(result.buildId);
+    } catch (e: unknown) {
+      toast.error((e as { message?: string })?.message ?? 'Failed to start build.');
+      setActiveOp('idle');
+    }
   };
 
   const handlePauseRespond = async () => {
     if (!buildId || !pause) return;
     if (!pause.selected && pause.options.length > 0) return;
+    handledPauseKeys.current.add(`${buildId}:${pause.reason}`);
+    setPause(null);
     const data: Record<string, string> = {};
     if (pause.commitMessage) data.commitMessage = pause.commitMessage;
     if (pause.fieldValues) Object.assign(data, pause.fieldValues);
@@ -264,21 +344,29 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
       Object.entries(pause.checkboxValues).forEach(([k, v]) => { data[k] = v ? 'true' : 'false'; });
     }
     const choice = pause.selected ?? 'confirm';
-    await api.post(`/api/builds/${buildId}/respond`, { reason: pause.reason, choice, data });
-    setPause(null);
+    await api.post(`/api/builds/${buildId}/respond`, { reason: pause.reason, choice, data }).catch(() => {});
   };
 
   const handlePush = async () => {
     if (!buildId) return;
+    handledPauseKeys.current.clear();
+    setActiveOp('push');
     setActivePushPhase(true);
     setStepStatuses({});
     setCurrentStepName(null);
     setStepStartTimes({});
     setStepActualDurations({});
     setElapsed(0);
-    await api.post(`/api/builds/${buildId}/push`, {});
-    sseConnected.current = false;
-    connectSse(buildId);
+    setPhase('pipeline');
+    try {
+      await api.post(`/api/builds/${buildId}/push`, {});
+      sseConnected.current = false;
+      connectSse(buildId);
+    } catch (e: unknown) {
+      toast.error((e as { message?: string })?.message ?? 'Failed to start push.');
+      setActiveOp('idle');
+      setActivePushPhase(false);
+    }
   };
 
   const handleCancel = async () => {
@@ -288,16 +376,25 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
 
   const handleDeploy = async () => {
     if (!buildId) return;
+    handledPauseKeys.current.clear();
+    setActiveOp('deploy');
     setElapsed(0);
-    await api.post(`/api/builds/${buildId}/deploy`, { deployModeOverride });
-    sseConnected.current = false;
-    connectSse(buildId);
+    setPhase('pipeline');
+    try {
+      await api.post(`/api/builds/${buildId}/deploy`, { deployModeOverride });
+      sseConnected.current = false;
+      connectSse(buildId);
+    } catch (e: unknown) {
+      toast.error((e as { message?: string })?.message ?? 'Failed to start deployment.');
+      setActiveOp('idle');
+    }
   };
 
   // Reset wizard state only after the drawer has fully closed, so the
   // close animation doesn't flash back to the version-picker mid-animation.
   useEffect(() => {
     if (!isOpen) {
+      handledPauseKeys.current.clear();
       setPhase('versions');
       setLines([]);
       setStepStatuses({});
@@ -305,6 +402,7 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
       setStepStartTimes({});
       setStepActualDurations({});
       setActivePushPhase(false);
+      setActiveOp('idle');
       setPause(null);
       setBuildId(null);
       setBuildRecord(null);
@@ -336,13 +434,12 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
     ? buildStats?.totalPushExpected
     : buildStats?.totalBuildExpected;
 
-  // Build picker options for pause
-  const pickerOptions: PickerOption[] = pause?.options.map(opt => ({
+  const pickerOptions = useMemo(() => pause?.options.map(opt => ({
     value: opt,
     label: OPTION_LABELS[opt] ?? opt,
     desc: OPTION_DESCS[opt],
     danger: opt === 'abort',
-  })) ?? [];
+  })) ?? [], [pause?.options]);
 
   return (
     <Drawer.Root open={isOpen} onOpenChange={open => { if (!open) handleClose(); }}>
@@ -366,20 +463,47 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
             {phase === 'versions' && (
               <>
                 <div className={styles.versionsGrid}>
-                  {currentVersions.map(v => (
-                    <div key={v.serviceName} className={styles.versionRow}>
-                      <span className={styles.versionServiceName}>{v.serviceName}</span>
-                      <span className={styles.versionCurrent}>{v.version ?? '?'}</span>
-                      <span className={styles.versionArrow}>→</span>
-                      <div className={styles.versionInputWrap}>
-                        <ZestTextbox
-                          value={newVersions[v.serviceName] ?? ''}
-                          onChange={e => setNewVersions(p => ({ ...p, [v.serviceName]: e.target.value }))}
-                          zest={{ zSize: 'sm', stretch: true }}
-                        />
+                  {currentVersions.map(v => {
+                    const isError = !!v.error && !v.version;
+                    return (
+                      <div key={v.serviceName} className={styles.versionRow}>
+                        <span className={styles.versionServiceName}>{v.serviceName}</span>
+                        {isError ? (
+                          <>
+                            <span className={styles.versionCurrent}>?</span>
+                            <span className={styles.versionArrow}>→</span>
+                            <div className={styles.versionInputWrap}>
+                              <div className={styles.versionCreateRow}>
+                                <ZestTextbox
+                                  value={createVersionInputs[v.serviceName] ?? '1.0.0'}
+                                  onChange={e => setCreateVersionInputs(p => ({ ...p, [v.serviceName]: e.target.value }))}
+                                  zest={{ zSize: 'sm', stretch: true }}
+                                />
+                                <ZestButton
+                                  zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}
+                                  onClick={() => handleCreateVersionFile(v.serviceName)}
+                                  disabled={creatingService === v.serviceName}>
+                                  {creatingService === v.serviceName ? 'Creating…' : 'Create'}
+                                </ZestButton>
+                              </div>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <span className={styles.versionCurrent}>{v.version ?? '?'}</span>
+                            <span className={styles.versionArrow}>→</span>
+                            <div className={styles.versionInputWrap}>
+                              <ZestTextbox
+                                value={newVersions[v.serviceName] ?? ''}
+                                onChange={e => setNewVersions(p => ({ ...p, [v.serviceName]: e.target.value }))}
+                                zest={{ zSize: 'sm', stretch: true }}
+                              />
+                            </div>
+                          </>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 {buildStats && buildStats.sampleCount > 0 && buildStats.totalBuildExpected && (
                   <div className={styles.timerBar}>
@@ -468,6 +592,29 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
 
                 {/* Log viewer */}
                 <LogViewer lines={lines} isLive={phase === 'pipeline'} />
+              </>
+            )}
+          </div>
+
+          <div className={styles.actionBar}>
+            {(phase === 'pipeline' || phase === 'done') && (
+              <>
+                {/* Operation status indicator */}
+                {activeOp !== 'idle' && (
+                  <div className={styles.opStatusBar}>
+                    <span className={styles.opStatusDot} />
+                    <span className={styles.opStatusLabel}>
+                      {activeOp === 'build' && 'Building...'}
+                      {activeOp === 'push' && 'Pushing to registry...'}
+                      {activeOp === 'deploy' && 'Deploying...'}
+                    </span>
+                    {connState !== 'connected' && (
+                      <span className={styles.opStatusConnWarn}>
+                        {connState === 'reconnecting' ? '(reconnecting...)' : '(disconnected)'}
+                      </span>
+                    )}
+                  </div>
+                )}
 
                 {/* Error summary */}
                 {buildRecord?.errorSummary && (
@@ -492,7 +639,7 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
                       <div className={styles.deployInfo}>Images built locally — ready to push to registry</div>
                       <div className={styles.deployTag}>{buildRecord?.gitTag}</div>
                     </div>
-                    <ZestButton onClick={handlePush}
+                    <ZestButton onClick={handlePush} disabled={activeOp !== 'idle'}
                       zest={{ visualOptions: { variant: 'standard' }, busyOptions: { handleInternally: true } }}>
                       Push to Registry
                     </ZestButton>
@@ -503,7 +650,7 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
                   <div className={styles.deploySection}>
                     <span className={styles.deployInfo}>✗ Push to registry failed</span>
                     <div className={styles.actionRow}>
-                      <ZestButton onClick={handlePush} zest={{ visualOptions: { variant: 'standard' } }}>
+                      <ZestButton onClick={handlePush} disabled={activeOp !== 'idle'} zest={{ visualOptions: { variant: 'standard' } }}>
                         Retry Push
                       </ZestButton>
                       <ZestButton onClick={handleClose} zest={{ buttonStyle: 'outline' }}>Close</ZestButton>
@@ -532,7 +679,7 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
                           Override — project default: {defaultDeployMode}
                         </span>
                       )}
-                      <ZestButton onClick={handleDeploy}
+                      <ZestButton onClick={handleDeploy} disabled={activeOp !== 'idle'}
                         zest={{ visualOptions: { variant: 'standard' }, busyOptions: { handleInternally: true } }}>
                         Deploy to Production
                       </ZestButton>
@@ -567,7 +714,7 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
                         <option value="EnvCompose">Env + Compose</option>
                       </select>
                       <div style={{ display: 'flex', gap: 8 }}>
-                        <ZestButton onClick={handleDeploy}
+                        <ZestButton onClick={handleDeploy} disabled={activeOp !== 'idle'}
                           zest={{ visualOptions: { variant: 'standard' }, busyOptions: { handleInternally: true } }}>
                           Retry Deploy
                         </ZestButton>

@@ -72,8 +72,8 @@ function buildIco(pngBuffers, sizes) {
     header.writeUInt8(h, entryOffset + 1);
     header.writeUInt8(0, entryOffset + 2);
     header.writeUInt8(0, entryOffset + 3);
-    header.writeUInt16LE(1, entryOffset + 4);
-    header.writeUInt16LE(32, entryOffset + 6);
+    header.writeUInt16LE(0, entryOffset + 4);
+    header.writeUInt16LE(0, entryOffset + 6);
     header.writeUInt32LE(png.length, entryOffset + 8);
     header.writeUInt32LE(offset, entryOffset + 12);
     offset += png.length;
@@ -92,9 +92,13 @@ async function main() {
   fs.writeFileSync(faviconPath, icoData);
   console.log(`Wrote ${faviconPath} (${icoData.length} bytes)`);
 
-  const appIconPath = path.join(repoRoot, 'back-end', 'ShipRight', 'shipright.ico');
-  fs.writeFileSync(appIconPath, icoData);
-  console.log(`Wrote ${appIconPath} (${icoData.length} bytes)`);
+  const serverIconPath = path.join(repoRoot, 'back-end', 'ShipRight.Server', 'shipright.ico');
+  fs.writeFileSync(serverIconPath, icoData);
+  console.log(`Wrote ${serverIconPath} (${icoData.length} bytes)`);
+
+  const desktopIconPath = path.join(repoRoot, 'back-end', 'ShipRight.Desktop', 'shipright-desktop.ico');
+  fs.writeFileSync(desktopIconPath, icoData);
+  console.log(`Wrote ${desktopIconPath} (${icoData.length} bytes)`);
 }
 
 main().catch(err => {

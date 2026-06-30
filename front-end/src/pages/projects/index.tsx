@@ -1,5 +1,4 @@
 import Head from 'next/head';
-import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import toast from 'react-hot-toast';
@@ -8,6 +7,7 @@ import AppShell from '@/modules/AppShell/AppShell';
 import OverflowMenu from 'jattac.libs.web.overflow-menu';
 import ZestButton from 'jattac.libs.web.zest-button';
 import ProjectSetupWizard from '@/modules/ProjectConfig/ProjectSetupWizard';
+import ProjectDetailPanel from '@/modules/ProjectDetail/ProjectDetailPanel';
 import { api } from '@/shared/ApiService';
 import { IProject } from '@/shared/types/IProject';
 import styles from './Styles/ProjectList.module.css';
@@ -20,6 +20,8 @@ export default function ProjectList() {
   const [projects, setProjects] = useState<IProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [wizardTarget, setWizardTarget] = useState<WizardTarget>(undefined);
+
+  const detailId = router.query.detail as string | undefined;
 
   const load = () => api.get<IProject[]>('/api/projects')
     .then(setProjects).catch(() => toast.error('Failed to load projects'))
@@ -36,6 +38,10 @@ export default function ProjectList() {
   }, [router.query.new]);
 
   const closePane = () => setWizardTarget(undefined);
+  const openDetail = (id: string) => router.push(`/projects/?detail=${id}`, undefined, { shallow: true });
+  const closeDetail = () => router.push('/projects/', undefined, { shallow: true });
+
+  if (detailId) return <ProjectDetailPanel projectId={detailId} onBack={closeDetail} />;
 
   const handleDelete = async (id: string, name: string) => {
     try {
@@ -111,7 +117,7 @@ export default function ProjectList() {
                     { content: 'Delete', onClick: () => handleDelete(p.id, p.name) },
                   ]} />
                 </div>
-                <Link href={`/projects/${p.id}/`} className={styles.cardLink}>View detail →</Link>
+                <button onClick={() => openDetail(p.id)} className={styles.cardLink}>View detail →</button>
               </div>
             ))}
           </div>

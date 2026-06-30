@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState, KeyboardEvent } from 'react';
 import ZestButton from 'jattac.libs.web.zest-button';
+import ZestTextbox from 'jattac.libs.web.zest-textbox';
 import { api, sseUrl } from '@/shared/ApiService';
 import { useElapsedTimer, fmtElapsed } from '@/shared/hooks/useElapsedTimer';
 import styles from './Styles/SshTerminal.module.css';
 
 interface Props {
-  projectId: string;
+  projectId?: string;
+  serverId?: string;
   serverLabel: string;
 }
 
@@ -15,17 +17,31 @@ interface OutputLine {
   text: string;
 }
 
-export default function SshTerminal({ projectId, serverLabel }: Props) {
+function apiBase(projectId?: string, serverId?: string): string | null {
+  if (projectId) return `/api/projects/${projectId}`;
+  if (serverId) return `/api/servers/${serverId}`;
+  return null;
+}
+
+export default function SshTerminal({ projectId, serverId, serverLabel }: Props) {
+  const base = apiBase(projectId, serverId);
+
   const [command, setCommand]       = useState('');
   const [lines, setLines]           = useState<OutputLine[]>([]);
   const [running, setRunning]       = useState(false);
+  const [cwd, setCwd]               = useState('~');
   const [history, setHistory]       = useState<string[]>([]);
   const [histIdx, setHistIdx]       = useState(-1);
   const esRef   = useRef<EventSource | null>(null);
   const endRef  = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRowRef = useRef<HTMLDivElement>(null);
   const lineId  = useRef(0);
   const elapsed = useElapsedTimer(running);
+
+  const focusCmdInput = () => {
+    const el = inputRowRef.current?.querySelector('input, textarea');
+    if (el) (el as HTMLElement).focus();
+  };
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -36,9 +52,31 @@ export default function SshTerminal({ projectId, serverLabel }: Props) {
   const pushLine = (kind: OutputLine['kind'], text: string) =>
     setLines(prev => [...prev, { id: lineId.current++, kind, text }]);
 
+  const copyOutput = () => {
+    const text = lines.map(l => l.text).join('\n');
+    navigator.clipboard.writeText(text);
+  };
+
+  const handleOutputClick = (e: React.MouseEvent) => {
+    const sel = window.getSelection();
+    if (sel && sel.toString().length > 0 && e.currentTarget.contains(sel.anchorNode as Node)) {
+      return;
+    }
+    focusCmdInput();
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const pasted = e.clipboardData.getData('text');
+    if (pasted.includes('\n')) {
+      e.preventDefault();
+      const joined = pasted.trim().split(/\r?\n/).map(s => s.trim()).filter(Boolean).join(' && ');
+      if (joined) setCommand(joined);
+    }
+  };
+
   const run = async () => {
     const cmd = command.trim();
-    if (!cmd || running) return;
+    if (!cmd || running || !base) return;
 
     setRunning(true);
     setCommand('');
@@ -48,21 +86,24 @@ export default function SshTerminal({ projectId, serverLabel }: Props) {
 
     try {
       const { opId } = await api.post<{ opId: string }>(
-        `/api/projects/${projectId}/ssh/exec`, { command: cmd });
+        `${base}/ssh/exec`, { command: cmd });
 
-      const es = new EventSource(sseUrl(`/api/projects/${projectId}/ssh/ops/${opId}/stream`));
+      const es = new EventSource(sseUrl(`${base}/ssh/ops/${opId}/stream`));
       esRef.current = es;
 
       es.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          if (data.type === 'log') {
+          if (data.type === 'cwd') {
+            setCwd(data.data?.cwd ?? '~');
+          } else if (data.type === 'log') {
             const src = data.data?.source === 'stderr' ? 'stderr' : 'stdout';
             pushLine(src, data.data?.line ?? '');
           } else if (data.type === 'done') {
             const code = data.data?.exitCode ?? 0;
+            if (data.data?.cwd) setCwd(data.data.cwd);
             pushLine(code === 0 ? 'done' : 'error',
-              code === 0 ? `✓ exit 0` : `✗ exit ${code}`);
+              code === 0 ? '✓ exit 0' : `✗ exit ${code}`);
             setRunning(false);
             es.close();
           } else if (data.type === 'error') {
@@ -103,7 +144,7 @@ export default function SshTerminal({ projectId, serverLabel }: Props) {
   return (
     <div className={styles.terminal}>
       <div className={`${styles.output} ${running ? styles.outputRunning : ''}`}
-           onClick={() => inputRef.current?.focus()}>
+           onClick={handleOutputClick}>
         {lines.length === 0 && (
           <span className={styles.empty}>
             Connected to {serverLabel}. Type a command and press Enter.
@@ -116,21 +157,27 @@ export default function SshTerminal({ projectId, serverLabel }: Props) {
         ))}
         {running && <span className={`${styles.line} ${styles.lineStdout}`}>▌</span>}
         <div ref={endRef} />
+
+        {lines.length > 0 && !running && (
+          <button className={styles.copyBtn} onClick={copyOutput}
+            title="Copy output to clipboard">
+            Copy
+          </button>
+        )}
       </div>
 
-      <div className={styles.inputRow}>
+      <div ref={inputRowRef} className={styles.inputRow}>
         <span className={styles.prompt}>$</span>
-        <input
-          ref={inputRef}
-          className={styles.input}
+        <ZestTextbox
           value={command}
           onChange={e => setCommand(e.target.value)}
           onKeyDown={handleKey}
+          onPaste={handlePaste}
           disabled={running}
           placeholder={running ? `running… ${fmtElapsed(elapsed)}` : 'enter command'}
           autoComplete="off"
           spellCheck={false}
-        />
+          zest={{ stretch: true, zSize: 'sm' }} />
         <ZestButton
           onClick={run}
           disabled={!command.trim() || running}
@@ -142,6 +189,7 @@ export default function SshTerminal({ projectId, serverLabel }: Props) {
       <div className={styles.statusBar}>
         <div className={`${styles.statusDot} ${running ? styles.statusDotRunning : ''}`} />
         <span>{running ? `Running… ${fmtElapsed(elapsed)}` : 'Ready'}</span>
+        <span className={styles.cwdDisplay}>{cwd}</span>
         {lines.length > 0 && !running && (
           <ZestButton
             onClick={() => setLines([])}
@@ -155,7 +203,7 @@ export default function SshTerminal({ projectId, serverLabel }: Props) {
         <div className={styles.history}>
           {history.slice(0, 8).map((h, i) => (
             <button key={i} className={styles.historyChip}
-              onClick={() => { setCommand(h); inputRef.current?.focus(); }}>
+              onClick={() => { setCommand(h); focusCmdInput(); }}>
               {h}
             </button>
           ))}

@@ -121,11 +121,28 @@
   font-weight: 600;
 }
 
+.versionChip {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: rgba(201,168,76,0.15);
+  color: #C9A84C;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+}
+
 /* Field rows */
 .fieldRow {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.inputRow {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  justify-content: flex-start;
 }
 
 .fieldLabel {
@@ -171,6 +188,26 @@
 .summaryValue { color: #A8B8CC; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
 
 .errorText { color: #B84040; font-size: 12px; }
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.spinnerRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #637389;
+}
+
+.spinnerIcon {
+  animation: spin 1s linear infinite;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
 .warningBox {
   background: rgba(201,148,58,0.08);
   border: 1px solid rgba(201,148,58,0.2);

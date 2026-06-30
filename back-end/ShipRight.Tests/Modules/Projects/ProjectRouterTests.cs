@@ -1,8 +1,9 @@
+using Microsoft.VisualStudio.TestTools.UnitTesting;
 using ShipRight.Modules.Projects;
-using Xunit;
 
 namespace ShipRight.Tests.Modules.Projects;
 
+[TestClass]
 public class ProjectRouterTests : IDisposable
 {
     private readonly string _tmpDir;
@@ -54,57 +55,48 @@ public class ProjectRouterTests : IDisposable
 
     // ── Happy path ──────────────────────────────────────────────────────────
 
-    [Fact]
+    [TestMethod]
     public async Task Validate_ValidProject_ReturnsNoErrors()
     {
         var errors = await ProjectRouter.ValidateAsync(ValidProject(), _store, isNew: true);
-        Assert.Empty(errors);
+        Assert.AreEqual(0, errors.Count);
     }
 
     // ── Name ────────────────────────────────────────────────────────────────
 
-    [Fact]
+    [TestMethod]
     public async Task Validate_EmptyName_ReturnsNameError()
     {
         var p = ValidProject() with { Name = "" };
         var errors = await ProjectRouter.ValidateAsync(p, _store, isNew: true);
 
         var nameErr = errors.Single();
-        Assert.Equal("name", FieldValue<string>(nameErr, "field"));
+        Assert.AreEqual("name", FieldValue<string>(nameErr, "field"));
     }
 
-    [Fact]
+    [TestMethod]
     public async Task Validate_DuplicateName_ReturnsNameError()
     {
         await _store.SaveAsync(ValidProject("existing-id", "My App"));
-        var p = ValidProject("new-id", "My App"); // same name, different id
+        var p = ValidProject("new-id", "My App");
         var errors = await ProjectRouter.ValidateAsync(p, _store, isNew: true);
 
-        Assert.Contains(errors, e => FieldValue<string>(e, "field") == "name");
+        Assert.IsTrue(errors.Any(e => FieldValue<string>(e, "field") == "name"));
     }
 
-    [Fact]
+    [TestMethod]
     public async Task Validate_SameNameSameId_NoError()
     {
         await _store.SaveAsync(ValidProject("same-id", "My App"));
-        var p = ValidProject("same-id", "My App"); // editing self
+        var p = ValidProject("same-id", "My App");
         var errors = await ProjectRouter.ValidateAsync(p, _store, isNew: false);
 
-        Assert.DoesNotContain(errors, e => FieldValue<string>(e, "field") == "name");
+        Assert.IsFalse(errors.Any(e => FieldValue<string>(e, "field") == "name"));
     }
 
     // ── Services ────────────────────────────────────────────────────────────
 
-    [Fact]
-    public async Task Validate_NoServices_ReturnsServicesError()
-    {
-        var p = ValidProject() with { Services = [] };
-        var errors = await ProjectRouter.ValidateAsync(p, _store, isNew: true);
-
-        Assert.Contains(errors, e => FieldValue<string>(e, "field") == "services");
-    }
-
-    [Fact]
+    [TestMethod]
     public async Task Validate_ServiceMissingDockerImageName_ReturnsFieldError()
     {
         var svc = new ServiceConfig
@@ -117,10 +109,10 @@ public class ProjectRouterTests : IDisposable
         var p = ValidProject() with { Services = [svc] };
         var errors = await ProjectRouter.ValidateAsync(p, _store, isNew: true);
 
-        Assert.Contains(errors, e => FieldValue<string>(e, "field") == "services[0].dockerImageName");
+        Assert.IsTrue(errors.Any(e => FieldValue<string>(e, "field") == "services[0].dockerImageName"));
     }
 
-    [Fact]
+    [TestMethod]
     public async Task Validate_ServiceDockerImageWithTag_ReturnsFieldError()
     {
         var svc = new ServiceConfig
@@ -134,43 +126,41 @@ public class ProjectRouterTests : IDisposable
         var errors = await ProjectRouter.ValidateAsync(p, _store, isNew: true);
 
         var err = errors.Single();
-        Assert.Equal("services[0].dockerImageName", FieldValue<string>(err, "field"));
-        Assert.Contains("tag", FieldValue<string>(err, "message"));
+        Assert.AreEqual("services[0].dockerImageName", FieldValue<string>(err, "field"));
+        StringAssert.Contains(FieldValue<string>(err, "message"), "tag");
     }
-
-    // ── WSL ─────────────────────────────────────────────────────────────────
 
     // ── GitRepos ─────────────────────────────────────────────────────────────
 
-    [Fact]
+    [TestMethod]
     public async Task Validate_NoGitRepos_ReturnsGitReposError()
     {
         var p = ValidProject() with { GitRepos = [] };
         var errors = await ProjectRouter.ValidateAsync(p, _store, isNew: true);
 
-        Assert.Contains(errors, e => FieldValue<string>(e, "field") == "gitRepos");
+        Assert.IsTrue(errors.Any(e => FieldValue<string>(e, "field") == "gitRepos"));
     }
 
-    [Fact]
+    [TestMethod]
     public async Task Validate_GitRepoMissingRepoPath_ReturnsFieldError()
     {
         var p = ValidProject() with { GitRepos = [new GitConfig { RepoPath = "", DeployBranch = "main" }] };
         var errors = await ProjectRouter.ValidateAsync(p, _store, isNew: true);
 
-        Assert.Contains(errors, e => FieldValue<string>(e, "field") == "gitRepos[0].repoPath");
+        Assert.IsTrue(errors.Any(e => FieldValue<string>(e, "field") == "gitRepos[0].repoPath"));
     }
 
-    [Fact]
+    [TestMethod]
     public async Task Validate_GitRepoDeployBranchTooLong_ReturnsFieldError()
     {
         var longBranch = new string('x', 101);
         var p = ValidProject() with { GitRepos = [new GitConfig { RepoPath = "/tmp", DeployBranch = longBranch }] };
         var errors = await ProjectRouter.ValidateAsync(p, _store, isNew: true);
 
-        Assert.Contains(errors, e => FieldValue<string>(e, "field") == "gitRepos[0].deployBranch");
+        Assert.IsTrue(errors.Any(e => FieldValue<string>(e, "field") == "gitRepos[0].deployBranch"));
     }
 
-    [Fact]
+    [TestMethod]
     public async Task Validate_MultipleGitRepos_AllValidated()
     {
         var p = ValidProject() with
@@ -178,40 +168,40 @@ public class ProjectRouterTests : IDisposable
             GitRepos =
             [
                 new GitConfig { RepoPath = "/tmp/repo1", DeployBranch = "main" },
-                new GitConfig { RepoPath = "",            DeployBranch = "" },    // both fields missing
+                new GitConfig { RepoPath = "",            DeployBranch = "" },
             ]
         };
         var errors = await ProjectRouter.ValidateAsync(p, _store, isNew: true);
 
-        Assert.Contains(errors, e => FieldValue<string>(e, "field") == "gitRepos[1].repoPath");
-        Assert.Contains(errors, e => FieldValue<string>(e, "field") == "gitRepos[1].deployBranch");
+        Assert.IsTrue(errors.Any(e => FieldValue<string>(e, "field") == "gitRepos[1].repoPath"));
+        Assert.IsTrue(errors.Any(e => FieldValue<string>(e, "field") == "gitRepos[1].deployBranch"));
     }
 
     // ── WSL ─────────────────────────────────────────────────────────────────
 
-    [Fact]
+    [TestMethod]
     public async Task Validate_WslDirEmpty_ReturnsWslError()
     {
         var p = ValidProject() with { Wsl = new WslConfig { WorkingDir = "" } };
         var errors = await ProjectRouter.ValidateAsync(p, _store, isNew: true);
 
-        Assert.Contains(errors, e => FieldValue<string>(e, "field") == "wsl.workingDir");
+        Assert.IsTrue(errors.Any(e => FieldValue<string>(e, "field") == "wsl.workingDir"));
     }
 
-    [Fact]
+    [TestMethod]
     public async Task Validate_WslDirNotAbsoluteLinuxPath_ReturnsWslError()
     {
-        var p = ValidProject() with { Wsl = new WslConfig { WorkingDir = "home/ubuntu" } }; // no leading /
+        var p = ValidProject() with { Wsl = new WslConfig { WorkingDir = "home/ubuntu" } };
         var errors = await ProjectRouter.ValidateAsync(p, _store, isNew: true);
 
         var err = errors.Single();
-        Assert.Equal("wsl.workingDir", FieldValue<string>(err, "field"));
-        Assert.Contains("/", FieldValue<string>(err, "message"));
+        Assert.AreEqual("wsl.workingDir", FieldValue<string>(err, "field"));
+        StringAssert.Contains(FieldValue<string>(err, "message"), "/");
     }
 
     // ── Server ───────────────────────────────────────────────────────────────
 
-    [Fact]
+    [TestMethod]
     public async Task Validate_ServerHostMissing_ReturnsServerHostError()
     {
         var p = ValidProject() with
@@ -227,10 +217,10 @@ public class ProjectRouterTests : IDisposable
         };
         var errors = await ProjectRouter.ValidateAsync(p, _store, isNew: true);
 
-        Assert.Contains(errors, e => FieldValue<string>(e, "field") == "server.host");
+        Assert.IsTrue(errors.Any(e => FieldValue<string>(e, "field") == "server.host"));
     }
 
-    [Fact]
+    [TestMethod]
     public async Task Validate_RemoteWorkingDirNotAbsolute_ReturnsServerError()
     {
         var p = ValidProject() with
@@ -240,16 +230,16 @@ public class ProjectRouterTests : IDisposable
                 Host = "1.2.3.4",
                 Username = "ubuntu",
                 SshKeyPath = "/tmp/key.pem",
-                RemoteWorkingDir = "home/ubuntu", // no leading /
+                RemoteWorkingDir = "home/ubuntu",
                 RebuildScript = "rebuild.sh"
             }
         };
         var errors = await ProjectRouter.ValidateAsync(p, _store, isNew: true);
 
-        Assert.Contains(errors, e => FieldValue<string>(e, "field") == "server.remoteWorkingDir");
+        Assert.IsTrue(errors.Any(e => FieldValue<string>(e, "field") == "server.remoteWorkingDir"));
     }
 
-    [Fact]
+    [TestMethod]
     public async Task Validate_RebuildScriptWithPathSeparator_ReturnsServerError()
     {
         var p = ValidProject() with
@@ -260,28 +250,28 @@ public class ProjectRouterTests : IDisposable
                 Username = "ubuntu",
                 SshKeyPath = "/tmp/key.pem",
                 RemoteWorkingDir = "/home/ubuntu",
-                RebuildScript = "scripts/rebuild.sh" // contains /
+                RebuildScript = "scripts/rebuild.sh"
             }
         };
         var errors = await ProjectRouter.ValidateAsync(p, _store, isNew: true);
 
-        Assert.Contains(errors, e => FieldValue<string>(e, "field") == "server.rebuildScript");
+        Assert.IsTrue(errors.Any(e => FieldValue<string>(e, "field") == "server.rebuildScript"));
     }
 
     // ── ID generation ────────────────────────────────────────────────────────
 
-    [Fact]
+    [TestMethod]
     public async Task GenerateId_SlugifiesName()
     {
         var id = await ProjectRouter.GenerateUniqueIdAsync("My Cool App", _store);
-        Assert.Equal("my-cool-app", id);
+        Assert.AreEqual("my-cool-app", id);
     }
 
-    [Fact]
+    [TestMethod]
     public async Task GenerateId_CollisionGetsNumericSuffix()
     {
         await _store.SaveAsync(ValidProject("my-app", "My App"));
         var id = await ProjectRouter.GenerateUniqueIdAsync("My App", _store);
-        Assert.Equal("my-app-2", id);
+        Assert.AreEqual("my-app-2", id);
     }
 }

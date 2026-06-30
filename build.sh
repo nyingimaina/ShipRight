@@ -29,7 +29,7 @@ fail() { echo -e "${RED}[build]${NC} ✗ $*"; exit 1; }
 
 # ── Locate script directory (works with symlinks) ─────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BACKEND_DIR="$SCRIPT_DIR/back-end/ShipRight"
+BACKEND_DIR="$SCRIPT_DIR/back-end/ShipRight.Server"
 FRONTEND_DIR="$SCRIPT_DIR/front-end"
 DEPLOY_DIR="${1:-"$HOME/shipright-app"}"
 
@@ -96,8 +96,8 @@ dotnet publish \
     -o "$PUBLISH_DIR" \
     --nologo
 
-BINARY="$PUBLISH_DIR/ShipRight"
-[[ -f "$BINARY" ]] || fail "Published binary not found at $PUBLISH_DIR/ShipRight"
+BINARY="$PUBLISH_DIR/ShipRight.Server"
+[[ -f "$BINARY" ]] || fail "Published binary not found at $PUBLISH_DIR/ShipRight.Server"
 ok "Backend published → $BINARY ($(du -sh "$BINARY" | cut -f1))"
 echo ""
 
@@ -105,14 +105,14 @@ echo ""
 log "Step 4/4 — Deploying to $DEPLOY_DIR…"
 mkdir -p "$DEPLOY_DIR"
 
-cp "$BINARY"         "$DEPLOY_DIR/ShipRight"
+cp "$BINARY"         "$DEPLOY_DIR/ShipRight.Server"
 cp "$BACKEND_DIR/run.sh" "$DEPLOY_DIR/run.sh"
 
-chmod +x "$DEPLOY_DIR/ShipRight"
+chmod +x "$DEPLOY_DIR/ShipRight.Server"
 chmod +x "$DEPLOY_DIR/run.sh"
 
 ok "Deployed:"
-log "  $DEPLOY_DIR/ShipRight"
+log "  $DEPLOY_DIR/ShipRight.Server"
 log "  $DEPLOY_DIR/run.sh"
 echo ""
 

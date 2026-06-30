@@ -1,8 +1,9 @@
+using Microsoft.VisualStudio.TestTools.UnitTesting;
 using ShipRight.Modules.Projects;
-using Xunit;
 
 namespace ShipRight.Tests.Modules.Projects;
 
+[TestClass]
 public class JsonProjectStoreTests : IDisposable
 {
     private readonly string _tmpDir;
@@ -27,7 +28,7 @@ public class JsonProjectStoreTests : IDisposable
         ModifiedAt = DateTime.UtcNow,
     };
 
-    [Fact]
+    [TestMethod]
     public async Task Save_AppearsInGetAll()
     {
         var store = new JsonProjectStore(_tmpDir);
@@ -35,39 +36,38 @@ public class JsonProjectStoreTests : IDisposable
 
         var all = await store.GetAllAsync();
 
-        Assert.Single(all);
-        Assert.Equal("alpha", all[0].Id);
-        Assert.Equal("Alpha", all[0].Name);
+        Assert.AreEqual(1, all.Count);
+        Assert.AreEqual("alpha", all[0].Id);
+        Assert.AreEqual("Alpha", all[0].Name);
     }
 
-    [Fact]
+    [TestMethod]
     public async Task Save_WritesJsonToDisk()
     {
         var store = new JsonProjectStore(_tmpDir);
         await store.SaveAsync(MakeProject("beta", "Beta"));
 
         var jsonPath = Path.Combine(_tmpDir, "projects.json");
-        Assert.True(File.Exists(jsonPath));
+        Assert.IsTrue(File.Exists(jsonPath));
         var json = await File.ReadAllTextAsync(jsonPath);
-        Assert.Contains("\"beta\"", json, StringComparison.Ordinal);
+        StringAssert.Contains(json, "\"beta\"");
     }
 
-    [Fact]
+    [TestMethod]
     public async Task Save_SurvivesRestart()
     {
         var store1 = new JsonProjectStore(_tmpDir);
         await store1.SaveAsync(MakeProject("gamma", "Gamma"));
 
-        // Simulate backend restart by creating a fresh store instance reading the same file.
         var store2 = new JsonProjectStore(_tmpDir);
         var all = await store2.GetAllAsync();
 
-        Assert.Single(all);
-        Assert.Equal("gamma", all[0].Id);
-        Assert.Equal("Gamma", all[0].Name);
+        Assert.AreEqual(1, all.Count);
+        Assert.AreEqual("gamma", all[0].Id);
+        Assert.AreEqual("Gamma", all[0].Name);
     }
 
-    [Fact]
+    [TestMethod]
     public async Task Save_MultipleProjects_AllPersistedAndReloaded()
     {
         var store1 = new JsonProjectStore(_tmpDir);
@@ -77,12 +77,12 @@ public class JsonProjectStoreTests : IDisposable
         var store2 = new JsonProjectStore(_tmpDir);
         var all = await store2.GetAllAsync();
 
-        Assert.Equal(2, all.Count);
-        Assert.Contains(all, p => p.Id == "proj-1");
-        Assert.Contains(all, p => p.Id == "proj-2");
+        Assert.AreEqual(2, all.Count);
+        Assert.IsTrue(all.Any(p => p.Id == "proj-1"));
+        Assert.IsTrue(all.Any(p => p.Id == "proj-2"));
     }
 
-    [Fact]
+    [TestMethod]
     public async Task Delete_RemovesFromMemoryAndDisk()
     {
         var store1 = new JsonProjectStore(_tmpDir);
@@ -91,14 +91,14 @@ public class JsonProjectStoreTests : IDisposable
         await store1.DeleteAsync("to-delete");
 
         var inMemory = await store1.GetAllAsync();
-        Assert.Empty(inMemory);
+        Assert.AreEqual(0, inMemory.Count);
 
         var store2 = new JsonProjectStore(_tmpDir);
         var reloaded = await store2.GetAllAsync();
-        Assert.Empty(reloaded);
+        Assert.AreEqual(0, reloaded.Count);
     }
 
-    [Fact]
+    [TestMethod]
     public async Task Update_ReplacesExistingAndPersists()
     {
         var store = new JsonProjectStore(_tmpDir);
@@ -108,11 +108,11 @@ public class JsonProjectStoreTests : IDisposable
         await store.SaveAsync(updated);
 
         var all = await store.GetAllAsync();
-        Assert.Single(all);
-        Assert.Equal("Updated Name", all[0].Name);
+        Assert.AreEqual(1, all.Count);
+        Assert.AreEqual("Updated Name", all[0].Name);
 
         var store2 = new JsonProjectStore(_tmpDir);
         var reloaded = await store2.GetAllAsync();
-        Assert.Equal("Updated Name", reloaded[0].Name);
+        Assert.AreEqual("Updated Name", reloaded[0].Name);
     }
 }

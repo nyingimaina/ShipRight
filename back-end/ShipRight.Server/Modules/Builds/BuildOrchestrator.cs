@@ -1,0 +1,1361 @@
+using System.Collections.Concurrent;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using Serilog;
+using Serilog.Context;
+using ShipRight.Modules.Projects;
+using ShipRight.Modules.VersionFiles;
+using ShipRight.Shared.Events;
+using ShipRight.Shared.ProcessRunner;
+using ShipRight.Shared.SshRunner;
+
+namespace ShipRight.Modules.Builds;
+
+public record StartBuildRequest(string ProjectId, List<ServiceVersionInput> ServiceVersions);
+public record ServiceVersionInput(string ServiceName, string NewVersion);
+public record RespondRequest(string Reason, string Choice, Dictionary<string, string>? Data);
+public record DeployRequest(string? DeployModeOverride);
+
+public class BuildOrchestrator
+{
+    private readonly IBuildStore _buildStore;
+    private readonly IProjectStore _projectStore;
+    private readonly BuildEventBus _bus;
+    private readonly IProcessRunner _runner;
+    private readonly ISshRunner _ssh;
+    private readonly Dictionary<string, TaskCompletionSource<RespondRequest>> _pauseWaiters = new();
+    private static readonly ConcurrentDictionary<string, CancellationTokenSource> _cancellations = new();
+    private static readonly HttpClient _httpClient = new();
+    private static readonly Dictionary<string, int> _stepNumbers = new()
+    {
+        ["PreconditionCheck"] = 1, ["GitStatusCheck"] = 2, ["BranchCheck"] = 3,
+        ["WriteVersionsAndTag"] = 4, ["ComposeRepoSync"] = 5, ["DockerBuild"] = 6, ["BuildComplete"] = 7,
+    };
+
+    public bool CancelBuild(string buildId)
+    {
+        if (!_cancellations.TryGetValue(buildId, out var cts)) return false;
+        cts.Cancel();
+        return true;
+    }
+
+    public BuildOrchestrator(IBuildStore buildStore, IProjectStore projectStore,
+        BuildEventBus bus, IProcessRunner runner, ISshRunner ssh)
+    {
+        _buildStore = buildStore;
+        _projectStore = projectStore;
+        _bus = bus;
+        _runner = runner;
+        _ssh = ssh;
+    }
+
+    public async Task<BuildRecord> StartAsync(StartBuildRequest request)
+    {
+        var project = await _projectStore.GetByIdAsync(request.ProjectId)
+            ?? throw new InvalidOperationException($"Project '{request.ProjectId}' not found.");
+
+        var versions = request.ServiceVersions.Select(sv => new ServiceVersion
+        {
+            ServiceName = sv.ServiceName,
+            NewVersion = sv.NewVersion,
+            PreviousVersion = project.Services.FirstOrDefault(s => s.Name == sv.ServiceName)
+                is { } svc ? TryReadVersion(svc.VersionFilePath) : "",
+            DockerImageName = project.Services.FirstOrDefault(s => s.Name == sv.ServiceName)?.DockerImageName ?? "",
+        }).ToList();
+
+        var record = new BuildRecord
+        {
+            ProjectId = project.Id,
+            ProjectName = project.Name,
+            Status = BuildStatus.Running,
+            Versions = versions,
+        };
+
+        await _buildStore.SaveAsync(record);
+        _bus.Register(record.Id);
+        _ = Task.Run(() => RunPipelineAsync(record, project));
+        return record;
+    }
+
+    public async Task DeployAsync(string buildId, DeployMode? deployModeOverride = null)
+    {
+        var record = await _buildStore.GetByIdAsync(buildId);
+        if (record is null) return;
+
+        var project = await _projectStore.GetByIdAsync(record.ProjectId);
+        if (project is null) return;
+
+        using var _ = LogContext.PushProperty("BuildId", buildId);
+        var ctx = new PipelineContext(record, _bus);
+
+        record.Status = BuildStatus.Deploying;
+        await _buildStore.SaveAsync(record);
+        var deployStartedAt = DateTime.UtcNow;
+
+        var effectiveMode = deployModeOverride ?? project.Server.DeployMode;
+
+        try
+        {
+            await ctx.EmitLogAsync($"Connecting to {project.Server.Username}@{project.Server.Host}…", "ssh");
+
+            var cmd = effectiveMode switch
+            {
+                DeployMode.GitCompose => BuildGitComposeDeployCmd(project),
+                DeployMode.EnvCompose => BuildEnvComposeDeployCmd(project, record.Versions),
+                _                     => BuildGitScriptDeployCmd(project),  // GitScript (default)
+            };
+            var modeLabel = deployModeOverride is not null
+                ? $"{effectiveMode} (override; project default: {project.Server.DeployMode})"
+                : effectiveMode.ToString();
+            await ctx.EmitLogAsync($"Deploy mode: {modeLabel}", "shipright");
+            var exitCode = await _ssh.RunAsync(
+                project.Server.Host,
+                project.Server.Username,
+                project.Server.SshKeyPath,
+                cmd,
+                line => ctx.EmitLogAsync(line, "ssh"));
+
+            if (exitCode != 0)
+            {
+                record.Status = BuildStatus.DeployFailed;
+                record.ErrorSummary = $"Deploy exited with code {exitCode}. Check server state manually.";
+                Log.Error("Deployment {BuildId} failed: exit code {ExitCode}", buildId, exitCode);
+            }
+            else
+            {
+                record.Status = BuildStatus.Deployed;
+                record.DeployedAt = DateTime.UtcNow;
+                Log.Information("Deployment {BuildId} succeeded", buildId);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "SSH connection lost during deployment {BuildId}", buildId);
+            record.Status = BuildStatus.DeployFailed;
+            record.ErrorSummary = $"SSH connection lost: {ex.Message}. Remote state is unknown — check {project.Server.Host} manually.";
+            await ctx.EmitLogAsync($"[ERROR] SSH connection lost: {ex.Message}", "ssh");
+        }
+
+        record.StepDurations["Deploy"] = (int)(DateTime.UtcNow - deployStartedAt).TotalSeconds;
+        record.LogOutput += $"\n[Deployment finished: {record.Status}]";
+        await _buildStore.SaveAsync(record);
+        await ctx.DeployCompletedAsync();
+    }
+
+    public async Task<bool> RespondAsync(string buildId, RespondRequest response)
+    {
+        if (!_pauseWaiters.TryGetValue(buildId, out var tcs)) return false;
+        tcs.SetResult(response);
+        _pauseWaiters.Remove(buildId);
+        return true;
+    }
+
+    private async Task RunPipelineAsync(BuildRecord record, ProjectConfig project)
+    {
+        using var logBuildId = LogContext.PushProperty("BuildId", record.Id);
+        using var logProjectId = LogContext.PushProperty("ProjectId", record.ProjectId);
+
+        var ctx = new PipelineContext(record, _bus);
+
+        async Task SaveStep() => await _buildStore.SaveAsync(record);
+
+        using var cts = new CancellationTokenSource();
+        _cancellations[record.Id] = cts;
+        var ct = cts.Token;
+
+        try
+        {
+            Log.Information("Build {BuildId} pipeline started", record.Id);
+
+            // ── Step 1: Precondition Check ────────────────────────────────────
+            await ctx.StepStartedAsync(1, "PreconditionCheck");
+            foreach (var svc in project.Services)
+            {
+                await ctx.EmitLogAsync($"Checking version file: {svc.VersionFilePath}");
+                if (!File.Exists(svc.VersionFilePath))
+                    throw new InvalidOperationException($"version.txt not found: {svc.VersionFilePath}");
+                await ctx.EmitLogAsync($"Checking build context: {svc.BuildContextPath}");
+                if (!Directory.Exists(svc.BuildContextPath))
+                    throw new InvalidOperationException($"Build context not found: {svc.BuildContextPath}");
+            }
+            foreach (var repo in project.GitRepos)
+            {
+                await ctx.EmitLogAsync($"Checking git repo: {repo.RepoPath}");
+                if (!Directory.Exists(repo.RepoPath))
+                    throw new InvalidOperationException($"Git repo not found: {repo.RepoPath}");
+            }
+
+            await ctx.EmitLogAsync("Checking Docker daemon…");
+            var dockerInfo = await _runner.RunAsync("docker", ["info"], null);
+            if (!dockerInfo.Success)
+                throw new InvalidOperationException("Docker daemon not running or not accessible.");
+
+            // Probe BuildKit — if buildx is healthy use it, otherwise fall back and tell the user why.
+            await ctx.EmitLogAsync("Checking Docker BuildKit (buildx)…", "shipright");
+            var buildxCheck = await _runner.RunAsync("docker", ["buildx", "version"], null);
+            bool useBuildKit;
+            if (buildxCheck.Success)
+            {
+                var ver = buildxCheck.StdOut.Trim().Split('\n')[0].Trim();
+                await ctx.EmitLogAsync($"BuildKit available ({ver}) — builds will use DOCKER_BUILDKIT=1.", "shipright");
+                useBuildKit = true;
+            }
+            else
+            {
+                await ctx.EmitLogAsync(
+                    "BuildKit (buildx) is not installed or broken. " +
+                    "Installing it enables faster builds with layer caching.",
+                    "shipright");
+
+                await ctx.PauseAsync("buildx_missing",
+                    "Docker BuildKit (buildx) is not installed or broken on this machine. Install it now for faster, cached builds?",
+                    ["install_buildx", "continue_without_buildkit"]);
+                await SaveStep();
+
+                var tcs = new TaskCompletionSource<RespondRequest>();
+                _pauseWaiters[record.Id] = tcs;
+                var response = await tcs.Task;
+
+                if (response.Choice == "install_buildx")
+                {
+                    useBuildKit = await InstallBuildxAsync(ctx);
+                }
+                else
+                {
+                    await ctx.EmitLogAsync("Continuing without BuildKit — classic builder (DOCKER_BUILDKIT=0) will be used.", "shipright");
+                    useBuildKit = false;
+                }
+            }
+
+            await ctx.EmitLogAsync("Preconditions satisfied.", "shipright");
+            await ctx.StepCompletedAsync(1, "PreconditionCheck");
+            await SaveStep();
+
+            // ── Step 2: Git Status Check ──────────────────────────────────────
+            await ctx.StepStartedAsync(2, "GitStatusCheck");
+            var dirtyRepos = new List<string>();
+            foreach (var repo in project.GitRepos)
+            {
+                await ctx.EmitLogAsync($"Checking git status in {repo.RepoPath}…");
+                var gitStatus = await _runner.RunAsync("git",
+                    ["-C", repo.RepoPath, "status", "--porcelain"],
+                    null,
+                    line => ctx.EmitLogAsync(line, "git"));
+                if (!gitStatus.Success)
+                    throw new InvalidOperationException($"git status failed in {repo.RepoPath}:\n{gitStatus.StdErr}");
+                if (!string.IsNullOrWhiteSpace(gitStatus.StdOut))
+                    dirtyRepos.Add(repo.RepoPath);
+            }
+
+            if (dirtyRepos.Count > 0)
+            {
+                await ctx.PauseAsync("git_dirty",
+                    $"Uncommitted changes in {dirtyRepos.Count} repo(s). Commit and push, or commit only?",
+                    ["commit_and_push", "commit", "abort"]);
+                await SaveStep();
+
+                var tcs = new TaskCompletionSource<RespondRequest>();
+                _pauseWaiters[record.Id] = tcs;
+                var response = await tcs.Task;
+
+                if (response.Choice == "abort")
+                {
+                    record.Status = BuildStatus.Aborted;
+                    await SaveStep();
+                    await ctx.EmitLogAsync("Build aborted by user.", "shipright");
+                    await ctx.BuildCompletedAsync();
+                    return;
+                }
+
+                var msg = response.Data?.GetValueOrDefault("commitMessage")
+                    ?? "[ShipRight auto-commit] Pre-build snapshot";
+
+                foreach (var repo in project.GitRepos.Where(r => dirtyRepos.Contains(r.RepoPath)))
+                {
+                    await ctx.EmitLogAsync($"Staging changes in {repo.RepoPath}…");
+                    var addResult = await _runner.RunAsync("git",
+                        ["-C", repo.RepoPath, "add", "-A"], null,
+                        line => ctx.EmitLogAsync(line, "git"));
+                    if (!addResult.Success)
+                        throw new InvalidOperationException($"git add failed in {repo.RepoPath}:\n{addResult.StdErr}");
+
+                    await ctx.EmitLogAsync($"Committing in {repo.RepoPath}…");
+                    var commitResult = await _runner.RunAsync("git",
+                        ["-C", repo.RepoPath, "commit", "-m", msg], null,
+                        line => ctx.EmitLogAsync(line, "git"));
+                    if (!commitResult.Success)
+                        throw new InvalidOperationException($"git commit failed in {repo.RepoPath}:\n{commitResult.StdErr}");
+
+                    if (response.Choice == "commit_and_push")
+                    {
+                        await ctx.EmitLogAsync($"Pushing {repo.RepoPath} → {repo.DeployBranch}…");
+                        var pushResult = await _runner.RunAsync("git",
+                            ["-C", repo.RepoPath, "push", "origin", repo.DeployBranch], null,
+                            line => ctx.EmitLogAsync(line, "git"));
+                        if (!pushResult.Success)
+                            throw new InvalidOperationException($"git push failed in {repo.RepoPath}:\n{pushResult.StdErr}");
+                    }
+                }
+
+                record.Status = BuildStatus.Running;
+            }
+
+            await ctx.StepCompletedAsync(2, "GitStatusCheck");
+            await SaveStep();
+
+            // Smart resume: if repos are clean and a previous build failed mid-pipeline with the
+            // same versions, offer to skip steps that already completed successfully.
+            int resumeFromStep = 0;
+            if (dirtyRepos.Count == 0)
+            {
+                var recentBuilds = await _buildStore.QueryAsync(record.ProjectId, null, null, null, null, 1, 5);
+                var candidate = recentBuilds
+                    .Where(b => b.Id != record.Id && b.Status == BuildStatus.BuildFailed && b.FailedStep != null)
+                    .Where(b => b.SucceededSteps.Contains("WriteVersionsAndTag"))
+                    .Where(b => _stepNumbers.TryGetValue(b.FailedStep!, out var n) && n > 3)
+                    .FirstOrDefault(b => b.Versions.Count == record.Versions.Count &&
+                                         b.Versions.All(lv => record.Versions.Any(rv =>
+                                             rv.ServiceName == lv.ServiceName && rv.NewVersion == lv.NewVersion)));
+
+                if (candidate != null)
+                {
+                    var failedStepNum = _stepNumbers[candidate.FailedStep!];
+                    await ctx.PauseAsync("smart_resume",
+                        $"Last build failed at '{candidate.FailedStep}'. No code changes detected — resume from '{candidate.FailedStep}', skipping already-completed steps?",
+                        ["resume", "start_fresh"]);
+                    await SaveStep();
+
+                    var tcsSr = new TaskCompletionSource<RespondRequest>();
+                    _pauseWaiters[record.Id] = tcsSr;
+                    var resumeResponse = await tcsSr.Task;
+
+                    if (resumeResponse.Choice == "resume")
+                    {
+                        resumeFromStep = failedStepNum;
+                        await ctx.EmitLogAsync($"Resuming from '{candidate.FailedStep}' — skipping {failedStepNum - 3} already-completed step(s)…", "shipright");
+                    }
+                    record.Status = BuildStatus.Running;
+                }
+            }
+
+            // ── Step 3: Branch Check ──────────────────────────────────────────
+            await ctx.StepStartedAsync(3, "BranchCheck");
+            if (resumeFromStep > 3)
+            {
+                await ctx.EmitLogAsync("BranchCheck skipped — already completed in previous build", "shipright");
+            }
+            else
+            {
+            var wrongBranchRepos = new List<(string RepoPath, string CurrentBranch, string DeployBranch)>();
+            foreach (var repo in project.GitRepos)
+            {
+                await ctx.EmitLogAsync($"Checking branch in {repo.RepoPath}…");
+                var branchResult = await _runner.RunAsync("git",
+                    ["-C", repo.RepoPath, "rev-parse", "--abbrev-ref", "HEAD"], null);
+                if (!branchResult.Success)
+                    throw new InvalidOperationException($"Could not determine branch in {repo.RepoPath}:\n{branchResult.StdErr}");
+                var currentBranch = branchResult.StdOut.Trim();
+                if (currentBranch != repo.DeployBranch)
+                    wrongBranchRepos.Add((repo.RepoPath, currentBranch, repo.DeployBranch));
+            }
+
+            if (wrongBranchRepos.Count > 0)
+            {
+                var detail = string.Join(", ", wrongBranchRepos.Select(r => $"'{r.CurrentBranch}'→'{r.DeployBranch}'"));
+                await ctx.PauseAsync("wrong_branch",
+                    $"{wrongBranchRepos.Count} repo(s) on wrong branch ({detail}). What would you like to do?",
+                    ["merge", "switch", "build_here", "abort"]);
+                await SaveStep();
+
+                var tcs = new TaskCompletionSource<RespondRequest>();
+                _pauseWaiters[record.Id] = tcs;
+                var response = await tcs.Task;
+
+                if (response.Choice == "abort")
+                {
+                    record.Status = BuildStatus.Aborted;
+                    await SaveStep();
+                    await ctx.BuildCompletedAsync();
+                    return;
+                }
+
+                if (response.Choice == "build_here")
+                {
+                    var branches = string.Join(", ", wrongBranchRepos.Select(r => $"'{r.CurrentBranch}'"));
+                    await ctx.EmitLogAsync($"Building on current branch(es): {branches}", "shipright");
+                }
+                else
+                {
+                    foreach (var (repoPath, currentBranch, deployBranch) in wrongBranchRepos)
+                    {
+                        await ctx.EmitLogAsync($"Checking out '{deployBranch}' in {repoPath}…");
+                        var checkout = await _runner.RunAsync("git",
+                            ["-C", repoPath, "checkout", deployBranch], null,
+                            line => ctx.EmitLogAsync(line, "git"));
+                        if (!checkout.Success)
+                            throw new InvalidOperationException($"git checkout failed in {repoPath}:\n{checkout.StdErr}");
+
+                        await ctx.EmitLogAsync($"Pulling '{deployBranch}' in {repoPath}…");
+                        var pull = await _runner.RunAsync("git",
+                            ["-C", repoPath, "pull", "origin", deployBranch], null,
+                            line => ctx.EmitLogAsync(line, "git"));
+                        if (!pull.Success)
+                            throw new InvalidOperationException($"git pull failed in {repoPath}:\n{pull.StdErr}");
+
+                        if (response.Choice == "merge")
+                        {
+                            await ctx.EmitLogAsync($"Merging '{currentBranch}' into '{deployBranch}' in {repoPath}…", "git");
+                            var merge = await _runner.RunAsync("git",
+                                ["-C", repoPath, "merge", "--no-ff", currentBranch, "-m",
+                                    $"chore: merge '{currentBranch}' into '{deployBranch}' for deployment"],
+                                null, line => ctx.EmitLogAsync(line, "git"));
+
+                            // Detect merge conflicts
+                            if (!merge.Success)
+                            {
+                                var combinedOutput = merge.StdOut + merge.StdErr;
+                                if (combinedOutput.Contains("CONFLICT"))
+                                {
+                                    await _runner.RunAsync("git", ["-C", repoPath, "merge", "--abort"], null);
+                                    throw new InvalidOperationException(
+                                        $"Merge conflicts in {repoPath}. Resolve manually on '{deployBranch}' then retry.");
+                                }
+                                throw new InvalidOperationException($"git merge failed in {repoPath}:\n{merge.StdErr}");
+                            }
+
+                            await ctx.EmitLogAsync($"Pushing '{deployBranch}' in {repoPath}…");
+                            var pushMerge = await _runner.RunAsync("git",
+                                ["-C", repoPath, "push", "origin", deployBranch], null,
+                                line => ctx.EmitLogAsync(line, "git"));
+                            if (!pushMerge.Success)
+                                throw new InvalidOperationException($"git push after merge failed in {repoPath}:\n{pushMerge.StdErr}");
+                        }
+                    }
+                }
+
+                record.Status = BuildStatus.Running;
+            }
+            } // end else (not skipped)
+            await ctx.StepCompletedAsync(3, "BranchCheck");
+            await SaveStep();
+
+            // ── Step 4: Write Versions & Tag ──────────────────────────────────
+            await ctx.StepStartedAsync(4, "WriteVersionsAndTag");
+
+            // Computed here so step 5 can use them even when step 4 is skipped
+            var versionSummary = string.Join(", ", record.Versions.Select(v => $"{v.ServiceName} {v.NewVersion}"));
+            var tag = BuildGitTag(record.Versions);
+            record.GitTag = tag;
+
+            if (resumeFromStep > 4)
+            {
+                await ctx.EmitLogAsync($"WriteVersionsAndTag skipped — already completed (tag: {tag})", "shipright");
+            }
+            else
+            {
+            var versionFilePaths = new List<string>();
+            foreach (var sv in record.Versions)
+            {
+                var svc = project.Services.First(s => s.Name == sv.ServiceName);
+                await VersionFileService.WriteAsync(svc.VersionFilePath, sv.NewVersion);
+                versionFilePaths.Add(svc.VersionFilePath);
+                await ctx.EmitLogAsync($"Wrote {sv.NewVersion} → {svc.VersionFilePath}", "shipright");
+            }
+
+            foreach (var repo in project.GitRepos)
+            {
+                var repoVersionFiles = versionFilePaths
+                    .Where(vf => vf.StartsWith(repo.RepoPath, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (repoVersionFiles.Count == 0) continue;
+
+                var addVersions = new[] { "-C", repo.RepoPath, "add" }
+                    .Concat(repoVersionFiles).ToArray();
+                var addResult2 = await _runner.RunAsync("git", addVersions, null,
+                    line => ctx.EmitLogAsync(line, "git"));
+                if (!addResult2.Success)
+                    throw new InvalidOperationException($"git add versions failed in {repo.RepoPath}:\n{addResult2.StdErr}");
+
+                var commitVersions = await _runner.RunAsync("git",
+                    ["-C", repo.RepoPath, "commit", "-m", $"chore: bump versions — {versionSummary}"],
+                    null, line => ctx.EmitLogAsync(line, "git"));
+                if (!commitVersions.Success)
+                {
+                    var combinedOut = commitVersions.StdOut + commitVersions.StdErr;
+                    if (combinedOut.Contains("nothing to commit"))
+                        await ctx.EmitLogAsync($"Versions already committed in {repo.RepoPath} — skipping commit", "shipright");
+                    else
+                        throw new InvalidOperationException($"git commit versions failed in {repo.RepoPath}:\n{combinedOut}");
+                }
+
+                await ctx.EmitLogAsync($"Tagging {repo.RepoPath} as {tag}…");
+                var tagResult = await _runner.RunAsync("git",
+                    ["-C", repo.RepoPath, "tag", "-a", tag, "-m",
+                        $"Build {DateTime.UtcNow:yyyy-MM-dd}: {versionSummary}"],
+                    null, line => ctx.EmitLogAsync(line, "git"));
+                if (!tagResult.Success)
+                {
+                    var tagOut = tagResult.StdOut + tagResult.StdErr;
+                    if (tagOut.Contains("already exists"))
+                        await ctx.EmitLogAsync($"Tag {tag} already exists in {repo.RepoPath} — skipping", "shipright");
+                    else
+                        throw new InvalidOperationException($"git tag failed in {repo.RepoPath}:\n{tagOut}");
+                }
+
+                await ctx.EmitLogAsync($"Pushing tag + branch to origin…");
+                var pushSource = await _runner.RunAsync("git",
+                    ["-C", repo.RepoPath, "push", "origin", repo.DeployBranch, "--follow-tags"],
+                    null, line => ctx.EmitLogAsync(line, "git"), null, ct);
+                if (!pushSource.Success)
+                {
+                    var pushOut = pushSource.StdOut + pushSource.StdErr;
+                    if (pushOut.Contains("already exists"))
+                        await ctx.EmitLogAsync($"Tag already pushed for {repo.RepoPath} — skipping", "shipright");
+                    else
+                        throw new InvalidOperationException($"git push failed in {repo.RepoPath}:\n{pushOut}");
+                }
+            }
+
+            } // end else (not skipped)
+            await ctx.StepCompletedAsync(4, "WriteVersionsAndTag");
+            await SaveStep();
+
+            // ── Step 5: Compose Repo Sync ─────────────────────────────────────
+            await ctx.StepStartedAsync(5, "ComposeRepoSync");
+
+            if (project.Server.DeployMode == DeployMode.EnvCompose)
+            {
+                await ctx.EmitLogAsync("ComposeRepoSync skipped — EnvCompose mode injects image tags at deploy time", "shipright");
+            }
+            else if (resumeFromStep > 5)
+            {
+                await ctx.EmitLogAsync("ComposeRepoSync skipped — already completed in previous build", "shipright");
+            }
+            else
+            {
+            var composeBranch = project.GitRepos.FirstOrDefault()?.DeployBranch ?? "master";
+            await ctx.EmitLogAsync("Pulling compose repo…");
+            var composePull = await _runner.RunAsync("git",
+                ["-C", project.Wsl.WorkingDir, "pull", "origin", composeBranch],
+                null, line => ctx.EmitLogAsync(line, "git"));
+            if (!composePull.Success)
+                throw new InvalidOperationException($"git pull compose repo failed:\n{composePull.StdErr}");
+
+            // Update docker-compose.yml image tags
+            var composePath     = project.Wsl.WorkingDir.TrimEnd('/', '\\') + "/docker-compose.yml";
+            var localComposePath = await ResolveWslPathAsync(composePath);
+            if (File.Exists(localComposePath))
+            {
+                var imageMap = record.Versions.ToDictionary(
+                    v => v.DockerImageName,
+                    v => v.NewVersion);
+                await DockerComposeUpdater.UpdateAsync(localComposePath, imageMap);
+                await ctx.EmitLogAsync($"Updated docker-compose.yml with new image tags", "shipright");
+
+                var addCompose = await _runner.RunAsync("git",
+                    ["-C", project.Wsl.WorkingDir, "add", "docker-compose.yml"],
+                    null, line => ctx.EmitLogAsync(line, "git"));
+                if (!addCompose.Success)
+                    throw new InvalidOperationException($"git add compose failed:\n{addCompose.StdErr}");
+
+                var commitCompose = await _runner.RunAsync("git",
+                    ["-C", project.Wsl.WorkingDir, "commit", "-m", $"chore: deploy — {versionSummary}"],
+                    null, line => ctx.EmitLogAsync(line, "git"));
+                if (!commitCompose.Success)
+                {
+                    var composeCommitOut = commitCompose.StdOut + commitCompose.StdErr;
+                    if (composeCommitOut.Contains("nothing to commit"))
+                        await ctx.EmitLogAsync("Compose already committed — skipping", "shipright");
+                    else
+                        throw new InvalidOperationException($"git commit compose failed:\n{commitCompose.StdErr}");
+                }
+
+                await ctx.EmitLogAsync("Pushing compose repo…");
+                var pushCompose = await _runner.RunAsync("git",
+                    ["-C", project.Wsl.WorkingDir, "push", "origin", composeBranch],
+                    null, line => ctx.EmitLogAsync(line, "git"));
+                if (!pushCompose.Success)
+                    throw new InvalidOperationException($"git push compose repo failed:\n{pushCompose.StdErr}");
+            }
+            else
+            {
+                throw new InvalidOperationException(
+                    $"docker-compose.yml not found at '{localComposePath}' (WSL: '{composePath}'). " +
+                    "Ensure the WSL working directory is set to the folder containing docker-compose.yml.");
+            }
+            } // end else (not skipped)
+            await ctx.StepCompletedAsync(5, "ComposeRepoSync");
+            await SaveStep();
+
+            // ── Step 6: Docker Build ──────────────────────────────────────────
+            await RunDockerBuildAsync(ctx, record, project, SaveStep, useBuildKit, ct);
+
+            // ── Step 7: Build Complete ────────────────────────────────────────
+            await ctx.StepStartedAsync(7, "BuildComplete");
+            record.Status = BuildStatus.ImageBuilt;
+            record.CompletedAt = DateTime.UtcNow;
+            await ctx.StepCompletedAsync(7, "BuildComplete");
+            await SaveStep();
+            await ctx.BuildCompletedAsync();
+
+            Log.Information("Build {BuildId} completed: {Status}, tag: {Tag}",
+                record.Id, record.Status, record.GitTag);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            Log.Warning("Build {BuildId} cancelled at step {Step}", record.Id, record.CurrentStepName);
+            record.Status = BuildStatus.Aborted;
+            record.FailedStep = record.CurrentStepName;
+            record.ErrorSummary = "Cancelled by user.";
+            record.CompletedAt = DateTime.UtcNow;
+            try { await _buildStore.SaveAsync(record); await ctx.EmitLogAsync("Build cancelled.", "shipright"); } catch { }
+            await ctx.BuildCompletedAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Build {BuildId} failed at step {Step}", record.Id, record.CurrentStepName);
+            record.Status = BuildStatus.BuildFailed;
+            record.FailedStep = record.CurrentStepName;
+            record.ErrorSummary = ex.Message;
+            record.CompletedAt = DateTime.UtcNow;
+            try
+            {
+                await _buildStore.SaveAsync(record);
+                await ctx.EmitLogAsync($"[ERROR] {ex.Message}", "shipright");
+            }
+            catch (Exception saveEx)
+            {
+                Log.Error(saveEx, "Failed to persist failed-build record {BuildId}", record.Id);
+            }
+            await ctx.BuildCompletedAsync();
+        }
+        finally
+        {
+            _cancellations.TryRemove(record.Id, out _);
+        }
+    }
+
+    public async Task PushAsync(string buildId)
+    {
+        var record = await _buildStore.GetByIdAsync(buildId);
+        if (record is null) return;
+
+        var project = await _projectStore.GetByIdAsync(record.ProjectId);
+        if (project is null) return;
+
+        using var _ = LogContext.PushProperty("BuildId", buildId);
+        var ctx = new PipelineContext(record, _bus);
+
+        record.Status = BuildStatus.Running;
+        await _buildStore.SaveAsync(record);
+
+        using var cts = new CancellationTokenSource();
+        _cancellations[buildId] = cts;
+        var ct = cts.Token;
+
+        try
+        {
+            await ctx.EmitLogAsync("Push pipeline started.", "shipright");
+
+            // ── Push Step 1: Docker Login Check (per-registry) ─────────────────
+            await ctx.StepStartedAsync(1, "DockerLoginCheck");
+
+            var servicesByRegistry = new Dictionary<string, List<(ServiceConfig Svc, ServiceVersion Sv)>>();
+            foreach (var sv in record.Versions)
+            {
+                var svc = project.Services.First(s => s.Name == sv.ServiceName);
+                var registry = ResolveRegistry(svc);
+                if (!servicesByRegistry.ContainsKey(registry))
+                    servicesByRegistry[registry] = new();
+                servicesByRegistry[registry].Add((svc, sv));
+            }
+
+            foreach (var registry in servicesByRegistry.Keys)
+            {
+                var services = servicesByRegistry[registry];
+                await ctx.EmitLogAsync(Ts($"Logging out of {registry}…"), "shipright");
+
+                // Clear any stale cached credentials from a previous project
+                var logoutArgs = new List<string> { "logout" };
+                if (registry != "docker.io" && registry != "index.docker.io")
+                    logoutArgs.Add(registry);
+                await _runner.RunAsync("docker", logoutArgs.ToArray(), null, null, null);
+                await ctx.EmitLogAsync(Ts($"Logged out of {registry}."), "shipright");
+
+                // Check for stored credentials in the project config
+                var creds = services
+                    .Select(g => g.Svc)
+                    .FirstOrDefault(s => !string.IsNullOrEmpty(s.DockerUsername) && !string.IsNullOrEmpty(s.DockerPassword));
+
+                await ctx.EmitLogAsync(Ts(
+                    creds is not null
+                        ? $"Stored credentials found for {registry}."
+                        : $"No stored credentials for {registry}."), "shipright");
+
+                bool loggedIn = false;
+                if (creds is not null)
+                {
+                    try
+                    {
+                        loggedIn = await DockerLoginAsync(ctx, record, registry,
+                            creds.DockerUsername, creds.DockerPassword,
+                            $"Docker credentials required for {registry}.");
+                    }
+                    catch
+                    {
+                        await ctx.EmitLogAsync(Ts($"Stored credentials failed for {registry} — falling through to prompt."), "shipright");
+                    }
+
+                    // Verify the logged-in user matches the expected image owner(s)
+                    if (loggedIn)
+                    {
+                        var actualUser = await GetDockerLoggedInUserAsync();
+                        if (actualUser is not null)
+                        {
+                            var expectedOwners = services
+                                .Select(g => g.Svc)
+                                .Select(s => ExtractImageOwner(s.DockerImageName, registry))
+                                .Where(o => o is not null)
+                                .Distinct()
+                                .ToList();
+
+                            if (expectedOwners.Count > 0 && !expectedOwners.Any(o => o == actualUser))
+                            {
+                                await ctx.EmitLogAsync(Ts($"Logged in as '{actualUser}' but image owner(s) '{string.Join(", ", expectedOwners)}' — re-authenticating."), "shipright");
+
+                                var reLogoutArgs = new List<string> { "logout" };
+                                if (registry != "docker.io" && registry != "index.docker.io")
+                                    reLogoutArgs.Add(registry);
+                                await _runner.RunAsync("docker", reLogoutArgs.ToArray(), null, null, null);
+                                loggedIn = false;
+                            }
+                        }
+                    }
+                }
+
+                if (!loggedIn)
+                {
+                    await ctx.EmitLogAsync(Ts($"Prompting for {registry} credentials."), "shipright");
+                    loggedIn = await DockerLoginAsync(ctx, record, registry,
+                        $"Docker credentials required for {registry}.");
+                }
+
+                if (!loggedIn)
+                {
+                    record.Status = BuildStatus.Aborted;
+                    await _buildStore.SaveAsync(record);
+                    await ctx.PushCompletedAsync();
+                    return;
+                }
+            }
+
+            await ctx.StepCompletedAsync(1, "DockerLoginCheck");
+            await _buildStore.SaveAsync(record);
+
+            // ── Push Step 2: Docker Push (per-service) ────────────────────────
+            await ctx.StepStartedAsync(2, "DockerPush");
+
+            foreach (var (registry, services) in servicesByRegistry)
+            {
+                foreach (var (svc, sv) in services)
+                {
+                    var pushResult = await _runner.RunAsync("docker",
+                        ["push", $"{svc.DockerImageName}:{sv.NewVersion}"],
+                        null,
+                        line => ctx.EmitLogAsync(line, "docker"),
+                        line => ctx.EmitLogAsync(line, "docker"),
+                        ct);
+
+                    if (!pushResult.Success)
+                    {
+                        var pushOut = pushResult.StdOut + pushResult.StdErr;
+                        if (pushOut.Contains("denied") || pushOut.Contains("unauthorized"))
+                        {
+                            await ctx.EmitLogAsync(Ts($"Push rejected for {registry} — re-authenticating."), "shipright");
+                            bool loggedIn = await DockerLoginAsync(ctx, record, registry,
+                                $"Access denied for {registry}. Re-enter credentials.");
+                            if (!loggedIn)
+                            {
+                                record.Status = BuildStatus.Aborted;
+                                await _buildStore.SaveAsync(record);
+                                await ctx.PushCompletedAsync();
+                                return;
+                            }
+                            var retry = await _runner.RunAsync("docker",
+                                ["push", $"{svc.DockerImageName}:{sv.NewVersion}"],
+                                null,
+                                line => ctx.EmitLogAsync(line, "docker"),
+                                line => ctx.EmitLogAsync(line, "docker"),
+                                ct);
+                            if (!retry.Success)
+                                throw new InvalidOperationException($"docker push failed for {svc.Name} after re-login (exit {retry.ExitCode}).");
+                        }
+                        else
+                        {
+                            throw new InvalidOperationException($"docker push {sv.NewVersion} failed for {svc.Name} (exit {pushResult.ExitCode}).");
+                        }
+                    }
+
+                    await ctx.EmitLogAsync($"Pushed {svc.DockerImageName}:{sv.NewVersion}", "shipright");
+                }
+            }
+
+            await ctx.StepCompletedAsync(2, "DockerPush");
+
+            // ── Push Step 3: Push Complete ────────────────────────────────────
+            await ctx.StepStartedAsync(3, "PushComplete");
+            record.Status = BuildStatus.PushSucceeded;
+            await ctx.StepCompletedAsync(3, "PushComplete");
+            await _buildStore.SaveAsync(record);
+            await ctx.PushCompletedAsync();
+
+            Log.Information("Push {BuildId} completed: {Status}", record.Id, record.Status);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            Log.Warning("Push {BuildId} cancelled", record.Id);
+            record.Status = BuildStatus.Aborted;
+            record.ErrorSummary = "Cancelled by user.";
+            try { await _buildStore.SaveAsync(record); await ctx.EmitLogAsync("Push cancelled.", "shipright"); } catch { }
+            await ctx.PushCompletedAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Push {BuildId} failed at step {Step}", record.Id, record.CurrentStepName);
+            record.Status = BuildStatus.PushFailed;
+            record.FailedStep = record.CurrentStepName;
+            record.ErrorSummary = ex.Message;
+            try
+            {
+                await _buildStore.SaveAsync(record);
+                await ctx.EmitLogAsync($"[ERROR] {ex.Message}", "shipright");
+            }
+            catch (Exception saveEx)
+            {
+                Log.Error(saveEx, "Failed to persist failed-push record {BuildId}", record.Id);
+            }
+            await ctx.PushCompletedAsync();
+        }
+        finally
+        {
+            _cancellations.TryRemove(buildId, out var _unused);
+        }
+    }
+
+    protected virtual async Task RunDockerBuildAsync(PipelineContext ctx, BuildRecord record,
+        ProjectConfig project, Func<Task> save, bool useBuildKit = false, CancellationToken ct = default)
+    {
+        // ── Step 6: Docker Build (per service) ───────────────────────────────
+        await ctx.StepStartedAsync(6, "DockerBuild");
+
+        // Check which images already exist locally with the correct tag
+        var alreadyBuilt = new HashSet<string>();
+        foreach (var sv in record.Versions)
+        {
+            var svc = project.Services.First(s => s.Name == sv.ServiceName);
+            var tag = $"{svc.DockerImageName}:{sv.NewVersion}";
+            await ctx.EmitLogAsync($"Checking if {tag} exists locally…", "shipright");
+            var inspectResult = await _runner.RunAsync("docker",
+                ["image", "inspect", "--format", "{{.Id}}", tag],
+                null, null, null, ct);
+            if (inspectResult.Success)
+            {
+                alreadyBuilt.Add(svc.DockerImageName);
+                await ctx.EmitLogAsync($"  → {tag} already exists in local Docker storage", "shipright");
+            }
+        }
+
+        var toSkip = new HashSet<string>();
+        if (alreadyBuilt.Count > 0)
+        {
+            await ctx.PauseAsync("image_exists",
+                $"{alreadyBuilt.Count} image(s) already exist locally with the correct tag. Choose which to skip rebuilding:",
+                [],
+                checkboxes: alreadyBuilt.ToArray());
+            await save();
+            var tcsImg = new TaskCompletionSource<RespondRequest>();
+            _pauseWaiters[record.Id] = tcsImg;
+            var imgResponse = await tcsImg.Task;
+            toSkip = imgResponse.Data?
+                .Where(kv => kv.Value == "true")
+                .Select(kv => kv.Key)
+                .ToHashSet() ?? new HashSet<string>();
+            record.Status = BuildStatus.Running;
+        }
+
+        var totalServices = record.Versions.Count;
+        var currentService = 0;
+        foreach (var sv in record.Versions)
+        {
+            currentService++;
+            var svc = project.Services.First(s => s.Name == sv.ServiceName);
+            await ctx.ServiceBuildProgressAsync(currentService, totalServices, sv.ServiceName);
+
+            if (toSkip.Contains(svc.DockerImageName))
+            {
+                await ctx.EmitLogAsync($"Skipped {svc.DockerImageName}:{sv.NewVersion} — already built", "shipright");
+                continue;
+            }
+
+            await ctx.EmitLogAsync($"Building {svc.DockerImageName}:{sv.NewVersion}…", "shipright");
+
+            var buildArgs = new List<string> { "build", "--progress=plain" };
+            if (useBuildKit && !string.IsNullOrEmpty(sv.PreviousVersion))
+                buildArgs.AddRange(["--cache-from", $"{svc.DockerImageName}:{sv.PreviousVersion}",
+                                    "--build-arg", "BUILDKIT_INLINE_CACHE=1"]);
+            buildArgs.AddRange(["-t", $"{svc.DockerImageName}:{sv.NewVersion}", svc.BuildContextPath]);
+
+            var buildResult = await _runner.RunAsync("docker",
+                buildArgs.ToArray(),
+                null,
+                line => ctx.EmitLogAsync(line, "docker"),
+                line => ctx.EmitLogAsync(line, "docker"),
+                ct,
+                envOverride: new Dictionary<string, string> { ["DOCKER_BUILDKIT"] = useBuildKit ? "1" : "0" });
+
+            if (!buildResult.Success)
+            {
+                await ctx.StepCompletedAsync(6, "DockerBuild", success: false);
+                throw new InvalidOperationException(
+                    $"docker build failed for {svc.Name} (exit {buildResult.ExitCode}).");
+            }
+
+            await ctx.EmitLogAsync($"Built {svc.DockerImageName}:{sv.NewVersion}", "shipright");
+        }
+
+        await ctx.StepCompletedAsync(6, "DockerBuild");
+        await save();
+    }
+
+    private static string BuildGitTag(List<ServiceVersion> versions)
+    {
+        if (versions.Count == 2)
+        {
+            // Convention: b_{firstVer}_f_{secondVer}
+            return $"b_{versions[0].NewVersion}_f_{versions[1].NewVersion}";
+        }
+        return $"ship_{DateTime.UtcNow:yyyyMMddHHmm}";
+    }
+
+    // Extracts the registry host from a ServiceConfig.
+    // Uses DockerRegistry field if set, otherwise infers from DockerImageName.
+    // Defaults to "docker.io".
+    private static string ResolveRegistry(ServiceConfig svc)
+    {
+        if (!string.IsNullOrEmpty(svc.DockerRegistry))
+            return svc.DockerRegistry;
+        var image = svc.DockerImageName;
+        if (string.IsNullOrEmpty(image)) return "docker.io";
+        var firstSlash = image.IndexOf('/');
+        if (firstSlash < 0) return "docker.io";
+        var prefix = image[..firstSlash];
+        return (prefix.Contains('.') || prefix.Contains(':')) ? prefix : "docker.io";
+    }
+
+    internal static string? ExtractImageOwner(string imageName, string registry)
+    {
+        if (registry != "docker.io" && registry != "index.docker.io")
+            return null;
+        if (string.IsNullOrEmpty(imageName))
+            return null;
+        var firstSlash = imageName.IndexOf('/');
+        if (firstSlash < 0)
+            return null;
+        var owner = imageName[..firstSlash];
+        if (owner == "library")
+            return null;
+        return owner;
+    }
+
+    internal static string? ParseDockerInfoForUsername(string dockerInfoOutput)
+    {
+        if (string.IsNullOrEmpty(dockerInfoOutput))
+            return null;
+        foreach (var line in dockerInfoOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var trimmed = line.Trim();
+            if (trimmed.StartsWith("Username:"))
+            {
+                var user = trimmed["Username:".Length..].Trim();
+                return string.IsNullOrEmpty(user) ? null : user;
+            }
+        }
+        return null;
+    }
+
+    private static string Ts(string message) => $"[{DateTime.UtcNow:HH:mm:ss}] {message}";
+
+    private async Task<string?> GetDockerLoggedInUserAsync()
+    {
+        try
+        {
+            var result = await _runner.RunAsync("docker", ["info"], null);
+            if (!result.Success) return null;
+            return ParseDockerInfoForUsername(result.StdOut);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    // Performs docker login using stored credentials (no pause/prompt).
+    private async Task<bool> DockerLoginAsync(PipelineContext ctx, BuildRecord record, string registry,
+        string username, string password, string prompt)
+    {
+        return await ExecuteDockerLoginAsync(ctx, record, registry, username, password);
+    }
+
+    private async Task<bool> ExecuteDockerLoginAsync(PipelineContext ctx, BuildRecord record, string registry,
+        string username, string password)
+    {
+        // Clear any stale cached credentials from a previous project first
+        await ctx.EmitLogAsync(Ts($"Logging out of {registry}…"), "shipright");
+        var logoutArgs = new List<string> { "logout" };
+        if (registry != "docker.io" && registry != "index.docker.io")
+            logoutArgs.Add(registry);
+        await _runner.RunAsync("docker", logoutArgs.ToArray(), null, null, null);
+        await ctx.EmitLogAsync(Ts($"Logged out of {registry}."), "shipright");
+
+        await ctx.EmitLogAsync(Ts($"Logging in as '{username}'…"), "shipright");
+
+        // Only pass registry argument for non-Docker Hub registries
+        var args = new List<string> { "login" };
+        if (registry != "docker.io" && registry != "index.docker.io")
+            args.Add(registry);
+        args.AddRange(["-u", username, "--password-stdin"]);
+
+        var (loginExe, loginArgs) = ProcessRunner.ResolveForPlatform("docker", args.ToArray());
+        using var loginProc = new global::System.Diagnostics.Process
+        {
+            StartInfo = new global::System.Diagnostics.ProcessStartInfo
+            {
+                FileName = loginExe,
+                RedirectStandardInput = true, RedirectStandardOutput = true,
+                RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true,
+            }
+        };
+        foreach (var a in loginArgs) loginProc.StartInfo.ArgumentList.Add(a);
+        loginProc.Start();
+        await loginProc.StandardInput.WriteLineAsync(password);
+        loginProc.StandardInput.Close();
+        var loginOut = await loginProc.StandardOutput.ReadToEndAsync();
+        var loginErr = await loginProc.StandardError.ReadToEndAsync();
+        await loginProc.WaitForExitAsync();
+        await ctx.EmitLogAsync($"docker login ({registry}): {(loginOut + loginErr).Trim()}", "docker");
+
+        if (loginProc.ExitCode != 0)
+            throw new InvalidOperationException($"Docker login failed for {registry} — check username and password.");
+
+        record.Status = BuildStatus.Running;
+        return true;
+    }
+
+    // Prompts for Docker credentials for a specific registry and performs docker login.
+    // Returns true on success, false if the user chose to abort.
+    // On success, saves the credentials back to the project config for future builds.
+    private async Task<bool> DockerLoginAsync(PipelineContext ctx, BuildRecord record, string registry, string prompt)
+    {
+        await ctx.PauseAsync("docker_login_required", prompt, ["login", "abort"],
+            new[] { "username", "password" });
+        await _buildStore.SaveAsync(record);
+
+        var tcs = new TaskCompletionSource<RespondRequest>();
+        _pauseWaiters[record.Id] = tcs;
+        var response = await tcs.Task;
+
+        if (response.Choice == "abort") return false;
+
+        var username = response.Data?.GetValueOrDefault("username") ?? "";
+        var password = response.Data?.GetValueOrDefault("password") ?? "";
+
+        if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
+        {
+            await ctx.EmitLogAsync("Username and password are required.", "shipright");
+            return false;
+        }
+
+        var success = await ExecuteDockerLoginAsync(ctx, record, registry, username, password);
+
+        if (success)
+            await SaveCredentialsForRegistryAsync(record.ProjectId, registry, username, password);
+
+        return success;
+    }
+
+    // Saves the given Docker credentials to all services that resolve to the
+    // given registry, so the credentials persist for future builds.
+    private async Task SaveCredentialsForRegistryAsync(string projectId, string registry, string username, string password)
+    {
+        var project = await _projectStore.GetByIdAsync(projectId);
+        if (project is null) return;
+
+        var updatedServices = project.Services.Select(s =>
+        {
+            var svcRegistry = ResolveRegistry(s);
+            return svcRegistry != registry
+                ? s
+                : s with { DockerUsername = username, DockerPassword = password };
+        }).ToList();
+
+        var updated = project with
+        {
+            Services = updatedServices,
+            ModifiedAt = DateTime.UtcNow,
+        };
+        await _projectStore.SaveAsync(updated);
+    }
+
+    /// <summary>
+    /// GitScript: git pull the compose repo on the server, then run the configured script.
+    /// The script is responsible for any docker operations it needs.
+    /// </summary>
+    private static string BuildGitScriptDeployCmd(ProjectConfig project)
+    {
+        var branch = project.GitRepos.FirstOrDefault()?.DeployBranch ?? "master";
+        return $"cd {project.Server.RemoteWorkingDir} && git pull origin {branch} && bash {project.Server.RebuildScript}";
+    }
+
+    /// <summary>
+    /// GitCompose: git pull the compose repo (which has updated image tags from Step 5),
+    /// then pull and restart. Uses targeted --no-deps restart when all built services
+    /// have a ComposeServiceName configured (avoids restarting nginx/minio/etc.).
+    /// </summary>
+    private static string BuildGitComposeDeployCmd(ProjectConfig project)
+    {
+        var branch = project.GitRepos.FirstOrDefault()?.DeployBranch ?? "master";
+        var svcNames = GetTargetedServiceNames(project.Services);
+        var composeUp = svcNames is not null
+            ? $"docker compose pull {svcNames} && docker compose up -d --no-deps {svcNames}"
+            : "docker compose pull && docker compose up -d";
+        return $"cd {project.Server.RemoteWorkingDir} && git pull origin {branch} && {composeUp}";
+    }
+
+    /// <summary>
+    /// EnvCompose: inject image tags as env vars at deploy time so the server never needs
+    /// a git pull of the compose repo (useful when compose is not in a git-tracked dir).
+    /// Uses targeted --no-deps restart when all built services have a ComposeServiceName.
+    /// </summary>
+    private static string BuildEnvComposeDeployCmd(ProjectConfig project, List<ServiceVersion> versions)
+    {
+        var envVars = string.Join(" ", versions.Select(v =>
+        {
+            var key = Regex.Replace(v.ServiceName.ToUpperInvariant(), @"[^A-Z0-9]", "_") + "_TAG";
+            return $"{key}={v.DockerImageName}:{v.NewVersion}";
+        }));
+        var svcNames = GetTargetedServiceNames(project.Services);
+        var composeUp = svcNames is not null
+            ? $"docker compose pull {svcNames} && docker compose up -d --no-deps {svcNames}"
+            : "docker compose pull && docker compose up -d";
+        return $"cd {project.Server.RemoteWorkingDir} && export {envVars} && {composeUp}";
+    }
+
+    /// <summary>
+    /// On Windows, translates a WSL Linux path to a Windows UNC path so that
+    /// .NET File APIs can read/write it. On Linux returns the path unchanged.
+    /// </summary>
+    private async Task<string> ResolveWslPathAsync(string linuxPath)
+    {
+        if (!OperatingSystem.IsWindows()) return linuxPath;
+        var r = await _runner.RunAsync("wsl", ["wslpath", "-w", linuxPath], null);
+        if (!r.Success)
+            throw new InvalidOperationException(
+                $"wslpath -w failed for '{linuxPath}': {r.StdErr}. " +
+                "Ensure WSL is installed and the path is valid.");
+        return r.StdOut.Trim();
+    }
+
+    /// <summary>
+    /// Returns a space-separated list of compose service names if every service has one
+    /// configured, otherwise null (fall back to restarting the whole stack).
+    /// </summary>
+    private static string? GetTargetedServiceNames(List<ServiceConfig> services)
+    {
+        if (services.Count == 0) return null;
+        if (services.Any(s => string.IsNullOrWhiteSpace(s.ComposeServiceName))) return null;
+        return string.Join(" ", services.Select(s => s.ComposeServiceName));
+    }
+
+    private async Task<bool> InstallBuildxAsync(PipelineContext ctx)
+    {
+        // Detect WSL architecture
+        var unameExe  = OperatingSystem.IsWindows() ? "wsl"   : "uname";
+        var unameArgs = OperatingSystem.IsWindows() ? new[] { "uname", "-m" } : new[] { "-m" };
+        var uname = await _runner.RunAsync(unameExe, unameArgs, null);
+        var rawArch = uname.StdOut.Trim();
+        var arch = rawArch switch
+        {
+            "x86_64"  => "amd64",
+            "aarch64" => "arm64",
+            "armv7l"  => "arm-v7",
+            _         => rawArch
+        };
+        await ctx.EmitLogAsync($"Detected architecture: {rawArch} → {arch}", "shipright");
+
+        // Fetch latest buildx release tag from GitHub API
+        string version;
+        try
+        {
+            _httpClient.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "ShipRight/1.0");
+            var json = await _httpClient.GetStringAsync(
+                "https://api.github.com/repos/docker/buildx/releases/latest");
+            using var doc = JsonDocument.Parse(json);
+            var tagName = doc.RootElement.GetProperty("tag_name").GetString()!;
+            version = tagName.TrimStart('v');
+        }
+        catch (Exception ex)
+        {
+            await ctx.EmitLogAsync($"Could not fetch latest buildx version from GitHub: {ex.Message}", "shipright");
+            await ctx.EmitLogAsync("Falling back to classic builder (DOCKER_BUILDKIT=0).", "shipright");
+            return false;
+        }
+        await ctx.EmitLogAsync($"Latest buildx version: {version}", "shipright");
+
+        var url = $"https://github.com/docker/buildx/releases/download/v{version}/buildx-v{version}.linux-{arch}";
+        await ctx.EmitLogAsync($"Downloading from: {url}", "shipright");
+
+        var installScript =
+            $"mkdir -p ~/.docker/cli-plugins && " +
+            $"curl -fsSL -o ~/.docker/cli-plugins/docker-buildx '{url}' && " +
+            $"chmod +x ~/.docker/cli-plugins/docker-buildx";
+
+        var bashExe  = OperatingSystem.IsWindows() ? "wsl"  : "bash";
+        var bashArgs = OperatingSystem.IsWindows()
+            ? new[] { "bash", "-c", installScript }
+            : new[] { "-c", installScript };
+
+        var install = await _runner.RunAsync(bashExe, bashArgs, null,
+            line => ctx.EmitLogAsync(line, "install"));
+
+        if (!install.Success)
+        {
+            await ctx.EmitLogAsync($"Installation failed: {install.StdErr}", "shipright");
+            await ctx.EmitLogAsync("Falling back to classic builder (DOCKER_BUILDKIT=0).", "shipright");
+            return false;
+        }
+
+        // Verify the install worked
+        var recheck = await _runner.RunAsync("docker", ["buildx", "version"], null);
+        if (recheck.Success)
+        {
+            var ver = recheck.StdOut.Trim().Split('\n')[0].Trim();
+            await ctx.EmitLogAsync($"BuildKit installed and verified ({ver}) — DOCKER_BUILDKIT=1 enabled.", "shipright");
+            return true;
+        }
+
+        await ctx.EmitLogAsync(
+            "buildx was installed but still fails to run — check the binary manually. " +
+            "Falling back to classic builder (DOCKER_BUILDKIT=0).",
+            "shipright");
+        return false;
+    }
+
+    public async Task<string> RollbackAsync(string targetBuildId)
+    {
+        var target = await _buildStore.GetByIdAsync(targetBuildId)
+            ?? throw new InvalidOperationException("Build record not found.");
+        var project = await _projectStore.GetByIdAsync(target.ProjectId)
+            ?? throw new InvalidOperationException("Project not found.");
+
+        if (project.Server.DeployMode == DeployMode.GitScript)
+            throw new InvalidOperationException("Rollback requires GitCompose or EnvCompose deploy mode.");
+
+        var record = new BuildRecord
+        {
+            ProjectId             = project.Id,
+            ProjectName           = project.Name,
+            GitTag                = target.GitTag,
+            Versions              = target.Versions.ToList(),
+            IsRollback            = true,
+            RolledBackFromBuildId = targetBuildId,
+            Status                = BuildStatus.Deploying,
+        };
+        await _buildStore.SaveAsync(record);
+        _bus.Register(record.Id);
+        _ = Task.Run(() => ExecuteRollbackAsync(project, record, target, CancellationToken.None));
+        return record.Id;
+    }
+
+    private async Task ExecuteRollbackAsync(ProjectConfig project, BuildRecord record,
+        BuildRecord target, CancellationToken ct)
+    {
+        var ctx = new PipelineContext(record, _bus);
+        try
+        {
+            if (project.Server.DeployMode == DeployMode.GitCompose)
+            {
+                var branch = project.GitRepos.FirstOrDefault()?.DeployBranch ?? "master";
+                await ctx.EmitLogAsync("Updating compose repo to rollback versions…", "shipright");
+                var rbPull = await _runner.RunAsync("git",
+                    ["-C", project.Wsl.WorkingDir, "pull", "origin", branch],
+                    null, line => ctx.EmitLogAsync(line, "git"));
+                if (!rbPull.Success)
+                    throw new InvalidOperationException($"git pull failed during rollback:\n{rbPull.StdErr}");
+
+                var composePath      = project.Wsl.WorkingDir.TrimEnd('/', '\\') + "/docker-compose.yml";
+                var localComposePath = await ResolveWslPathAsync(composePath);
+                if (!File.Exists(localComposePath))
+                    throw new InvalidOperationException(
+                        $"docker-compose.yml not found at '{localComposePath}' (WSL: '{composePath}') — cannot rollback without it.");
+
+                var imageMap = target.Versions.ToDictionary(v => v.DockerImageName, v => v.NewVersion);
+                await DockerComposeUpdater.UpdateAsync(localComposePath, imageMap);
+
+                var rbAdd = await _runner.RunAsync("git",
+                    ["-C", project.Wsl.WorkingDir, "add", "docker-compose.yml"],
+                    null, line => ctx.EmitLogAsync(line, "git"));
+                if (!rbAdd.Success)
+                    throw new InvalidOperationException($"git add failed during rollback:\n{rbAdd.StdErr}");
+
+                var commitResult = await _runner.RunAsync("git",
+                    ["-C", project.Wsl.WorkingDir, "commit", "-m", $"chore: rollback to {target.GitTag}"],
+                    null, line => ctx.EmitLogAsync(line, "git"));
+                if (!commitResult.Success)
+                {
+                    var commitOut = commitResult.StdOut + commitResult.StdErr;
+                    if (!commitOut.Contains("nothing to commit"))
+                        throw new InvalidOperationException($"git commit failed during rollback:\n{commitOut}");
+                    await ctx.EmitLogAsync("Compose already at rollback versions — nothing new to commit.", "shipright");
+                }
+
+                var rbPush = await _runner.RunAsync("git",
+                    ["-C", project.Wsl.WorkingDir, "push", "origin", branch],
+                    null, line => ctx.EmitLogAsync(line, "git"));
+                if (!rbPush.Success)
+                    throw new InvalidOperationException($"git push failed during rollback:\n{rbPush.StdErr}");
+            }
+
+            await ctx.EmitLogAsync($"Connecting to {project.Server.Host}…", "ssh");
+            var cmd = project.Server.DeployMode == DeployMode.EnvCompose
+                ? BuildEnvComposeDeployCmd(project, target.Versions)
+                : BuildGitComposeDeployCmd(project);
+
+            var exit = await _ssh.RunAsync(
+                project.Server.Host, project.Server.Username,
+                project.Server.SshKeyPath, cmd,
+                line => ctx.EmitLogAsync(line, "ssh"), ct: ct);
+
+            record.Status     = exit == 0 ? BuildStatus.Deployed : BuildStatus.DeployFailed;
+            record.DeployedAt = exit == 0 ? DateTime.UtcNow : null;
+            if (exit != 0) record.ErrorSummary = $"Rollback command exited with code {exit}.";
+        }
+        catch (Exception ex)
+        {
+            record.Status       = BuildStatus.DeployFailed;
+            record.ErrorSummary = ex.Message;
+            Log.Error(ex, "Rollback failed for project {ProjectId}", project.Id);
+            await ctx.EmitLogAsync($"[ERROR] {ex.Message}", "shipright");
+        }
+        finally
+        {
+            await _buildStore.SaveAsync(record);
+            await ctx.DeployCompletedAsync();
+        }
+    }
+
+    private static string TryReadVersion(string path)
+    {
+        try { return File.ReadAllText(path).Trim(); }
+        catch { return ""; }
+    }
+}

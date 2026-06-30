@@ -4,7 +4,11 @@ import { useRouter } from 'next/router';
 // Project editing is now a side pane on the Projects page
 export default function EditProjectRedirect() {
   const router = useRouter();
-  useEffect(() => { router.replace('/projects/'); }, []);
+  const { id } = router.query;
+  useEffect(() => {
+    if (id) router.replace(`/projects/?detail=${id}`);
+    else router.replace('/projects/');
+  }, [id]);
   return null;
 }
 
