@@ -22,10 +22,12 @@ public class BuildEventBus
 
     // Call BEFORE starting the background operation.
     // Ensures events emitted before a subscriber connects are buffered for replay.
+    // Always replaces any existing state so Push/Deploy get a clean channel
+    // even when reusing the same buildId within the 5-minute cleanup window.
     public void Register(string opId)
     {
         lock (_lock)
-            _ops.TryAdd(opId, new OpState());
+            _ops[opId] = new OpState();
     }
 
     public ChannelReader<string> Subscribe(string opId)

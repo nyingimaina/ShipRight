@@ -93,6 +93,7 @@ describe('BuildWizard', () => {
     isOpen: true,
     onClose: jest.fn(),
     apiBase: '/api/projects/test-project',
+    defaultDeployMode: 'GitScript' as const,
     currentVersions: [{
       serviceName: 'api',
       version: '1.0.0',
@@ -288,6 +289,68 @@ describe('BuildWizard', () => {
         sseHandlers.onDeployCompleted?.({ status: 'Deployed' });
       });
       expect(buildSse.disconnect).toHaveBeenCalled();
+    });
+
+    it('switches phase to pipeline when push starts so elapsed timer is visible', async () => {
+      render(<BuildWizard {...defaultProps} />);
+      await act(async () => {
+        fireEvent.click(screen.getByText('Start Build'));
+      });
+      await act(async () => {
+        sseHandlers.onBuildCompleted?.({ status: 'ImageBuilt', gitTag: 'v1.0' });
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByText('Push to Registry'));
+      });
+      // Timer bar renders when phase === 'pipeline' (even elapsed=0 shows it)
+      expect(screen.getByText(/⏱/)).toBeInTheDocument();
+    });
+
+    it('switches phase to pipeline when deploy starts so elapsed timer is visible', async () => {
+      render(<BuildWizard {...defaultProps} />);
+      await act(async () => {
+        fireEvent.click(screen.getByText('Start Build'));
+      });
+      await act(async () => {
+        sseHandlers.onBuildCompleted?.({ status: 'ImageBuilt', gitTag: 'v1.0' });
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByText('Push to Registry'));
+      });
+      await act(async () => {
+        sseHandlers.onPushCompleted?.({ status: 'PushSucceeded' });
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByText('Deploy to Production'));
+      });
+      expect(screen.getByText(/⏱/)).toBeInTheDocument();
+    });
+
+    it('resets activeOp to idle when build start API call fails', async () => {
+      (api.post as jest.Mock).mockRejectedValueOnce({ message: 'Server error' });
+      render(<BuildWizard {...defaultProps} />);
+      await act(async () => {
+        fireEvent.click(screen.getByText('Start Build'));
+      });
+      expect(screen.queryByText('Building...')).not.toBeInTheDocument();
+      expect(screen.getByText('Start Build')).toBeInTheDocument();
+    });
+
+    it('resets activeOp and push phase when push API call fails', async () => {
+      (api.post as jest.Mock)
+        .mockResolvedValueOnce({ buildId: 'test-123' })   // build start
+        .mockRejectedValueOnce({ message: 'Push error' }); // push start
+      render(<BuildWizard {...defaultProps} />);
+      await act(async () => {
+        fireEvent.click(screen.getByText('Start Build'));
+      });
+      await act(async () => {
+        sseHandlers.onBuildCompleted?.({ status: 'ImageBuilt', gitTag: 'v1.0' });
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByText('Push to Registry'));
+      });
+      expect(screen.queryByText('Pushing to registry...')).not.toBeInTheDocument();
     });
   });
 });

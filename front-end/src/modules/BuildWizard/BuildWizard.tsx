@@ -315,16 +315,21 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
     handledPauseKeys.current.clear();
     buildStartTimeRef.current = Date.now();
     setActiveOp('build');
-    const serviceVersions = currentVersions.map(v => ({
-      serviceName: v.serviceName,
-      newVersion: newVersions[v.serviceName] ?? '',
-    }));
-    const result = await api.post<{ buildId: string }>('/api/builds/start', { projectId, serviceVersions });
-    setBuildId(result.buildId);
-    const record = await api.get<IBuildRecord>(`/api/builds/${result.buildId}`);
-    setBuildRecord(record);
-    setPhase('pipeline');
-    connectSse(result.buildId);
+    try {
+      const serviceVersions = currentVersions.map(v => ({
+        serviceName: v.serviceName,
+        newVersion: newVersions[v.serviceName] ?? '',
+      }));
+      const result = await api.post<{ buildId: string }>('/api/builds/start', { projectId, serviceVersions });
+      setBuildId(result.buildId);
+      const record = await api.get<IBuildRecord>(`/api/builds/${result.buildId}`);
+      setBuildRecord(record);
+      setPhase('pipeline');
+      connectSse(result.buildId);
+    } catch (e: unknown) {
+      toast.error((e as { message?: string })?.message ?? 'Failed to start build.');
+      setActiveOp('idle');
+    }
   };
 
   const handlePauseRespond = async () => {
@@ -352,9 +357,16 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
     setStepStartTimes({});
     setStepActualDurations({});
     setElapsed(0);
-    await api.post(`/api/builds/${buildId}/push`, {});
-    sseConnected.current = false;
-    connectSse(buildId);
+    setPhase('pipeline');
+    try {
+      await api.post(`/api/builds/${buildId}/push`, {});
+      sseConnected.current = false;
+      connectSse(buildId);
+    } catch (e: unknown) {
+      toast.error((e as { message?: string })?.message ?? 'Failed to start push.');
+      setActiveOp('idle');
+      setActivePushPhase(false);
+    }
   };
 
   const handleCancel = async () => {
@@ -367,9 +379,15 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
     handledPauseKeys.current.clear();
     setActiveOp('deploy');
     setElapsed(0);
-    await api.post(`/api/builds/${buildId}/deploy`, { deployModeOverride });
-    sseConnected.current = false;
-    connectSse(buildId);
+    setPhase('pipeline');
+    try {
+      await api.post(`/api/builds/${buildId}/deploy`, { deployModeOverride });
+      sseConnected.current = false;
+      connectSse(buildId);
+    } catch (e: unknown) {
+      toast.error((e as { message?: string })?.message ?? 'Failed to start deployment.');
+      setActiveOp('idle');
+    }
   };
 
   // Reset wizard state only after the drawer has fully closed, so the

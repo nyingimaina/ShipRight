@@ -133,12 +133,12 @@ export default function ProjectDetailPanel({ projectId, onBack }: Props) {
       rollbackEsRef.current = es;
       es.onmessage = (event) => {
         try {
-          const data = JSON.parse(event.data);
-          if (data.type === 'log') setRollbackLogs(prev => [...prev, data.data.message]);
-          else if (data.type === 'deployCompleted') {
-            const ok = data.data.status === 'Deployed';
+          const { type, data } = JSON.parse(event.data) as { type: string; data: Record<string, string> };
+          if (type === 'LogLine') setRollbackLogs(prev => [...prev, data.line]);
+          else if (type === 'DeployCompleted') {
+            const ok = data.status === 'Deployed';
             setRollbackStatus(ok ? 'success' : 'error');
-            setRollbackMessage(ok ? 'Rollback complete.' : (data.data.error ?? 'Rollback failed.'));
+            setRollbackMessage(ok ? 'Rollback complete.' : 'Rollback failed.');
             es.close();
             api.get<IDeployment[]>(`/api/projects/${projectId}/deployments?page=1&pageSize=10`)
               .then(d => setDeployments(d)).catch(() => {});
