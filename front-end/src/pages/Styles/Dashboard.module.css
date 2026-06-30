@@ -1,28 +1,29 @@
 .heading {
   font-size: 24px;
   margin-bottom: 4px;
+  color: var(--text-primary);
 }
 
 .tagline {
-  color: #637389;
+  color: var(--text-muted);
   margin-bottom: 32px;
   font-size: 13px;
 }
 
-.loading { color: #637389; }
+.loading { color: var(--text-muted); }
 
 .emptyState {
   text-align: center;
   padding: 64px 0;
-  color: #637389;
+  color: var(--text-muted);
 }
 
 .emptyMessage { font-size: 16px; margin-bottom: 16px; }
 
 .emptyAction {
   display: inline-block;
-  background: #C9A84C;
-  color: #0B1120;
+  background: var(--accent);
+  color: var(--bg-base);
   padding: 10px 20px;
   border-radius: 6px;
   font-weight: 600;
@@ -35,10 +36,9 @@
   gap: 16px;
 }
 
-/* Skeleton card — mirrors the real ProjectCard layout */
 .skeletonCard {
-  background: #131D30;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
   border-radius: 10px;
   padding: 20px;
   display: flex;
@@ -46,35 +46,9 @@
   gap: 14px;
 }
 
-.skeletonTitle {
-  height: 18px;
-  width: 55%;
-}
-
-.skeletonChips {
-  display: flex;
-  gap: 6px;
-}
-
-.skeletonChip {
-  height: 20px;
-  width: 72px;
-  border-radius: 4px;
-}
-
-.skeletonBar {
-  height: 4px;
-  width: 100%;
-  border-radius: 2px;
-}
-
-.skeletonMeta {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.skeletonMetaLine {
-  height: 13px;
-  width: 75%;
-}
+.skeletonTitle   { height: 18px; width: 55%; }
+.skeletonChips   { display: flex; gap: 6px; }
+.skeletonChip    { height: 20px; width: 72px; border-radius: 4px; }
+.skeletonBar     { height: 4px; width: 100%; border-radius: 2px; }
+.skeletonMeta    { display: flex; flex-direction: column; gap: 6px; }
+.skeletonMetaLine { height: 13px; width: 75%; }

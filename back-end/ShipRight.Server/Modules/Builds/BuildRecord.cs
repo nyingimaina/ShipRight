@@ -42,10 +42,38 @@ public class BuildRecord
     public string? FailedStep { get; set; }
     public int? CurrentStepNumber { get; set; }
     public string? CurrentStepName { get; set; }
-    public string LogOutput { get; set; } = string.Empty;
     public string? ErrorSummary { get; set; }
     public Dictionary<string, int> StepDurations { get; set; } = new();
     public List<string> SucceededSteps { get; set; } = new();
     public bool IsRollback { get; set; } = false;
     public string? RolledBackFromBuildId { get; set; }
+
+    // ── Log storage (O(1) append) ─────────────────────────────────────────────
+    // Private backing store — never exposed as a collection so callers
+    // cannot mutate it except through AppendLogLine.
+    [JsonIgnore]
+    private readonly List<string> _logLines = new();
+
+    /// <summary>O(1) append — use this instead of LogOutput +=.</summary>
+    internal void AppendLogLine(string line) => _logLines.Add(line);
+
+    /// <summary>Materialize the full log on demand (read path only).</summary>
+    public string GetLogOutput() =>
+        _logLines.Count == 0 ? string.Empty : string.Join('\n', _logLines);
+
+    /// <summary>
+    /// JSON serialization property — kept for on-disk compatibility with
+    /// existing build records. Reads/writes the full log as a single string.
+    /// New code should call AppendLogLine / GetLogOutput instead.
+    /// </summary>
+    public string LogOutput
+    {
+        get => GetLogOutput();
+        set
+        {
+            _logLines.Clear();
+            if (!string.IsNullOrEmpty(value))
+                _logLines.AddRange(value.Split('\n'));
+        }
+    }
 }

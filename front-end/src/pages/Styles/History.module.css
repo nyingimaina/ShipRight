@@ -1,7 +1,4 @@
-.heading {
-  font-size: 24px;
-  margin-bottom: 24px;
-}
+.heading { font-size: 24px; margin-bottom: 24px; color: var(--text-primary); }
 
 .filters {
   display: flex;
@@ -11,15 +8,11 @@
   flex-wrap: wrap;
 }
 
-.filterGroup {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
+.filterGroup { display: flex; flex-direction: column; gap: 4px; }
 
 .filterLabel {
   font-size: 11px;
-  color: #637389;
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -31,18 +24,19 @@
   justify-content: flex-end;
   margin-top: 20px;
   font-size: 13px;
-  color: #A8B8CC;
+  color: var(--text-secondary);
 }
 
 .pageBtn {
-  background: #1A2640;
-  border: 1px solid rgba(255,255,255,0.08);
-  color: #A8B8CC;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
   padding: 4px 12px;
   border-radius: 4px;
   cursor: pointer;
   font-size: 13px;
+  transition: border-color 0.12s;
 }
 
-.pageBtn:disabled { opacity: 0.4; cursor: default; }
-.pageBtn:not(:disabled):hover { border-color: rgba(255,255,255,0.2); }
+.pageBtn:disabled                { opacity: 0.4; cursor: default; }
+.pageBtn:not(:disabled):hover    { border-color: var(--border-medium); }

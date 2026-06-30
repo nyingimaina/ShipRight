@@ -6,10 +6,7 @@
   flex-wrap: wrap;
 }
 
-.filterLabel {
-  font-size: 12px;
-  color: #637389;
-}
+.filterLabel { font-size: 12px; color: var(--text-muted); }
 
 .statusBadge {
   display: inline-block;
@@ -21,24 +18,23 @@
   letter-spacing: 0.04em;
 }
 
-.statusRunning      { background: rgba(201,168,76,0.15);  color: #C9A84C; }
-.statusPaused       { background: rgba(74,127,168,0.15);  color: #4A7FA8; }
-.statusBuildSucceeded { background: rgba(61,153,112,0.15); color: #3D9970; }
-.statusDeployed     { background: rgba(61,153,112,0.15);  color: #3D9970; }
-.statusBuildFailed  { background: rgba(184,64,64,0.15);   color: #B84040; }
-.statusDeployFailed { background: rgba(184,64,64,0.15);   color: #B84040; }
-.statusAborted      { background: rgba(99,115,137,0.15);  color: #637389; }
-.statusInterrupted  { background: rgba(201,148,58,0.15);  color: #C9943A; }
-.statusPending      { background: rgba(99,115,137,0.15);  color: #637389; }
-.statusDeploying    { background: rgba(201,168,76,0.15);  color: #C9A84C; }
+.statusRunning        { background: var(--accent-dim);  color: var(--accent); }
+.statusPaused         { background: var(--info-dim);    color: var(--info); }
+.statusBuildSucceeded { background: var(--success-dim); color: var(--success); }
+.statusDeployed       { background: var(--success-dim); color: var(--success); }
+.statusBuildFailed    { background: var(--error-dim);   color: var(--error); }
+.statusDeployFailed   { background: var(--error-dim);   color: var(--error); }
+.statusAborted        { background: rgba(var(--text-muted-rgb,99,115,137),0.12); color: var(--text-muted); }
+.statusInterrupted    { background: var(--warning-dim); color: var(--warning); }
+.statusPending        { background: rgba(var(--text-muted-rgb,99,115,137),0.12); color: var(--text-muted); }
+.statusDeploying      { background: var(--accent-dim);  color: var(--accent); }
 
 .mono { font-family: 'JetBrains Mono', monospace; font-size: 12px; }
 
-/* Log drawer */
 .drawerOverlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.65);
+  background: var(--bg-overlay);
   z-index: 40;
 }
 
@@ -48,9 +44,9 @@
   left: 0;
   right: 0;
   height: 75vh;
-  background: #131D30;
+  background: var(--bg-card);
   border-radius: 16px 16px 0 0;
-  border-top: 1px solid rgba(255,255,255,0.08);
+  border-top: 1px solid var(--border-subtle);
   z-index: 50;
   display: flex;
   flex-direction: column;
@@ -59,7 +55,7 @@
 .drawerHandle {
   width: 48px;
   height: 4px;
-  background: rgba(255,255,255,0.14);
+  background: var(--border-medium);
   border-radius: 2px;
   margin: 12px auto 0;
   flex-shrink: 0;
@@ -67,10 +63,11 @@
 
 .drawerHeader {
   padding: 12px 24px;
-  border-bottom: 1px solid rgba(255,255,255,0.08);
+  border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
   font-size: 14px;
   font-weight: 600;
+  color: var(--text-primary);
 }
 
 .drawerBody {

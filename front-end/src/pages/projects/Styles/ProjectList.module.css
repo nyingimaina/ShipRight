@@ -5,13 +5,9 @@
   margin-bottom: 32px;
 }
 
-.heading {
-  font-size: 24px;
-}
+.heading { font-size: 24px; }
 
-.loading {
-  color: #637389;
-}
+.loading { color: var(--text-muted); }
 
 .grid {
   display: grid;
@@ -20,53 +16,31 @@
 }
 
 .card {
-  background: #131D30;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
   border-radius: 10px;
   padding: 20px;
 }
 
-.cardTop {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-}
+.cardTop    { display: flex; justify-content: space-between; align-items: flex-start; }
+.cardTitle  { font-size: 15px; margin-bottom: 6px; }
 
-.cardTitle {
-  font-size: 15px;
-  margin-bottom: 6px;
-}
-
-.chips {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
 
 .chip {
-  background: #1A2640;
-  color: #A8B8CC;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
   padding: 2px 8px;
   border-radius: 4px;
   font-size: 12px;
   font-family: 'JetBrains Mono', monospace;
 }
 
-.cardLink {
-  display: block;
-  margin-top: 16px;
-  font-size: 13px;
-  color: #C9A84C;
-}
+.cardLink { display: block; margin-top: 16px; font-size: 13px; color: var(--accent); }
 
-.empty {
-  color: #637389;
-  text-align: center;
-  padding: 48px 0;
-}
+.empty { color: var(--text-muted); text-align: center; padding: 48px 0; }
 
-/* Skeleton placeholders */
-.skeletonCard { pointer-events: none; gap: 12px; display: flex; flex-direction: column; }
+.skeletonCard  { pointer-events: none; gap: 12px; display: flex; flex-direction: column; }
 .skeletonTitle { height: 18px; width: 50%; }
 .skeletonChips { display: flex; gap: 6px; }
 .skeletonChip  { height: 20px; width: 64px; border-radius: 4px; }

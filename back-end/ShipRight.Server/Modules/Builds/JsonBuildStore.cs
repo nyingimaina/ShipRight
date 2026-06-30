@@ -86,7 +86,7 @@ public class JsonBuildStore : IBuildStore
                     && record.StartedAt < cutoff)
                 {
                     record.Status = BuildStatus.Interrupted;
-                    record.LogOutput += "\n[ShipRight] Build marked as interrupted: process was terminated during execution.";
+                    record.AppendLogLine("[ShipRight] Build marked as interrupted: process was terminated during execution.");
                     await SaveAsync(record);
                     Log.Warning("Build {BuildId} marked as interrupted", record.Id);
                 }

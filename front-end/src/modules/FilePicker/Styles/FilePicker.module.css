@@ -1,32 +1,27 @@
 .wrap {
-  border: 1px solid rgba(255,255,255,0.08);
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
-  background: #0B1120;
+  background: var(--bg-base);
   overflow: hidden;
 }
 
-.layout {
-  display: flex;
-  flex-direction: row;
-}
+.layout { display: flex; flex-direction: row; }
 
 /* ── Sidebar ── */
 .sidebar {
   width: 155px;
   flex-shrink: 0;
-  border-right: 1px solid rgba(255,255,255,0.08);
-  background: #0D1628;
+  border-right: 1px solid var(--border-subtle);
+  background: var(--bg-input);
   overflow-y: auto;
   padding: 6px 0;
 }
 
-.sidebarGroup {
-  margin-bottom: 2px;
-}
+.sidebarGroup { margin-bottom: 2px; }
 
 .sidebarLabel {
   font-size: 10px;
-  color: #637389;
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   padding: 8px 10px 3px;
@@ -45,7 +40,7 @@
   border: none;
   cursor: pointer;
   padding: 6px 10px;
-  color: #A8B8CC;
+  color: var(--text-secondary);
   font-size: 12px;
   font-family: 'JetBrains Mono', monospace;
   text-align: left;
@@ -53,41 +48,22 @@
 }
 
 .sidebarItem:hover { background: rgba(255,255,255,0.05); }
+.sidebarItemActive { background: var(--accent-dim); color: var(--accent); }
+.sidebarItemActive:hover { background: rgba(var(--accent-rgb), 0.15); }
 
-.sidebarItemActive { background: rgba(201,168,76,0.1); color: #C9A84C; }
-.sidebarItemActive:hover { background: rgba(201,168,76,0.15); }
-
-.sidebarIcon {
-  font-size: 13px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-}
-
-.sidebarItemName {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-  min-width: 0;
-}
+.sidebarIcon { font-size: 13px; flex-shrink: 0; display: flex; align-items: center; }
+.sidebarItemName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
 
 /* ── Main panel ── */
-.main {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
+.main { flex: 1; min-width: 0; overflow: hidden; display: flex; flex-direction: column; }
 
 .breadcrumb {
   display: flex;
   align-items: center;
   gap: 4px;
   padding: 8px 12px;
-  background: #1A2640;
-  border-bottom: 1px solid rgba(255,255,255,0.08);
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border-subtle);
   flex-wrap: wrap;
   min-height: 36px;
 }
@@ -95,7 +71,7 @@
 .crumbPart {
   background: none;
   border: none;
-  color: #C9A84C;
+  color: var(--accent);
   cursor: pointer;
   font-size: 12px;
   padding: 2px 4px;
@@ -103,15 +79,11 @@
   font-family: 'JetBrains Mono', monospace;
 }
 
-.crumbPart:hover { background: rgba(201,168,76,0.12); }
-.crumbSep { color: #637389; font-size: 12px; }
-.crumbCurrent { color: #A8B8CC; font-size: 12px; font-family: 'JetBrains Mono', monospace; }
+.crumbPart:hover { background: var(--accent-dim); }
+.crumbSep { color: var(--text-muted); font-size: 12px; }
+.crumbCurrent { color: var(--text-secondary); font-size: 12px; font-family: 'JetBrains Mono', monospace; }
 
-.list {
-  max-height: 260px;
-  overflow-y: auto;
-  flex: 1;
-}
+.list { max-height: 260px; overflow-y: auto; flex: 1; }
 
 .entry {
   display: flex;
@@ -121,14 +93,13 @@
   cursor: pointer;
   border-bottom: 1px solid rgba(255,255,255,0.04);
   font-size: 13px;
-  color: #A8B8CC;
+  color: var(--text-secondary);
   transition: background 0.1s;
 }
 
 .entry:hover { background: rgba(255,255,255,0.04); }
-
-.entryDir { color: #C9A84C; }
-.entrySelected { background: rgba(201,168,76,0.15); outline: 1px solid rgba(201,168,76,0.4); border-radius: 4px; }
+.entryDir { color: var(--accent); }
+.entrySelected { background: rgba(var(--accent-rgb), 0.15); outline: 1px solid rgba(var(--accent-rgb), 0.4); border-radius: 4px; }
 .entryIcon { font-size: 14px; flex-shrink: 0; }
 .entryName { flex: 1; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
 
@@ -137,13 +108,13 @@
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  background: #131D30;
-  border-top: 1px solid rgba(255,255,255,0.08);
+  background: var(--bg-card);
+  border-top: 1px solid var(--border-subtle);
 }
 
 .selectedPath {
   font-size: 11px;
-  color: #637389;
+  color: var(--text-muted);
   font-family: 'JetBrains Mono', monospace;
   flex: 1;
   overflow: hidden;
@@ -152,10 +123,7 @@
   margin-right: 8px;
 }
 
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
-}
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 .spinnerRow {
   display: inline-flex;
@@ -163,15 +131,11 @@
   gap: 6px;
   padding: 20px 12px;
   font-size: 13px;
-  color: #637389;
+  color: var(--text-muted);
 }
 
-.spinnerIcon {
-  animation: spin 1s linear infinite;
-  font-size: 14px;
-  flex-shrink: 0;
-}
+.spinnerIcon { animation: spin 1s linear infinite; font-size: 14px; flex-shrink: 0; }
 
-.loading { padding: 20px 12px; color: #637389; font-size: 13px; text-align: center; }
-.error   { padding: 12px; color: #B84040; font-size: 12px; }
-.empty   { padding: 20px 12px; color: #637389; font-size: 13px; text-align: center; }
+.loading { padding: 20px 12px; color: var(--text-muted); font-size: 13px; text-align: center; }
+.error   { padding: 12px; color: var(--error); font-size: 12px; }
+.empty   { padding: 20px 12px; color: var(--text-muted); font-size: 13px; text-align: center; }

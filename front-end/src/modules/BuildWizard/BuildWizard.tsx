@@ -92,8 +92,6 @@ const fmtExpected = (s: number | null | undefined) => {
   return `~${Math.floor(s / 60)}m${s % 60 > 0 ? `${s % 60}s` : ''}`;
 };
 
-let lineCounter = 0;
-
 export default function BuildWizard({ projectId, projectName, currentVersions, defaultDeployMode, isOpen, onClose, initialBuildId, onVersionCreated }: Props) {
   const [phase, setPhase] = useState<Phase>('versions');
   const [deployModeOverride, setDeployModeOverride] = useState<DeployMode>(defaultDeployMode);
@@ -119,6 +117,8 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const handledPauseKeys = useRef(new Set<string>());
   const buildStartTimeRef = useRef(0);
+  // BRS #7: instance-scoped counter — module-level counter is shared across all mounted wizards
+  const lineCounterRef = useRef(0);
 
   useEffect(() => {
     const map: Record<string, string> = {};
@@ -181,7 +181,7 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
   }, [buildRecord?.status]);
 
   const appendLine = useCallback((source: string, line: string) => {
-    setLines(prev => [...prev, { id: lineCounter++, source, line }]);
+    setLines(prev => [...prev, { id: lineCounterRef.current++, source, line }]);
   }, []);
 
   const connectSse = useCallback((id: string) => {
@@ -397,6 +397,7 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
       handledPauseKeys.current.clear();
       setPhase('versions');
       setLines([]);
+      lineCounterRef.current = 0;
       setStepStatuses({});
       setCurrentStepName(null);
       setStepStartTimes({});

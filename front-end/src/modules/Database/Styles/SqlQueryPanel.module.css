@@ -6,16 +6,12 @@
   transition: box-shadow 0.3s;
 }
 
-/* logBoxRunning: subtle animated border while query is in flight */
 .logBoxRunning {
-  border-color: rgba(201, 168, 76, 0.35) !important;
+  border-color: rgba(var(--accent-rgb), 0.35) !important;
   transition: border-color 0.3s;
 }
 
-.logWaiting {
-  color: #637389;
-  font-style: italic;
-}
+.logWaiting { color: var(--text-muted); font-style: italic; }
 
 .fileHeader {
   display: flex;
@@ -27,23 +23,17 @@
 .fileName {
   font-family: 'JetBrains Mono', monospace;
   font-size: 13px;
-  color: #C9A84C;
+  color: var(--accent);
   font-weight: 600;
 }
 
-.preview {
-  border-radius: 8px;
-  overflow: hidden;
-}
+.preview { border-radius: 8px; overflow: hidden; }
 
-.actions {
-  display: flex;
-  gap: 10px;
-}
+.actions { display: flex; gap: 10px; }
 
 .logBox {
-  background: #0D1625;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
   padding: 12px 16px;
   font-family: 'JetBrains Mono', monospace;
@@ -51,34 +41,19 @@
   line-height: 1.6;
   max-height: 320px;
   overflow-y: auto;
-  color: #A8B8CC;
+  color: var(--text-secondary);
 }
 
-.logLine {
-  white-space: pre-wrap;
-  word-break: break-all;
-}
+.logLine { white-space: pre-wrap; word-break: break-all; }
 
-.hint {
-  font-size: 13px;
-  color: #637389;
-}
-
-.success {
-  color: #3D9970;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.error {
-  color: #B84040;
-  font-size: 13px;
-}
+.hint    { font-size: 13px; color: var(--text-muted); }
+.success { color: var(--success); font-size: 13px; font-weight: 600; }
+.error   { color: var(--error); font-size: 13px; }
 
 .tableWrap {
   overflow-x: auto;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-subtle);
 }
 
 .dataTable {
@@ -89,28 +64,28 @@
 }
 
 .dataTable th {
-  background: #1A2640;
-  color: #A8B8CC;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
   font-weight: 600;
   padding: 7px 14px;
   text-align: left;
   white-space: nowrap;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  border-bottom: 1px solid var(--border-medium);
 }
 
 .dataTable td {
   padding: 6px 14px;
-  color: #C9D6E3;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+  border-bottom: 1px solid rgba(255,255,255,0.04);
   white-space: nowrap;
 }
 
 .dataTable tr:last-child td { border-bottom: none; }
-.dataTable tr:hover td { background: rgba(255, 255, 255, 0.03); }
+.dataTable tr:hover td { background: rgba(255,255,255,0.03); }
 
 .rowCount {
   font-size: 11px;
-  color: #637389;
+  color: var(--text-muted);
   font-family: 'JetBrains Mono', monospace;
   margin-top: 6px;
 }
@@ -118,7 +93,7 @@
 .modeTabs {
   display: flex;
   gap: 4px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--border-subtle);
   padding-bottom: 8px;
 }
 
@@ -128,49 +103,43 @@
   padding: 4px 14px;
   font-size: 12px;
   font-family: inherit;
-  color: #637389;
+  color: var(--text-muted);
   cursor: pointer;
   border-radius: 4px;
   transition: color 0.15s, background 0.15s;
 }
 
 .modeTab:hover {
-  color: #A8B8CC;
-  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  background: rgba(255,255,255,0.04);
 }
 
 .modeTabActive {
-  color: #4A7FA8;
-  background: rgba(74, 127, 168, 0.12);
+  color: var(--info);
+  background: var(--info-dim);
   font-weight: 600;
 }
 
 .sqlInput {
   width: 100%;
   min-height: 140px;
-  background: #0D1625;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--bg-input);
+  border: 1px solid var(--border-medium);
   border-radius: 8px;
   padding: 12px 14px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 12px;
   line-height: 1.7;
-  color: #C9D6E3;
+  color: var(--text-primary);
   resize: vertical;
   outline: none;
   box-sizing: border-box;
   tab-size: 2;
-  /* Prevent tiny text on iOS */
   -webkit-text-size-adjust: 100%;
 }
 
-.sqlInput:focus {
-  border-color: rgba(74, 127, 168, 0.45);
-}
-
-.sqlInput::placeholder {
-  color: #2E3D54;
-}
+.sqlInput:focus { border-color: rgba(var(--info-rgb), 0.45); }
+.sqlInput::placeholder { color: var(--text-muted); opacity: 0.5; }
 
 @media (max-width: 480px) {
   .sqlInput { min-height: 110px; font-size: 13px; }

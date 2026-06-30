@@ -16,7 +16,7 @@ public class PipelineContext
 
     public async Task EmitLogAsync(string line, string source = "shipright")
     {
-        Record.LogOutput += line + "\n";
+        Record.AppendLogLine(line);
         await _bus.EmitAsync(Record.Id, "LogLine", new
         {
             buildId = Record.Id, source, line, timestamp = DateTime.UtcNow
