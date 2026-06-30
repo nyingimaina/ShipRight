@@ -26,6 +26,7 @@ interface Props {
 }
 
 type Phase = 'versions' | 'pipeline' | 'done';
+type ActiveOp = 'idle' | 'build' | 'push' | 'deploy';
 type StepStatus = 'pending' | 'running' | 'done' | 'failed';
 
 interface BuildStats {
@@ -112,6 +113,7 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
   const [elapsed, setElapsed] = useState(0);
   const [buildStats, setBuildStats] = useState<BuildStats | null>(null);
   const [serviceBuildProgress, setServiceBuildProgress] = useState<{ current: number; total: number; serviceName: string } | null>(null);
+  const [activeOp, setActiveOp] = useState<ActiveOp>('idle');
   const sseConnected = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout>>();
@@ -219,12 +221,16 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
       },
       onServiceBuildProgress: e => setServiceBuildProgress(e),
       onBuildCompleted: e => {
+        setActiveOp('idle');
         setBuildRecord(prev => prev ? {
           ...prev, status: e.status as IBuildRecord['status'], gitTag: e.gitTag ?? prev.gitTag,
         } : null);
         if (e.status === 'ImageBuilt' || e.status === 'BuildFailed' ||
-            e.status === 'Aborted' || e.status === 'Interrupted')
+            e.status === 'Aborted' || e.status === 'Interrupted') {
           setPhase('done');
+          buildSse.disconnect();
+          sseConnected.current = false;
+        }
         const elapsed = buildStartTimeRef.current ? Date.now() - buildStartTimeRef.current : Infinity;
         const isSuccess = e.status === 'ImageBuilt';
         const notifType = isSuccess ? 'build_success' : 'build_failed';
@@ -232,6 +238,7 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
           notificationService.show({ type: notifType, title: isSuccess ? 'Build Complete' : 'Build Failed', message: `${e.gitTag ?? 'Build'} ${isSuccess ? 'built — ready to push' : e.status}`, tag: id });
       },
       onPushCompleted: e => {
+        setActiveOp('idle');
         setBuildRecord(prev => {
           if (!prev) return null;
           if (prev.status === e.status) return prev;
@@ -239,6 +246,8 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
         });
         setActivePushPhase(false);
         setPhase('done');
+        buildSse.disconnect();
+        sseConnected.current = false;
         const elapsed = buildStartTimeRef.current ? Date.now() - buildStartTimeRef.current : Infinity;
         const isSuccess = e.status === 'PushSucceeded';
         const notifType = isSuccess ? 'push_success' : 'push_failed';
@@ -246,12 +255,15 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
           notificationService.show({ type: notifType, title: isSuccess ? 'Push Complete' : 'Push Failed', message: `Push to registry ${isSuccess ? 'succeeded' : 'failed'}`, tag: id });
       },
       onDeployCompleted: e => {
+        setActiveOp('idle');
         setBuildRecord(prev => {
           if (!prev) return null;
           if (prev.status === e.status) return prev;
           return { ...prev, status: e.status as IBuildRecord['status'] };
         });
         setPhase('done');
+        buildSse.disconnect();
+        sseConnected.current = false;
         const elapsed = buildStartTimeRef.current ? Date.now() - buildStartTimeRef.current : Infinity;
         const isSuccess = e.status === 'Deployed';
         const notifType = isSuccess ? 'deploy_success' : 'deploy_failed';
@@ -275,7 +287,7 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
                 'ImageBuilt', 'BuildFailed', 'Aborted', 'Interrupted',
                 'PushSucceeded', 'PushFailed', 'Deployed', 'DeployFailed',
               ];
-              if (terminal.includes(r.status)) setPhase('done');
+              if (terminal.includes(r.status)) { setPhase('done'); setActiveOp('idle'); }
             });
           }, 300);
         }
@@ -302,6 +314,7 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
   const handleStartBuild = async () => {
     handledPauseKeys.current.clear();
     buildStartTimeRef.current = Date.now();
+    setActiveOp('build');
     const serviceVersions = currentVersions.map(v => ({
       serviceName: v.serviceName,
       newVersion: newVersions[v.serviceName] ?? '',
@@ -332,6 +345,7 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
   const handlePush = async () => {
     if (!buildId) return;
     handledPauseKeys.current.clear();
+    setActiveOp('push');
     setActivePushPhase(true);
     setStepStatuses({});
     setCurrentStepName(null);
@@ -351,6 +365,7 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
   const handleDeploy = async () => {
     if (!buildId) return;
     handledPauseKeys.current.clear();
+    setActiveOp('deploy');
     setElapsed(0);
     await api.post(`/api/builds/${buildId}/deploy`, { deployModeOverride });
     sseConnected.current = false;
@@ -369,6 +384,7 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
       setStepStartTimes({});
       setStepActualDurations({});
       setActivePushPhase(false);
+      setActiveOp('idle');
       setPause(null);
       setBuildId(null);
       setBuildRecord(null);
@@ -565,6 +581,23 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
           <div className={styles.actionBar}>
             {(phase === 'pipeline' || phase === 'done') && (
               <>
+                {/* Operation status indicator */}
+                {activeOp !== 'idle' && (
+                  <div className={styles.opStatusBar}>
+                    <span className={styles.opStatusDot} />
+                    <span className={styles.opStatusLabel}>
+                      {activeOp === 'build' && 'Building...'}
+                      {activeOp === 'push' && 'Pushing to registry...'}
+                      {activeOp === 'deploy' && 'Deploying...'}
+                    </span>
+                    {connState !== 'connected' && (
+                      <span className={styles.opStatusConnWarn}>
+                        {connState === 'reconnecting' ? '(reconnecting...)' : '(disconnected)'}
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 {/* Error summary */}
                 {buildRecord?.errorSummary && (
                   <div className={styles.errorBanner}>{buildRecord.errorSummary}</div>
@@ -588,7 +621,7 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
                       <div className={styles.deployInfo}>Images built locally — ready to push to registry</div>
                       <div className={styles.deployTag}>{buildRecord?.gitTag}</div>
                     </div>
-                    <ZestButton onClick={handlePush}
+                    <ZestButton onClick={handlePush} disabled={activeOp !== 'idle'}
                       zest={{ visualOptions: { variant: 'standard' }, busyOptions: { handleInternally: true } }}>
                       Push to Registry
                     </ZestButton>
@@ -599,7 +632,7 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
                   <div className={styles.deploySection}>
                     <span className={styles.deployInfo}>✗ Push to registry failed</span>
                     <div className={styles.actionRow}>
-                      <ZestButton onClick={handlePush} zest={{ visualOptions: { variant: 'standard' } }}>
+                      <ZestButton onClick={handlePush} disabled={activeOp !== 'idle'} zest={{ visualOptions: { variant: 'standard' } }}>
                         Retry Push
                       </ZestButton>
                       <ZestButton onClick={handleClose} zest={{ buttonStyle: 'outline' }}>Close</ZestButton>
@@ -628,7 +661,7 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
                           Override — project default: {defaultDeployMode}
                         </span>
                       )}
-                      <ZestButton onClick={handleDeploy}
+                      <ZestButton onClick={handleDeploy} disabled={activeOp !== 'idle'}
                         zest={{ visualOptions: { variant: 'standard' }, busyOptions: { handleInternally: true } }}>
                         Deploy to Production
                       </ZestButton>
@@ -663,7 +696,7 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
                         <option value="EnvCompose">Env + Compose</option>
                       </select>
                       <div style={{ display: 'flex', gap: 8 }}>
-                        <ZestButton onClick={handleDeploy}
+                        <ZestButton onClick={handleDeploy} disabled={activeOp !== 'idle'}
                           zest={{ visualOptions: { variant: 'standard' }, busyOptions: { handleInternally: true } }}>
                           Retry Deploy
                         </ZestButton>

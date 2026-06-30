@@ -366,3 +366,40 @@
   font-size: 13px;
   flex-shrink: 0;
 }
+
+/* Operation status indicator */
+.opStatusBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: rgba(201, 168, 76, 0.08);
+  border: 1px solid rgba(201, 168, 76, 0.2);
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.opStatusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #C9A84C;
+  animation: shipright-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes shipright-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.9); }
+  50%      { opacity: 1;   transform: scale(1.2); }
+}
+
+.opStatusLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: #C9A84C;
+}
+
+.opStatusConnWarn {
+  font-size: 12px;
+  margin-left: auto;
+  color: #C9943A;
+}

@@ -11,6 +11,8 @@ public static class DataDirectory
         Directory.CreateDirectory(Path.Combine(dir, "builds"));
         Directory.CreateDirectory(Path.Combine(dir, "logs"));
         Directory.CreateDirectory(Path.Combine(dir, "backups"));
+        Directory.CreateDirectory(Path.Combine(dir, "scheduler"));
+        Directory.CreateDirectory(Path.Combine(dir, "scheduler", "overflow"));
         return dir;
     }
 }

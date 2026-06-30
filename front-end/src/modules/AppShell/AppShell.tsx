@@ -1,6 +1,6 @@
 import { useRouter } from 'next/router';
 import SidekickMenu from 'jattac.libs.web.zest-sidekick-menu';
-import { RiStackLine, RiTimeLine, RiTerminalBoxLine, RiDatabase2Line, RiServerLine } from 'react-icons/ri';
+import { RiStackLine, RiTimeLine, RiTerminalBoxLine, RiDatabase2Line, RiServerLine, RiCalendarCheckLine } from 'react-icons/ri';
 import styles from './Styles/AppShell.module.css';
 import packageJson from '../../../package.json';
 
@@ -17,6 +17,7 @@ export default function AppShell({ children }: Props) {
     { id: 'terminal',  label: 'Terminal',  icon: <RiTerminalBoxLine size={18} />, searchTerms: 'terminal ssh',        onClick: () => router.push('/terminal') },
     { id: 'databases', label: 'Databases', icon: <RiDatabase2Line size={18} />,   searchTerms: 'databases db sql',    onClick: () => router.push('/databases') },
     { id: 'history',   label: 'History',   icon: <RiTimeLine size={18} />,        searchTerms: 'history builds',      onClick: () => router.push('/history') },
+    { id: 'backups',   label: 'Backups',   icon: <RiCalendarCheckLine size={18} />, searchTerms: 'backups scheduler',   onClick: () => router.push('/backups') },
   ];
 
   return (

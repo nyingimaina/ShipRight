@@ -1,5 +1,7 @@
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, fireEvent } from '@testing-library/react';
 import BuildWizard from '../BuildWizard';
+import { api } from '@/shared/ApiService';
+import { buildSse } from '@/shared/SseService';
 
 jest.mock('@/shared/ApiService', () => ({
   api: {
@@ -51,8 +53,13 @@ jest.mock('../OptionPicker', () => ({
 
 jest.mock('canvas-confetti', () => jest.fn());
 
+let sseHandlers: Record<string, any> = {};
 jest.mock('@/shared/SseService', () => ({
-  buildSse: jest.fn(() => ({ close: jest.fn() })),
+  buildSse: {
+    connect: jest.fn((_id: string, handlers: any) => { sseHandlers = handlers; }),
+    disconnect: jest.fn(),
+    catchUp: jest.fn().mockResolvedValue(null),
+  },
 }));
 
 jest.mock('react-hot-toast', () => ({
@@ -123,5 +130,164 @@ describe('BuildWizard', () => {
     const content = screen.getByTestId('drawer-content');
     expect(content).toBeInTheDocument();
     jest.useRealTimers();
+  });
+
+  describe('activeOp / busy state', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      sseHandlers = {};
+      (api.post as jest.Mock).mockResolvedValue({ buildId: 'test-123' });
+      (api.get as jest.Mock).mockResolvedValue({ id: 'test-123', status: 'Building' });
+    });
+
+    it('hides status indicator when idle', () => {
+      render(<BuildWizard {...defaultProps} />);
+      expect(screen.queryByText('Building...')).not.toBeInTheDocument();
+      expect(screen.queryByText('Pushing to registry...')).not.toBeInTheDocument();
+      expect(screen.queryByText('Deploying...')).not.toBeInTheDocument();
+    });
+
+    it('shows building status indicator during build', async () => {
+      render(<BuildWizard {...defaultProps} />);
+      await act(async () => {
+        fireEvent.click(screen.getByText('Start Build'));
+      });
+      expect(screen.getByText('Building...')).toBeInTheDocument();
+    });
+
+    it('shows push status indicator during push', async () => {
+      render(<BuildWizard {...defaultProps} />);
+      await act(async () => {
+        fireEvent.click(screen.getByText('Start Build'));
+      });
+      await act(async () => {
+        sseHandlers.onBuildCompleted?.({ status: 'ImageBuilt', gitTag: 'v1.0' });
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByText('Push to Registry'));
+      });
+      expect(screen.getByText('Pushing to registry...')).toBeInTheDocument();
+    });
+
+    it('disables push button during active push', async () => {
+      render(<BuildWizard {...defaultProps} />);
+      await act(async () => {
+        fireEvent.click(screen.getByText('Start Build'));
+      });
+      await act(async () => {
+        sseHandlers.onBuildCompleted?.({ status: 'ImageBuilt', gitTag: 'v1.0' });
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByText('Push to Registry'));
+      });
+      expect(screen.getByText('Push to Registry').closest('button')).toBeDisabled();
+    });
+
+    it('clears activeOp on push completed', async () => {
+      render(<BuildWizard {...defaultProps} />);
+      await act(async () => {
+        fireEvent.click(screen.getByText('Start Build'));
+      });
+      await act(async () => {
+        sseHandlers.onBuildCompleted?.({ status: 'ImageBuilt', gitTag: 'v1.0' });
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByText('Push to Registry'));
+      });
+      expect(screen.getByText('Pushing to registry...')).toBeInTheDocument();
+      await act(async () => {
+        sseHandlers.onPushCompleted?.({ status: 'PushSucceeded' });
+      });
+      expect(screen.queryByText('Pushing to registry...')).not.toBeInTheDocument();
+    });
+
+    it('shows SSE reconnect warning during active operation', async () => {
+      render(<BuildWizard {...defaultProps} />);
+      await act(async () => {
+        fireEvent.click(screen.getByText('Start Build'));
+      });
+      await act(async () => {
+        sseHandlers.onConnectionChange?.('reconnecting');
+      });
+      expect(screen.getByText('Building...')).toBeInTheDocument();
+      expect(screen.getByText('(reconnecting...)')).toBeInTheDocument();
+    });
+
+    it('clears activeOp on deploy completed', async () => {
+      render(<BuildWizard {...defaultProps} />);
+      await act(async () => {
+        fireEvent.click(screen.getByText('Start Build'));
+      });
+      await act(async () => {
+        sseHandlers.onBuildCompleted?.({ status: 'ImageBuilt', gitTag: 'v1.0' });
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByText('Push to Registry'));
+      });
+      await act(async () => {
+        sseHandlers.onPushCompleted?.({ status: 'PushSucceeded' });
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByText('Deploy to Production'));
+      });
+      expect(screen.getByText('Deploying...')).toBeInTheDocument();
+      await act(async () => {
+        sseHandlers.onDeployCompleted?.({ status: 'Deployed' });
+      });
+      expect(screen.queryByText('Deploying...')).not.toBeInTheDocument();
+    });
+
+    it('disconnects SSE on build completed terminal status', async () => {
+      render(<BuildWizard {...defaultProps} />);
+      await act(async () => {
+        fireEvent.click(screen.getByText('Start Build'));
+      });
+      expect(buildSse.disconnect).not.toHaveBeenCalled();
+      await act(async () => {
+        sseHandlers.onBuildCompleted?.({ status: 'ImageBuilt', gitTag: 'v1.0' });
+      });
+      expect(buildSse.disconnect).toHaveBeenCalled();
+    });
+
+    it('disconnects SSE on push completed', async () => {
+      render(<BuildWizard {...defaultProps} />);
+      await act(async () => {
+        fireEvent.click(screen.getByText('Start Build'));
+      });
+      await act(async () => {
+        sseHandlers.onBuildCompleted?.({ status: 'ImageBuilt', gitTag: 'v1.0' });
+      });
+      expect(buildSse.disconnect).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        fireEvent.click(screen.getByText('Push to Registry'));
+      });
+      await act(async () => {
+        sseHandlers.onPushCompleted?.({ status: 'PushSucceeded' });
+      });
+      expect(buildSse.disconnect).toHaveBeenCalledTimes(2);
+    });
+
+    it('disconnects SSE on deploy completed', async () => {
+      render(<BuildWizard {...defaultProps} />);
+      await act(async () => {
+        fireEvent.click(screen.getByText('Start Build'));
+      });
+      await act(async () => {
+        sseHandlers.onBuildCompleted?.({ status: 'ImageBuilt', gitTag: 'v1.0' });
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByText('Push to Registry'));
+      });
+      await act(async () => {
+        sseHandlers.onPushCompleted?.({ status: 'PushSucceeded' });
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByText('Deploy to Production'));
+      });
+      await act(async () => {
+        sseHandlers.onDeployCompleted?.({ status: 'Deployed' });
+      });
+      expect(buildSse.disconnect).toHaveBeenCalled();
+    });
   });
 });

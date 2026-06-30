@@ -9,16 +9,25 @@ namespace ShipRight.Desktop;
 public partial class MainWindow : Window
 {
     private readonly Services.ServerProcessManager _serverManager;
+    private readonly Services.NotificationBridge? _notificationBridge;
     private readonly IWebView2Probe _probe;
     private bool _forceClose;
 
-    public MainWindow(Services.ServerProcessManager serverManager) : this(serverManager, null) { }
+    public MainWindow(Services.ServerProcessManager serverManager) : this(serverManager, null, null) { }
 
-    public MainWindow(Services.ServerProcessManager serverManager, IWebView2Probe? probe)
+    public MainWindow(Services.ServerProcessManager serverManager, Services.NotificationBridge notificationBridge)
+        : this(serverManager, notificationBridge, null) { }
+
+    public MainWindow(Services.ServerProcessManager serverManager, Services.NotificationBridge? notificationBridge, IWebView2Probe? probe)
     {
         _serverManager = serverManager;
+        _notificationBridge = notificationBridge;
         InitializeComponent();
         _probe = probe ?? new WebView2Probe(Browser);
+
+        if (_notificationBridge != null)
+            _notificationBridge.Attach(Browser);
+
         Opened += async (_, _) =>
         {
             try
@@ -182,12 +191,12 @@ public partial class MainWindow : Window
 
     private void OnAboutClick(object? sender, RoutedEventArgs e) => ShowAboutDialog();
 
-    private void OnClosing(object? sender, WindowClosingEventArgs e)
+    private async void OnClosing(object? sender, WindowClosingEventArgs e)
     {
         if (!_forceClose)
         {
-            e.Cancel = true;
-            Hide();
+            _forceClose = true;
+            await _serverManager.ShutdownAsync();
         }
     }
 

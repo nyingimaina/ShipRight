@@ -35,10 +35,10 @@ public class DockerCredentialPreservingProjectStore : IProjectStore
 
     private static ProjectConfig MergeDockerCredentials(ProjectConfig incoming, ProjectConfig existing)
     {
-        var mergedServices = incoming.Services.Select((s, i) =>
+        var existingByName = existing.Services.ToDictionary(s => s.Name);
+        var mergedServices = incoming.Services.Select(s =>
         {
-            var es = existing.Services.ElementAtOrDefault(i);
-            if (es is null) return s;
+            if (!existingByName.TryGetValue(s.Name, out var es)) return s;
             return s with
             {
                 DockerUsername = string.IsNullOrEmpty(s.DockerUsername) ? es.DockerUsername : s.DockerUsername,

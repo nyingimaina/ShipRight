@@ -45,7 +45,9 @@ internal static class Program
         try
         {
             var serverManager = new Services.ServerProcessManager();
-            BuildAvaloniaApp(serverManager).StartWithClassicDesktopLifetime(args);
+            var notification = new Services.WindowsToastNotification();
+            var notificationBridge = new Services.NotificationBridge(notification);
+            BuildAvaloniaApp(serverManager, notificationBridge).StartWithClassicDesktopLifetime(args);
         }
         catch (Exception ex)
         {
@@ -59,9 +61,9 @@ internal static class Program
         }
     }
 
-    private static AppBuilder BuildAvaloniaApp(Services.ServerProcessManager serverManager)
+    private static AppBuilder BuildAvaloniaApp(Services.ServerProcessManager serverManager, Services.NotificationBridge notificationBridge)
     {
-        return AppBuilder.Configure(() => new App(serverManager))
+        return AppBuilder.Configure(() => new App(serverManager, notificationBridge))
             .UsePlatformDetect()
             .LogToTrace();
     }

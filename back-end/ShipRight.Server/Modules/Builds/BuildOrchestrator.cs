@@ -672,45 +672,80 @@ public class BuildOrchestrator
 
             foreach (var registry in servicesByRegistry.Keys)
             {
-                var needsLogin = await NeedsRegistryLoginAsync(registry);
-                if (needsLogin)
-                {
-                    // Check if any service in this group has stored credentials
-                    var creds = servicesByRegistry[registry]
-                        .Select(g => g.Svc)
-                        .FirstOrDefault(s => !string.IsNullOrEmpty(s.DockerUsername) && !string.IsNullOrEmpty(s.DockerPassword));
+                var services = servicesByRegistry[registry];
+                await ctx.EmitLogAsync(Ts($"Logging out of {registry}…"), "shipright");
 
-                    if (creds is not null)
+                // Clear any stale cached credentials from a previous project
+                var logoutArgs = new List<string> { "logout" };
+                if (registry != "docker.io" && registry != "index.docker.io")
+                    logoutArgs.Add(registry);
+                await _runner.RunAsync("docker", logoutArgs.ToArray(), null, null, null);
+                await ctx.EmitLogAsync(Ts($"Logged out of {registry}."), "shipright");
+
+                // Check for stored credentials in the project config
+                var creds = services
+                    .Select(g => g.Svc)
+                    .FirstOrDefault(s => !string.IsNullOrEmpty(s.DockerUsername) && !string.IsNullOrEmpty(s.DockerPassword));
+
+                await ctx.EmitLogAsync(Ts(
+                    creds is not null
+                        ? $"Stored credentials found for {registry}."
+                        : $"No stored credentials for {registry}."), "shipright");
+
+                bool loggedIn = false;
+                if (creds is not null)
+                {
+                    try
                     {
-                        await ctx.EmitLogAsync($"Using stored credentials for {registry}.", "shipright");
-                        var loggedIn = await DockerLoginAsync(ctx, record, registry,
+                        loggedIn = await DockerLoginAsync(ctx, record, registry,
                             creds.DockerUsername, creds.DockerPassword,
                             $"Docker credentials required for {registry}.");
-                        if (!loggedIn)
-                        {
-                            record.Status = BuildStatus.Aborted;
-                            await _buildStore.SaveAsync(record);
-                            await ctx.PushCompletedAsync();
-                            return;
-                        }
                     }
-                    else
+                    catch
                     {
-                        await ctx.EmitLogAsync($"Credentials needed for {registry} — prompting.", "shipright");
-                        var loggedIn = await DockerLoginAsync(ctx, record, registry,
-                            $"Docker credentials required for {registry}.");
-                        if (!loggedIn)
+                        await ctx.EmitLogAsync(Ts($"Stored credentials failed for {registry} — falling through to prompt."), "shipright");
+                    }
+
+                    // Verify the logged-in user matches the expected image owner(s)
+                    if (loggedIn)
+                    {
+                        var actualUser = await GetDockerLoggedInUserAsync();
+                        if (actualUser is not null)
                         {
-                            record.Status = BuildStatus.Aborted;
-                            await _buildStore.SaveAsync(record);
-                            await ctx.PushCompletedAsync();
-                            return;
+                            var expectedOwners = services
+                                .Select(g => g.Svc)
+                                .Select(s => ExtractImageOwner(s.DockerImageName, registry))
+                                .Where(o => o is not null)
+                                .Distinct()
+                                .ToList();
+
+                            if (expectedOwners.Count > 0 && !expectedOwners.Any(o => o == actualUser))
+                            {
+                                await ctx.EmitLogAsync(Ts($"Logged in as '{actualUser}' but image owner(s) '{string.Join(", ", expectedOwners)}' — re-authenticating."), "shipright");
+
+                                var reLogoutArgs = new List<string> { "logout" };
+                                if (registry != "docker.io" && registry != "index.docker.io")
+                                    reLogoutArgs.Add(registry);
+                                await _runner.RunAsync("docker", reLogoutArgs.ToArray(), null, null, null);
+                                loggedIn = false;
+                            }
                         }
                     }
                 }
-                else
+
+                if (!loggedIn)
                 {
-                    await ctx.EmitLogAsync($"Credentials found for {registry} — skipping login.", "shipright");
+                    await ctx.EmitLogAsync(Ts($"Prompting for {registry} credentials."), "shipright");
+                    loggedIn = await DockerLoginAsync(ctx, record, registry,
+                        $"Docker credentials required for {registry}.");
+                }
+
+                if (!loggedIn)
+                {
+                    record.Status = BuildStatus.Aborted;
+                    await _buildStore.SaveAsync(record);
+                    await ctx.PushCompletedAsync();
+                    return;
                 }
             }
 
@@ -736,9 +771,8 @@ public class BuildOrchestrator
                         var pushOut = pushResult.StdOut + pushResult.StdErr;
                         if (pushOut.Contains("denied") || pushOut.Contains("unauthorized"))
                         {
-                            await ctx.EmitLogAsync($"Push rejected for {registry} — re-authenticating.", "shipright");
-                            // On re-auth failure, always prompt — stored creds already failed
-                            var loggedIn = await DockerLoginAsync(ctx, record, registry,
+                            await ctx.EmitLogAsync(Ts($"Push rejected for {registry} — re-authenticating."), "shipright");
+                            bool loggedIn = await DockerLoginAsync(ctx, record, registry,
                                 $"Access denied for {registry}. Re-enter credentials.");
                             if (!loggedIn)
                             {
@@ -918,29 +952,51 @@ public class BuildOrchestrator
         return (prefix.Contains('.') || prefix.Contains(':')) ? prefix : "docker.io";
     }
 
-    // Checks ~/.docker/config.json to see if credentials exist for the given registry.
-    // Returns true if a login is needed.
-    private async Task<bool> NeedsRegistryLoginAsync(string registry)
+    internal static string? ExtractImageOwner(string imageName, string registry)
     {
-        string configJson;
-        if (OperatingSystem.IsWindows())
-        {
-            var result = await _runner.RunAsync("wsl",
-                ["sh", "-c", "cat ~/.docker/config.json 2>/dev/null || echo '{}'"], null);
-            if (!result.Success) return true;
-            configJson = result.StdOut;
-        }
-        else
-        {
-            var path = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                ".docker", "config.json");
-            if (!File.Exists(path)) return true;
-            configJson = await File.ReadAllTextAsync(path);
-        }
+        if (registry != "docker.io" && registry != "index.docker.io")
+            return null;
+        if (string.IsNullOrEmpty(imageName))
+            return null;
+        var firstSlash = imageName.IndexOf('/');
+        if (firstSlash < 0)
+            return null;
+        var owner = imageName[..firstSlash];
+        if (owner == "library")
+            return null;
+        return owner;
+    }
 
-        var key = (registry == "docker.io") ? "index.docker.io" : registry;
-        return !configJson.Contains(key);
+    internal static string? ParseDockerInfoForUsername(string dockerInfoOutput)
+    {
+        if (string.IsNullOrEmpty(dockerInfoOutput))
+            return null;
+        foreach (var line in dockerInfoOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var trimmed = line.Trim();
+            if (trimmed.StartsWith("Username:"))
+            {
+                var user = trimmed["Username:".Length..].Trim();
+                return string.IsNullOrEmpty(user) ? null : user;
+            }
+        }
+        return null;
+    }
+
+    private static string Ts(string message) => $"[{DateTime.UtcNow:HH:mm:ss}] {message}";
+
+    private async Task<string?> GetDockerLoggedInUserAsync()
+    {
+        try
+        {
+            var result = await _runner.RunAsync("docker", ["info"], null);
+            if (!result.Success) return null;
+            return ParseDockerInfoForUsername(result.StdOut);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     // Performs docker login using stored credentials (no pause/prompt).
@@ -953,6 +1009,16 @@ public class BuildOrchestrator
     private async Task<bool> ExecuteDockerLoginAsync(PipelineContext ctx, BuildRecord record, string registry,
         string username, string password)
     {
+        // Clear any stale cached credentials from a previous project first
+        await ctx.EmitLogAsync(Ts($"Logging out of {registry}…"), "shipright");
+        var logoutArgs = new List<string> { "logout" };
+        if (registry != "docker.io" && registry != "index.docker.io")
+            logoutArgs.Add(registry);
+        await _runner.RunAsync("docker", logoutArgs.ToArray(), null, null, null);
+        await ctx.EmitLogAsync(Ts($"Logged out of {registry}."), "shipright");
+
+        await ctx.EmitLogAsync(Ts($"Logging in as '{username}'…"), "shipright");
+
         // Only pass registry argument for non-Docker Hub registries
         var args = new List<string> { "login" };
         if (registry != "docker.io" && registry != "index.docker.io")
@@ -987,6 +1053,7 @@ public class BuildOrchestrator
 
     // Prompts for Docker credentials for a specific registry and performs docker login.
     // Returns true on success, false if the user chose to abort.
+    // On success, saves the credentials back to the project config for future builds.
     private async Task<bool> DockerLoginAsync(PipelineContext ctx, BuildRecord record, string registry, string prompt)
     {
         await ctx.PauseAsync("docker_login_required", prompt, ["login", "abort"],
@@ -1002,7 +1069,41 @@ public class BuildOrchestrator
         var username = response.Data?.GetValueOrDefault("username") ?? "";
         var password = response.Data?.GetValueOrDefault("password") ?? "";
 
-        return await ExecuteDockerLoginAsync(ctx, record, registry, username, password);
+        if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
+        {
+            await ctx.EmitLogAsync("Username and password are required.", "shipright");
+            return false;
+        }
+
+        var success = await ExecuteDockerLoginAsync(ctx, record, registry, username, password);
+
+        if (success)
+            await SaveCredentialsForRegistryAsync(record.ProjectId, registry, username, password);
+
+        return success;
+    }
+
+    // Saves the given Docker credentials to all services that resolve to the
+    // given registry, so the credentials persist for future builds.
+    private async Task SaveCredentialsForRegistryAsync(string projectId, string registry, string username, string password)
+    {
+        var project = await _projectStore.GetByIdAsync(projectId);
+        if (project is null) return;
+
+        var updatedServices = project.Services.Select(s =>
+        {
+            var svcRegistry = ResolveRegistry(s);
+            return svcRegistry != registry
+                ? s
+                : s with { DockerUsername = username, DockerPassword = password };
+        }).ToList();
+
+        var updated = project with
+        {
+            Services = updatedServices,
+            ModifiedAt = DateTime.UtcNow,
+        };
+        await _projectStore.SaveAsync(updated);
     }
 
     /// <summary>

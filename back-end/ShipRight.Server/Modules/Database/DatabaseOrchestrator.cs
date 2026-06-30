@@ -535,6 +535,69 @@ public class DatabaseOrchestrator
 
     // ── Helpers ────────────────────────────────────────────────────────────────
 
+    public virtual async Task<bool> ScheduledBackupAsync(ProjectConfig project, CancellationToken ct)
+    {
+        var cfg = project.Database!;
+        var provider = _resolver.Resolve(cfg.Provider);
+        var server = project.Server;
+        var backupDir = BackupDirFor(project.Id);
+        Directory.CreateDirectory(backupDir);
+
+        try
+        {
+            var timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd_HH-mm-ss");
+            var localFile = Path.Combine(backupDir, $"{cfg.DatabaseName}_{timestamp}{provider.BackupExtension}");
+
+            if (provider.Transfer == BackupTransfer.StreamStdout)
+            {
+                var cmd = provider.BackupCommand(cfg);
+                Log.Information("Scheduled backup for {DB}: {Cmd}", cfg.DatabaseName, cmd);
+
+                await using var writer = new StreamWriter(localFile, append: false, Encoding.UTF8);
+                long lineCount = 0;
+
+                var exit = await _ssh.RunAsync(
+                    server.Host, server.Username, server.SshKeyPath, cmd,
+                    onOutput: async line =>
+                    {
+                        await writer.WriteLineAsync(line);
+                        lineCount++;
+                    },
+                    ct: ct);
+
+                await writer.FlushAsync(ct);
+                if (exit != 0)
+                {
+                    Log.Error("Scheduled backup exited with code {Exit} for {DB}", exit, cfg.DatabaseName);
+                    return false;
+                }
+            }
+            else
+            {
+                var opId = Guid.NewGuid().ToString("N");
+                var remoteFile = provider.BackupFilePath(cfg, opId);
+                var cmd = provider.BackupCommand(cfg).Replace("{{opId}}", opId);
+                Log.Information("Scheduled backup for {DB}: {Cmd}", cfg.DatabaseName, cmd);
+
+                var exit = await _ssh.RunAsync(server.Host, server.Username, server.SshKeyPath, cmd, ct: ct);
+                if (exit != 0) return false;
+
+                await SftpDownloadAsync(server, remoteFile, localFile, ct);
+                await _ssh.RunAsync(server.Host, server.Username, server.SshKeyPath,
+                    provider.CleanupCommand(remoteFile), ct: ct);
+            }
+
+            PruneOldBackups(backupDir, cfg.DatabaseName, provider.BackupExtension, cfg.BackupRetainCount);
+            Log.Information("Scheduled backup complete for {DB}: {File}", cfg.DatabaseName, Path.GetFileName(localFile));
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Scheduled backup failed for project {ProjectId}", project.Id);
+            return false;
+        }
+    }
+
     private Task EmitLog(string opId, string message)
         => _bus.EmitAsync(opId, "log", new { message });
 

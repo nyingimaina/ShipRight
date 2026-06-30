@@ -113,6 +113,50 @@ public class DockerCredentialPreservingProjectStoreTests : IDisposable
     }
 
     [TestMethod]
+    public async Task Save_MatchesServicesByName_NotByIndex()
+    {
+        var p = MakeProject("dc-name", "DC Name");
+        p = p with
+        {
+            Services =
+            [
+                new ServiceConfig
+                {
+                    Name = "api", DockerUsername = "api-user", DockerPassword = "api-pass",
+                    VersionFilePath = "/tmp/api/v.txt", BuildContextPath = "/tmp/api", DockerImageName = "test/api"
+                },
+                new ServiceConfig
+                {
+                    Name = "web", DockerUsername = "web-user", DockerPassword = "web-pass",
+                    VersionFilePath = "/tmp/web/v.txt", BuildContextPath = "/tmp/web", DockerImageName = "test/web"
+                },
+            ]
+        };
+        await _inner.SaveAsync(p);
+
+        // Simulate form submission where "web" service order changes before "api"
+        var reordered = p with
+        {
+            Services =
+            [
+                p.Services[1] with { DockerUsername = "", DockerPassword = "" },
+                p.Services[0] with { DockerUsername = "", DockerPassword = "" },
+            ]
+        };
+        await _wrapper.SaveAsync(reordered);
+
+        var reloaded = await _inner.GetByIdAsync("dc-name");
+        Assert.IsNotNull(reloaded);
+        // Both should have preserved their original credentials (matched by name, not index)
+        var api = reloaded.Services.First(s => s.Name == "api");
+        Assert.AreEqual("api-user", api.DockerUsername, "api should keep its user");
+        Assert.AreEqual("api-pass", api.DockerPassword, "api should keep its pass");
+        var web = reloaded.Services.First(s => s.Name == "web");
+        Assert.AreEqual("web-user", web.DockerUsername, "web should keep its user");
+        Assert.AreEqual("web-pass", web.DockerPassword, "web should keep its pass");
+    }
+
+    [TestMethod]
     public async Task DelegatesToInnerStore()
     {
         var p = MakeProject("dc-delegate", "DC Delegate");

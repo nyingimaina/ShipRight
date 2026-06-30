@@ -33,9 +33,15 @@ public class NotificationBridge
 
     private void OnWebMessageReceived(object? sender, WebMessageReceivedEventArgs e)
     {
+        ProcessMessage(e.Body ?? "");
+    }
+
+    public void ProcessMessage(string body)
+    {
         try
         {
-            var msg = JsonSerializer.Deserialize<NotificationMessage>(e.Body);
+            if (string.IsNullOrWhiteSpace(body)) return;
+            var msg = JsonSerializer.Deserialize<NotificationMessage>(body);
             if (msg?.Type != "notification" || string.IsNullOrWhiteSpace(msg.Title))
                 return;
 
