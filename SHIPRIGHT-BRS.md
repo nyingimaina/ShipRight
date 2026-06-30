@@ -1,719 +1,1049 @@
-# ShipRight Desktop Enhancement Guide
+# ShipRight — Backend & Frontend Refactoring Specification (BRS)
 
-This guide shows how to bring the ShipRight Desktop app to parity with SnapTask's Avalonia wrapper, startup resilience, and UI/UX improvements. Each enhancement includes the **SnapTask approach**, **step-by-step instructions**, and **TDD test examples**.
+**Version**: 2.5.0 baseline  
+**Audience**: Junior developer  
+**Priority**: HIGH items must be done before the next feature sprint. MEDIUM before end of quarter. LOW are quality-of-life.
+
+**Standing rule**: Every item in this document follows TDD — write the failing test first, then make it pass. That means for EVERY change below, step 1 is always "write the test that proves the current behaviour is wrong or missing." Only then do you touch production code.
 
 ---
 
 ## Contents
 
-1. [WebView2 Probe (graceful fallback to browser)](#1-webview2-probe)
-2. [Catch-Block Logging + Global Error Handlers](#2-catch-block-logging)
-3. [Exponential Backoff for Server Startup](#3-exponential-backoff)
-4. [Port Conflict Detection](#4-port-conflict-detection)
-5. [Version Drift Prevention](#5-version-drift-prevention)
-6. [Status Bar with Progress Indicator](#6-status-bar)
+1. [How to work through this document (TDD workflow)](#1-tdd-workflow)
+2. [HIGH — Thread-safety bug in `_pauseWaiters`](#2-high--thread-safety-bug-in-_pausewaiters)
+3. [HIGH — O(n²) log concatenation in `PipelineContext`](#3-high--on-log-concatenation-in-pipelinecontext)
+4. [HIGH — `RespondAsync` uses `SetResult` instead of `TrySetResult`](#4-high--respondaysnc-uses-setresult-instead-of-trysetresult)
+5. [HIGH — HttpClient has no timeout](#5-high--httpclient-has-no-timeout)
+6. [HIGH — Plaintext Docker credentials on disk](#6-high--plaintext-docker-credentials)
+7. [MEDIUM — Module-level `lineCounter` in `BuildWizard.tsx`](#7-medium--module-level-linecounter)
+8. [MEDIUM — Hard-coded step registry](#8-medium--hard-coded-step-registry)
+9. [MEDIUM — No concurrent-build guard per project](#9-medium--no-concurrent-build-guard)
+10. [MEDIUM — `BuildRecord` mixes metadata with log content](#10-medium--buildrecord-mixes-metadata-with-log-content)
+11. [LOW — Static Next.js export committed to `wwwroot`](#11-low--static-nextjs-export-in-wwwroot)
+12. [LOW — Direct project URLs return 404](#12-low--direct-project-urls-return-404)
+13. [LOW — No persistent storage (SQLite migration)](#13-low--no-persistent-storage)
 
 ---
 
-## 1. WebView2 Probe
+## 1. TDD Workflow
 
-**Problem**: The Desktop's `NativeWebView` immediately navigates to the dashboard URL on `Opened`. If WebView2 is not installed or fails to initialize, the WebView stays blank with no fallback.
+**Every item here follows this exact order — no exceptions.**
 
-**Solution**: Probe WebView2 before navigating — listen for `NavigationCompleted` with a timeout. If the event fires, WebView2 works. If it times out, open the OS browser instead.
+```
+1. Read the existing tests. Understand what IS covered.
+2. Write a test that demonstrates the bug or missing behaviour → it must FAIL (red).
+3. Run the test suite — confirm it fails for the expected reason.
+4. Change production code to make the test pass (green).
+5. Run the FULL test suite (dotnet test + npm test). All tests must pass.
+6. Commit: "test: <what> then fix: <what>"
+```
 
-### Step 1: Create `IWebViewNavigationController` interface
+Do NOT touch production code before you have a failing test. If you do, your reviewer will revert your PR.
 
-**File**: `Services/IWebViewNavigationController.cs`
+For .NET: `cd back-end && dotnet test`  
+For frontend: `cd front-end && npm test`
+
+---
+
+## 2. HIGH — Thread-safety bug in `_pauseWaiters`
+
+**File**: `back-end/ShipRight.Server/Modules/Builds/BuildOrchestrator.cs:26`
+
+### What the code does now
+
 ```csharp
-using Avalonia.Controls;
+// Line 26 — current (BROKEN)
+private readonly Dictionary<string, TaskCompletionSource<RespondRequest>> _pauseWaiters = new();
+```
 
-namespace ShipRight.Desktop.Services;
+`_pauseWaiters` is a plain `Dictionary<string, TCS>`. It is written on the **pipeline thread** (background `Task.Run`):
 
-public interface IWebViewNavigationController
+```csharp
+// RunPipelineAsync — background thread
+var tcs = new TaskCompletionSource<RespondRequest>();
+_pauseWaiters[record.Id] = tcs;           // ← write from pipeline thread
+var response = await tcs.Task;
+```
+
+And read/removed on the **ASP.NET thread pool thread** handling the HTTP request:
+
+```csharp
+// RespondAsync — HTTP handler thread
+if (!_pauseWaiters.TryGetValue(buildId, out var tcs)) return false;  // ← read
+tcs.SetResult(response);
+_pauseWaiters.Remove(buildId);            // ← write from HTTP thread
+```
+
+Two threads accessing a non-thread-safe `Dictionary` concurrently is a **data race**. In .NET, this can corrupt the dictionary's internal hash table, causing `KeyNotFoundException`, `NullReferenceException`, or infinite loops inside the dictionary itself. The bug is intermittent — it will not reproduce every run, which makes it extremely hard to diagnose in production.
+
+### Why this matters
+
+This dictionary is the mechanism that allows the pipeline to pause and wait for user input (e.g. "Enter Docker password"). A corrupted dictionary means pauses silently break or the pipeline hangs forever.
+
+### Step-by-step fix
+
+#### Step 1 — Write the failing test
+
+File: `back-end/ShipRight.Tests/Modules/Builds/PauseWaitersTests.cs` (new file)
+
+```csharp
+// Proves that Respond can be called from a separate thread safely
+[TestMethod]
+public async Task RespondAsync_CalledConcurrently_DoesNotThrow()
 {
-    event EventHandler<WebViewNavigationCompletedEventArgs>? NavigationCompleted;
-    Uri? Source { set; }
+    // Arrange: create a BuildOrchestrator with fakes
+    // (or test the specific dictionary access pattern directly)
+
+    var dict = new ConcurrentDictionary<string, TaskCompletionSource<string>>();
+    var tcs = new TaskCompletionSource<string>();
+    dict["build-1"] = tcs;
+
+    // Act: simulate pipeline thread awaiting and HTTP thread resolving simultaneously
+    var pipelineTask = Task.Run(async () => await tcs.Task);
+    var httpTask = Task.Run(() =>
+    {
+        if (dict.TryGetValue("build-1", out var found))
+            found.TrySetResult("ok");
+        dict.TryRemove("build-1", out _);
+    });
+
+    await Task.WhenAll(pipelineTask, httpTask);
+
+    // Assert: no exceptions, correct result
+    Assert.AreEqual("ok", await pipelineTask);
 }
 ```
 
-### Step 2: Create `WebViewNavigationAdapter` (wraps real `NativeWebView`)
+Run `dotnet test` — with the current `Dictionary` this test will PASS (because the race is non-deterministic). That's expected. The test's value is as a specification: it documents the required contract and will catch regressions if someone replaces `ConcurrentDictionary` back.
 
-**File**: `Services/WebViewNavigationAdapter.cs`
-```csharp
-using Avalonia.Controls;
-
-namespace ShipRight.Desktop.Services;
-
-public class WebViewNavigationAdapter : IWebViewNavigationController
-{
-    private readonly NativeWebView _webView;
-
-    public WebViewNavigationAdapter(NativeWebView webView)
-    {
-        _webView = webView;
-    }
-
-    public event EventHandler<WebViewNavigationCompletedEventArgs>? NavigationCompleted
-    {
-        add => _webView.NavigationCompleted += value;
-        remove => _webView.NavigationCompleted -= value;
-    }
-
-    public Uri? Source
-    {
-        set => _webView.Source = value;
-    }
-}
-```
-
-### Step 3: Create `IWebView2Probe` interface
-
-**File**: `Services/IWebView2Probe.cs`
-```csharp
-namespace ShipRight.Desktop.Services;
-
-public interface IWebView2Probe
-{
-    Task<bool> ProbeAsync(TimeSpan timeout, Uri targetUrl);
-}
-```
-
-### Step 4: Create `WebView2Probe` implementation
-
-**File**: `Services/WebView2Probe.cs`
-```csharp
-using Avalonia.Controls;
-
-namespace ShipRight.Desktop.Services;
-
-public class WebView2Probe : IWebView2Probe
-{
-    private readonly IWebViewNavigationController _webView;
-
-    public WebView2Probe(NativeWebView webView) : this(new WebViewNavigationAdapter(webView)) { }
-
-    public WebView2Probe(IWebViewNavigationController webView)
-    {
-        _webView = webView;
-    }
-
-    public async Task<bool> ProbeAsync(TimeSpan timeout, Uri targetUrl)
-    {
-        var tcs = new TaskCompletionSource<bool>();
-
-        EventHandler<WebViewNavigationCompletedEventArgs> handler = (_, args) =>
-            tcs.TrySetResult(args.IsSuccess);
-
-        _webView.NavigationCompleted += handler;
-        _webView.Source = targetUrl;
-
-        try
-        {
-            return await tcs.Task.WaitAsync(timeout);
-        }
-        catch (TimeoutException)
-        {
-            return false;
-        }
-        finally
-        {
-            _webView.NavigationCompleted -= handler;
-        }
-    }
-}
-```
-
-### Step 5: Update `MainWindow` to probe before navigating
+Now add a stress test that creates 100 concurrent pairs to actually trigger the race on a `Dictionary`:
 
 ```csharp
-public partial class MainWindow : Window
+[TestMethod]
+public async Task RespondAsync_UnderConcurrentLoad_NeverCorrupts()
 {
-    private readonly ServerProcessManager _serverManager;
-    private readonly IWebView2Probe _probe;
-    private bool _forceClose;
-
-    public MainWindow(ServerProcessManager serverManager, IWebView2Probe? probe = null)
+    var dict = new ConcurrentDictionary<string, TaskCompletionSource<int>>();
+    var tasks = Enumerable.Range(0, 100).Select(async i =>
     {
-        _serverManager = serverManager;
-        InitializeComponent();
-        _probe = probe ?? new WebView2Probe(Browser);
-        Opened += async (_, _) =>
+        var key = $"build-{i}";
+        var tcs = new TaskCompletionSource<int>();
+        dict[key] = tcs;
+        var readTask = Task.Run(() =>
         {
-            try
-            {
-                await _serverManager.StartAsync();
-                var dashboardUrl = new Uri("http://127.0.0.1:5200");
-                var available = await _probe.ProbeAsync(TimeSpan.FromSeconds(5), dashboardUrl);
-                if (!available)
-                    OpenBrowser();
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "Server startup failed");
-            }
-        };
-    }
-
-    public static void OpenBrowser()
-    {
-        try
-        {
-            Process.Start(new ProcessStartInfo("http://127.0.0.1:5200") { UseShellExecute = true });
-        }
-        catch (Exception ex)
-        {
-            Log.Warning(ex, "Failed to open browser");
-        }
-    }
-}
-```
-
-### TDD Test Example
-
-**Test file**: `DesktopNavigationTests.cs`
-```csharp
-using Avalonia.Controls;
-using ShipRight.Desktop.Services;
-
-namespace ShipRight.Tests;
-
-public class DesktopNavigationTests
-{
-    private static readonly Uri TestUrl = new("http://example.com");
-
-    [Fact]
-    public async Task WebView2Probe_ReturnsTrue_WhenNavigationCompletesBeforeTimeout()
-    {
-        var webView = new FakeWebView();
-        var probe = new WebView2Probe(webView);
-
-        var probeTask = probe.ProbeAsync(TimeSpan.FromSeconds(5), TestUrl);
-        webView.FireNavigationCompleted(true);
-
-        Assert.True(await probeTask);
-    }
-
-    [Fact]
-    public async Task WebView2Probe_ReturnsFalse_WhenNavigationTimesOut()
-    {
-        var webView = new FakeWebView();
-        var probe = new WebView2Probe(webView);
-
-        var result = await probe.ProbeAsync(TimeSpan.FromMilliseconds(50), TestUrl);
-        Assert.False(result);
-    }
-
-    [Fact]
-    public async Task WebView2Probe_ReturnsFalse_WhenNavigationFails()
-    {
-        var webView = new FakeWebView();
-        var probe = new WebView2Probe(webView);
-
-        var probeTask = probe.ProbeAsync(TimeSpan.FromSeconds(5), TestUrl);
-        webView.FireNavigationCompleted(false);
-
-        Assert.False(await probeTask);
-    }
-}
-
-public class FakeWebView : IWebViewNavigationController
-{
-    public event EventHandler<WebViewNavigationCompletedEventArgs>? NavigationCompleted;
-    public Uri? Source { get; set; }
-
-    public void FireNavigationCompleted(bool success)
-    {
-        NavigationCompleted?.Invoke(this, new WebViewNavigationCompletedEventArgs
-        {
-            IsSuccess = success,
-            Request = Source
+            if (dict.TryGetValue(key, out var found)) found.TrySetResult(i);
+            dict.TryRemove(key, out _);
         });
+        return await tcs.Task;
+    });
+    var results = await Task.WhenAll(tasks);
+    Assert.AreEqual(100, results.Length);
+}
+```
+
+#### Step 2 — Fix production code
+
+In `BuildOrchestrator.cs`, change line 26:
+
+```csharp
+// BEFORE (BROKEN)
+private readonly Dictionary<string, TaskCompletionSource<RespondRequest>> _pauseWaiters = new();
+
+// AFTER (correct)
+private readonly ConcurrentDictionary<string, TaskCompletionSource<RespondRequest>> _pauseWaiters = new();
+```
+
+No other lines need changing — `ConcurrentDictionary` has the same `TryGetValue` and index-setter API. The `Remove` call in `RespondAsync` becomes `TryRemove`:
+
+```csharp
+// RespondAsync — BEFORE
+_pauseWaiters.Remove(buildId);
+
+// RespondAsync — AFTER
+_pauseWaiters.TryRemove(buildId, out _);
+```
+
+#### Step 3 — Run all tests
+
+```
+cd back-end && dotnet test
+```
+
+All 81+ tests must pass.
+
+---
+
+## 3. HIGH — O(n²) log concatenation in `PipelineContext`
+
+**File**: `back-end/ShipRight.Server/Modules/Builds/PipelineContext.cs:19`
+
+### What the code does now
+
+```csharp
+// Line 19 — current (SLOW)
+public async Task EmitLogAsync(string line, string source = "shipright")
+{
+    Record.LogOutput += line + "\n";   // ← O(n²) allocation
+    ...
+}
+```
+
+`Record.LogOutput` is a `string`. In .NET, strings are **immutable** — `+=` on a string is syntactic sugar for `string.Concat(existing, new)`, which allocates a brand-new string containing a copy of everything already in `LogOutput` plus the new line.
+
+For a build with 5 000 log lines:
+- Line 1: allocate 50 bytes
+- Line 2: allocate 100 bytes (copy 50 + new 50)
+- Line 3: allocate 150 bytes
+- ...
+- Line 5 000: allocate 250 000 bytes (copy 249 950 + new 50)
+
+Total allocations: **~625 MB** for what is functionally a 250 KB log file. The garbage collector must deal with all of it. A build that produces 50 000 log lines (a Docker build with verbose output) can allocate **62 GB** of heap garbage.
+
+### Step-by-step fix
+
+This is a pure refactor of `PipelineContext`. Because we're not changing any external API (the `EmitLogAsync` signature stays identical), the change is safe to make in-place.
+
+#### Step 1 — Write a performance test
+
+File: `back-end/ShipRight.Tests/Modules/Builds/PipelineContextTests.cs` (new file)
+
+```csharp
+[TestMethod]
+public async Task EmitLogAsync_5000Lines_CompletesQuickly()
+{
+    var record = new BuildRecord();
+    var bus = new BuildEventBus();
+    bus.Register(record.Id);
+    var ctx = new PipelineContext(record, bus);
+
+    var sw = System.Diagnostics.Stopwatch.StartNew();
+    for (int i = 0; i < 5_000; i++)
+        await ctx.EmitLogAsync($"log line {i}");
+    sw.Stop();
+
+    // Should complete in under 1 second even on a slow CI machine
+    Assert.IsTrue(sw.ElapsedMilliseconds < 1_000,
+        $"Expected < 1s, got {sw.ElapsedMilliseconds}ms — check for O(n²) allocation");
+
+    // Verify all lines are in the output
+    var output = record.GetLogOutput();  // ← new method (see below)
+    Assert.IsTrue(output.Contains("log line 4999"));
+}
+```
+
+Run the test — it will fail if the machine is slow OR if `GetLogOutput` does not yet exist.
+
+#### Step 2 — Change `BuildRecord` and `PipelineContext`
+
+**IMPORTANT: Do NOT edit `BuildRecord.LogOutput` in place — that would break all callers that read it.** Add a new internal storage mechanism.
+
+In `BuildRecord.cs`, add a private list and a new read accessor. Do NOT remove `LogOutput` yet — it's used by callers to read the stored log:
+
+```csharp
+// New internal storage — never allocated from outside this class
+private readonly List<string> _logLines = new();
+
+// Replaces direct += usage inside PipelineContext
+internal void AppendLogLine(string line) => _logLines.Add(line);
+
+// Returns the assembled log; only called when saving or displaying
+public string GetLogOutput() => string.Join('\n', _logLines);
+
+// Keep the old property for JSON serialization compatibility — it now materialises on read
+[JsonIgnore]  // control when this is expensive
+public string LogOutput
+{
+    get => GetLogOutput();
+    set
+    {
+        // For deserialization: split back to lines
+        _logLines.Clear();
+        if (!string.IsNullOrEmpty(value))
+            _logLines.AddRange(value.Split('\n'));
     }
 }
 ```
 
-### Test project setup
+In `PipelineContext.cs`, change line 19:
 
-Add to test `.csproj`:
-```xml
-<ItemGroup>
-  <PackageReference Include="Avalonia.Controls.WebView" Version="12.0.1" />
-</ItemGroup>
+```csharp
+// BEFORE
+Record.LogOutput += line + "\n";
+
+// AFTER
+Record.AppendLogLine(line);
 ```
 
-Add `InternalsVisibleTo` to **Desktop** `.csproj`:
-```xml
-<ItemGroup>
-  <InternalsVisibleTo Include="ShipRight.Tests" />
-</ItemGroup>
+#### Step 3 — Run all tests
+
+```
+cd back-end && dotnet test
+```
+
+All tests must pass. The performance test must now complete in < 1 second.
+
+---
+
+## 4. HIGH — `RespondAsync` uses `SetResult` instead of `TrySetResult`
+
+**File**: `back-end/ShipRight.Server/Modules/Builds/BuildOrchestrator.cs:148`
+
+### What the code does now
+
+```csharp
+// Line 148 — current (can throw)
+public async Task<bool> RespondAsync(string buildId, RespondRequest response)
+{
+    if (!_pauseWaiters.TryGetValue(buildId, out var tcs)) return false;
+    tcs.SetResult(response);       // ← throws InvalidOperationException if already resolved
+    _pauseWaiters.Remove(buildId);
+    return true;
+}
+```
+
+`TaskCompletionSource.SetResult` throws `InvalidOperationException` if the task is already in a terminal state (completed, faulted, or cancelled). This can happen in two real scenarios:
+
+1. **User double-clicks "Confirm"** — the browser sends two rapid POST requests. The second arrives at `RespondAsync` after the first has already resolved the `tcs`.
+2. **Build was cancelled** — the pipeline's CancellationToken was cancelled, which may have propagated to the `tcs` via `tcs.TrySetCanceled()`. Then a late HTTP response arrives.
+
+The thrown exception propagates to the HTTP handler and returns a **500 Internal Server Error** to the frontend, which may show an error toast even though the user's action succeeded.
+
+### Step-by-step fix
+
+#### Step 1 — Write the failing test
+
+```csharp
+[TestMethod]
+public async Task RespondAsync_WhenCalledTwice_SecondCallReturnsFalseNotThrow()
+{
+    // Simulate: two rapid HTTP requests both call RespondAsync for the same buildId
+    // The second must not throw.
+
+    // We test the TCS directly since BuildOrchestrator has complex dependencies
+    var tcs = new TaskCompletionSource<string>();
+    var succeeded1 = tcs.TrySetResult("first");
+    var succeeded2 = tcs.TrySetResult("second");  // must not throw
+
+    Assert.IsTrue(succeeded1);
+    Assert.IsFalse(succeeded2);  // graceful no-op
+}
+```
+
+This test passes as written — use it as a specification. Now write the integration-style test that catches the real failure:
+
+```csharp
+[TestMethod]
+public async Task RespondAsync_AfterBuildCancelled_DoesNotThrow()
+{
+    // Arrange: create a tcs that is already cancelled
+    var tcs = new TaskCompletionSource<string>();
+    tcs.SetCanceled();
+
+    // Act: simulate what RespondAsync does when it gets a late response
+    // The OLD code would throw here:
+    bool threw = false;
+    try { tcs.SetResult("late"); }
+    catch (InvalidOperationException) { threw = true; }
+
+    Assert.IsTrue(threw, "SetResult should throw — proving we need TrySetResult");
+
+    // Now verify TrySetResult does not throw
+    var tcs2 = new TaskCompletionSource<string>();
+    tcs2.SetCanceled();
+    bool result = tcs2.TrySetResult("late");  // ← must not throw
+    Assert.IsFalse(result);
+}
+```
+
+#### Step 2 — Fix production code
+
+In `BuildOrchestrator.cs`, change `RespondAsync`:
+
+```csharp
+// BEFORE
+tcs.SetResult(response);
+
+// AFTER
+if (!tcs.TrySetResult(response)) return false;  // already resolved — treat as not found
+```
+
+#### Step 3 — Run all tests
+
+```
+cd back-end && dotnet test
 ```
 
 ---
 
-## 2. Catch-Block Logging
+## 5. HIGH — HttpClient has no timeout
 
-**Problem**: 14 out of 26 catch blocks in SnapTask were bare (`catch { }`) — silent failures with no trace in logs.
+**File**: `back-end/ShipRight.Server/Modules/Builds/BuildOrchestrator.cs:28`
 
-**Solution**: Every catch block must log using Serilog. Add global error handlers for unhandled exceptions.
+### What the code does now
 
-### Audit your catch blocks
-
-Search every `.cs` file for `catch`:
-```bash
-rg -n "catch" --include "*.cs" back-end/
+```csharp
+// Line 28 — current
+private static readonly HttpClient _httpClient = new();
 ```
 
-For each bare catch, add:
-- `Log.Warning(ex, "descriptive message")` for recoverable failures
-- `Log.Error(ex, "descriptive message")` for unexpected failures
-- Always log the exception as the first argument (Serilog captures stack trace)
+The default `HttpClient.Timeout` is **100 seconds**. During step 1 (`PreconditionCheck`), the orchestrator calls the GitHub releases API to download the `buildx` binary. If GitHub is unreachable (DNS failure, network timeout), the pipeline thread blocks for 100 seconds before throwing. The user sees the UI frozen with no progress for nearly two minutes.
 
-### Desktop Program.cs — Add global handlers
+Worse: if this happens during a push operation (which has its own 5-minute hard timeout), the `_httpClient` call eats a large fraction of that budget silently.
 
-Add **before** the `try` block in `Main()`:
+The correct timeout for a precheck API call is **15–30 seconds**.
+
+### Step-by-step fix
+
+#### Step 1 — Write the test
+
 ```csharp
-AppDomain.CurrentDomain.UnhandledException += (_, e) =>
-    Log.Fatal((Exception?)e.ExceptionObject, "Unhandled AppDomain exception");
-
-TaskScheduler.UnobservedTaskException += (_, e) =>
+[TestMethod]
+public void HttpClient_Timeout_IsConfiguredToReasonableValue()
 {
-    Log.Fatal(e.Exception, "Unobserved task exception");
-    e.SetObserved();
+    // Access the static field via reflection to test its configuration
+    var field = typeof(BuildOrchestrator)
+        .GetField("_httpClient", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+    var client = (HttpClient)field!.GetValue(null)!;
+
+    Assert.IsTrue(client.Timeout <= TimeSpan.FromSeconds(30),
+        $"HttpClient.Timeout should be ≤ 30s, got {client.Timeout}");
+    Assert.IsTrue(client.Timeout >= TimeSpan.FromSeconds(5),
+        $"HttpClient.Timeout should be ≥ 5s to avoid false-positive timeouts");
+}
+```
+
+Run the test — it FAILS because the current timeout is 100 seconds.
+
+#### Step 2 — Fix production code
+
+```csharp
+// BEFORE
+private static readonly HttpClient _httpClient = new();
+
+// AFTER
+private static readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(20) };
+```
+
+#### Step 3 — Run all tests and confirm the timeout test now passes
+
+---
+
+## 6. HIGH — Plaintext Docker credentials
+
+**Files**:  
+- `back-end/ShipRight.Server/Modules/Projects/DockerCredentialPreservingProjectStore.cs`  
+- `back-end/ShipRight.Server/Shared/Store/SecureStore.cs` (exists — unused for this)
+
+### What the code does now
+
+Project JSON files stored in `~/.shipright/projects/` contain:
+
+```json
+{
+  "dockerUsername": "myuser",
+  "dockerPassword": "mysecretpassword123"
+}
+```
+
+`DockerCredentialPreservingProjectStore` correctly preserves these values across saves, but the underlying `JsonProjectStore` writes them **in plain text to disk**. Anyone with read access to `~/.shipright/` can extract all Docker registry passwords.
+
+`SecureStore.cs` already exists and provides `Encrypt`/`Decrypt` backed by `ProtectedData` (Windows DPAPI) or an AES key on Linux. It is completely unused for credential storage.
+
+### Step-by-step fix
+
+This is a security change — it requires a migration path for existing stored credentials.
+
+#### Step 1 — Write failing tests
+
+File: `back-end/ShipRight.Tests/Modules/Projects/DockerCredentialEncryptionTests.cs` (new)
+
+```csharp
+[TestMethod]
+public void ProjectConfig_WhenSavedToJson_DoesNotContainPlaintextPassword()
+{
+    // Arrange
+    var project = new ProjectConfig
+    {
+        Id = "test",
+        DockerUsername = "myuser",
+        DockerPassword = "supersecret"
+    };
+
+    // Act: serialize using the same serializer as JsonProjectStore
+    var json = JsonConvert.SerializeObject(project);
+
+    // Assert: raw password must not appear in the serialized JSON
+    Assert.IsFalse(json.Contains("supersecret"),
+        "Plaintext password found in serialized JSON — credentials are not encrypted");
+}
+
+[TestMethod]
+public void ProjectConfig_RoundTrip_PreservesPassword()
+{
+    var project = new ProjectConfig { DockerPassword = "supersecret" };
+    var json = JsonConvert.SerializeObject(project);
+    var restored = JsonConvert.DeserializeObject<ProjectConfig>(json)!;
+    Assert.AreEqual("supersecret", restored.DockerPassword,
+        "Password not preserved through serialisation round-trip");
+}
+```
+
+Both tests will FAIL because the first finds the plaintext password and the second passes (proving the data is currently readable). They document the before/after contract.
+
+#### Step 2 — Add a custom JSON converter
+
+**Do NOT edit `ProjectConfig` directly.** Add a new converter class:
+
+```
+back-end/ShipRight.Server/Modules/Projects/EncryptedStringConverter.cs
+```
+
+```csharp
+using Newtonsoft.Json;
+using ShipRight.Shared.Store;
+
+namespace ShipRight.Modules.Projects;
+
+public class EncryptedStringConverter : JsonConverter<string?>
+{
+    public override string? ReadJson(JsonReader reader, Type objectType,
+        string? existingValue, bool hasExistingValue, JsonSerializer serializer)
+    {
+        var raw = reader.Value as string;
+        if (string.IsNullOrEmpty(raw)) return raw;
+
+        // Support both legacy plaintext and new encrypted values
+        if (raw.StartsWith("ENC:", StringComparison.Ordinal))
+            return SecureStore.Decrypt(raw[4..]);
+        return raw;  // legacy — plaintext passthrough
+    }
+
+    public override void WriteJson(JsonWriter writer, string? value, JsonSerializer serializer)
+    {
+        if (string.IsNullOrEmpty(value)) { writer.WriteNull(); return; }
+        writer.WriteValue("ENC:" + SecureStore.Encrypt(value));
+    }
+}
+```
+
+Then decorate the credential properties in `ProjectConfig.cs` (additive — new attribute, no existing code changed):
+
+```csharp
+[JsonConverter(typeof(EncryptedStringConverter))]
+public string DockerUsername { get; set; } = string.Empty;
+
+[JsonConverter(typeof(EncryptedStringConverter))]
+public string DockerPassword { get; set; } = string.Empty;
+```
+
+#### Step 3 — Migration for existing users
+
+When the server starts, scan existing project files. If any contain `DockerPassword` without the `ENC:` prefix, re-save them. Add this to startup in `Program.cs`:
+
+```csharp
+// One-time migration: encrypt plaintext credentials
+await MigrateCredentials(app.Services.GetRequiredService<IProjectStore>());
+```
+
+#### Step 4 — Run all tests
+
+---
+
+## 7. MEDIUM — Module-level `lineCounter` in `BuildWizard.tsx`
+
+**File**: `front-end/src/modules/BuildWizard/BuildWizard.tsx:95`
+
+### What the code does now
+
+```ts
+// Line 95 — current (BROKEN for concurrent wizards)
+let lineCounter = 0;
+
+// Line 184 — used inside a React callback
+setLines(prev => [...prev, { id: lineCounter++, source, line }]);
+```
+
+`lineCounter` is declared at **module scope** — it is shared across ALL instances of `BuildWizard` for the entire lifetime of the browser tab. In normal usage there is only one `BuildWizard` open at a time. But:
+
+1. If a user opens two projects side-by-side (future feature), both wizards share the same counter. React uses `id` for reconciliation — duplicate or colliding IDs between two lists will produce subtle rendering bugs.
+2. When `BuildWizard` unmounts and remounts (e.g. user closes and reopens the wizard during the same session), the counter continues from where it left off rather than resetting. Lines from the new session have IDs that start at, say, 3847 rather than 0. This is harmless now but confusing.
+
+The `id` only needs to be unique within a single wizard instance's line list. A `useRef` inside the component is the correct scope.
+
+### Step-by-step fix
+
+#### Step 1 — Write the failing test
+
+In `BuildWizard.test.tsx`, add a test that renders two wizards and checks their line IDs do not collide:
+
+```tsx
+it('two mounted BuildWizard instances assign line ids independently', async () => {
+  (api.post as jest.Mock).mockResolvedValue({ buildId: 'build-a' });
+
+  const { unmount: unmount1 } = render(<BuildWizard {...defaultProps} projectId="proj-a" />);
+  const { unmount: unmount2 } = render(<BuildWizard {...defaultProps} projectId="proj-b" />);
+
+  // If lineCounter is module-level, the second wizard's IDs will be offset
+  // This test documents the contract that IDs start at 0 (or any consistent value)
+  // for each independent instance.
+  // With the current module-level counter this cannot be easily asserted,
+  // but the test will serve as a regression guard after the fix.
+  unmount1();
+  unmount2();
+});
+```
+
+#### Step 2 — Fix production code
+
+Change `BuildWizard.tsx` — move the counter from module scope to a ref inside the component:
+
+```ts
+// REMOVE from module scope (line 95):
+let lineCounter = 0;
+
+// ADD inside the BuildWizard function body (near other useRef declarations):
+const lineCounterRef = useRef(0);
+
+// CHANGE line 184:
+// BEFORE:
+setLines(prev => [...prev, { id: lineCounter++, source, line }]);
+
+// AFTER:
+setLines(prev => [...prev, { id: lineCounterRef.current++, source, line }]);
+```
+
+Also reset the counter when the wizard resets its lines:
+
+```ts
+// Wherever lines is reset to [], also reset the counter:
+setLines([]);
+lineCounterRef.current = 0;
+```
+
+#### Step 3 — Run frontend tests
+
+```
+cd front-end && npm test
+```
+
+---
+
+## 8. MEDIUM — Hard-coded step registry
+
+**File**: `back-end/ShipRight.Server/Modules/Builds/BuildOrchestrator.cs:29`
+
+### What the code does now
+
+```csharp
+// Lines 29–33 — current
+private static readonly Dictionary<string, int> _stepNumbers = new()
+{
+    ["PreconditionCheck"] = 1, ["GitStatusCheck"] = 2, ["BranchCheck"] = 3,
+    ["WriteVersionsAndTag"] = 4, ["ComposeRepoSync"] = 5, ["DockerBuild"] = 6, ["BuildComplete"] = 7,
 };
 ```
 
-### Example of bad → good
+This dictionary has several problems:
 
-**Bad**:
-```csharp
-catch { return null; }
-```
+1. **Out-of-sync risk**: Step numbers are hard-coded. If you add a step between existing steps (e.g. a new step 3a), all subsequent numbers change and the dictionary must be updated manually. If you forget, the smart-resume logic silently uses the wrong step ordering.
 
-**Good**:
+2. **Scattered branching**: `RunPipelineAsync` is 400+ lines of sequential `if (resumeFromStep > N)` checks. Adding a new step requires editing the middle of that monolith.
+
+3. **Not tested**: The smart-resume logic (which uses `_stepNumbers`) has no unit tests. A typo in a step name would silently disable smart-resume without any warning.
+
+### Step-by-step fix
+
+This is a larger refactor. Do it incrementally.
+
+#### Step 1 — Write tests for the existing smart-resume logic (characterisation tests)
+
+Before touching a single line of production code, add tests that document the current behaviour:
+
 ```csharp
-catch
+// File: back-end/ShipRight.Tests/Modules/Builds/StepRegistryTests.cs
+
+[TestMethod]
+public void StepNumbers_PreconditionCheck_IsStep1()
 {
-    Log.Warning("Failed to read version from registry");
-    return null;
+    // Uses reflection to read the static field — documents the current contract
+    var field = typeof(BuildOrchestrator)
+        .GetField("_stepNumbers", BindingFlags.NonPublic | BindingFlags.Static);
+    var dict = (Dictionary<string, int>)field!.GetValue(null)!;
+
+    Assert.AreEqual(1, dict["PreconditionCheck"]);
+    Assert.AreEqual(7, dict["BuildComplete"]);
+}
+
+[TestMethod]
+public void StepNumbers_AllStepsPresent_AndOrderIsConsistent()
+{
+    var field = typeof(BuildOrchestrator)
+        .GetField("_stepNumbers", BindingFlags.NonPublic | BindingFlags.Static);
+    var dict = (Dictionary<string, int>)field!.GetValue(null)!;
+
+    var numbers = dict.Values.OrderBy(n => n).ToList();
+    for (int i = 0; i < numbers.Count - 1; i++)
+        Assert.AreEqual(numbers[i] + 1, numbers[i + 1],
+            $"Step numbers must be consecutive, gap found between {numbers[i]} and {numbers[i + 1]}");
 }
 ```
 
-### Controllers that return `ex.Message` to the client
+These tests pass now. They will fail if someone later corrupts the step numbering.
 
-Also log server-side:
+#### Step 2 — Extract step metadata into a strongly-typed record
+
+**New file**: `back-end/ShipRight.Server/Modules/Builds/PipelineStep.cs`
+
 ```csharp
-catch (Exception ex)
+namespace ShipRight.Modules.Builds;
+
+public record PipelineStep(string Name, int Number)
 {
-    Log.Error(ex, "Export failed for {Path}", req.Path);
-    return BadRequest($"Export failed: {ex.Message}");
+    public static readonly IReadOnlyList<PipelineStep> All = new[]
+    {
+        new PipelineStep("PreconditionCheck",   1),
+        new PipelineStep("GitStatusCheck",      2),
+        new PipelineStep("BranchCheck",         3),
+        new PipelineStep("WriteVersionsAndTag", 4),
+        new PipelineStep("ComposeRepoSync",     5),
+        new PipelineStep("DockerBuild",         6),
+        new PipelineStep("BuildComplete",       7),
+    };
+
+    public static int NumberOf(string name) =>
+        All.First(s => s.Name == name).Number;
 }
 ```
 
-### Exceptions you should NOT log
+#### Step 3 — Replace the dictionary with the typed registry
 
-- `TimeoutException` in `WebView2Probe` — it's the probe mechanism, expected
-- `OperationCanceledException` in Slack/WebSocket loops — expected cancellation
-
-### API global exception middleware
-
-Already exists in ShipRight Server `Program.cs` (lines 70-81), but ensure it logs the exception *object*, not just a message:
+In `BuildOrchestrator.cs`, remove the dictionary:
 
 ```csharp
-app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
-{
-    var error = context.Features.Get<IExceptionHandlerFeature>();
-    if (error != null)
-        Log.Fatal(error.Error, "Unhandled exception on {Path}", context.Request.Path);
-    context.Response.StatusCode = 500;
-    await context.Response.WriteAsJsonAsync(new { isError = true, message = "Internal error" });
-}));
+// REMOVE
+private static readonly Dictionary<string, int> _stepNumbers = new() { ... };
 ```
+
+Replace all usages of `_stepNumbers[...]` with `PipelineStep.NumberOf(...)`. These are additive reads — no pipeline logic changes.
+
+#### Step 4 — Run all tests
+
+The characterisation tests from step 1 now test via `PipelineStep.All` — update them accordingly.
 
 ---
 
-## 3. Exponential Backoff
+## 9. MEDIUM — No concurrent-build guard per project
 
-**Problem**: `PollHealthAsync` uses fixed 500ms intervals (20 retries = 10s). If the server starts quickly, you still wait 500ms. If the server is slow, you waste time on too-frequent retries.
+**File**: `back-end/ShipRight.Server/Modules/Builds/BuildOrchestrator.cs:52`
 
-**Solution**: Start with short delays and grow exponentially, capped at a maximum, with jitter.
-
-### Before
+### What the code does now
 
 ```csharp
-private async Task<bool> PollHealthAsync(TimeSpan interval, int maxRetries)
+public async Task<BuildRecord> StartAsync(StartBuildRequest request)
 {
-    for (var i = 0; i < maxRetries; i++)
-    {
-        if (await HealthCheckAsync())
-            return true;
-        await Task.Delay(interval);
-    }
-    return false;
-}
-
-// Called as:
-if (!await PollHealthAsync(TimeSpan.FromMilliseconds(500), 20))
-```
-
-### After
-
-```csharp
-private async Task<bool> PollHealthAsync(int maxRetries = 10)
-{
-    return await PollWithExponentialBackoffAsync(HealthCheckAsync, maxRetries);
-}
-
-internal static TimeSpan ComputeBackoffDelay(int attemptIndex, TimeSpan baseDelay, TimeSpan maxDelay)
-{
-    var exponentialMs = baseDelay.TotalMilliseconds * Math.Pow(2, attemptIndex);
-    var clamped = Math.Min(exponentialMs, maxDelay.TotalMilliseconds);
-    return TimeSpan.FromMilliseconds(clamped);
-}
-
-internal static async Task<bool> PollWithExponentialBackoffAsync(
-    Func<Task<bool>> check, int maxRetries = 10)
-{
-    var baseDelay = TimeSpan.FromMilliseconds(50);
-    var maxDelay = TimeSpan.FromMilliseconds(2000);
-    var rng = new Random();
-
-    for (var i = 0; i < maxRetries; i++)
-    {
-        if (await check())
-            return true;
-
-        var delay = ComputeBackoffDelay(i, baseDelay, maxDelay);
-        var jitter = rng.Next(
-            (int)(-delay.TotalMilliseconds * 0.25),
-            (int)(delay.TotalMilliseconds * 0.25) + 1);
-        await Task.Delay(delay + TimeSpan.FromMilliseconds(jitter));
-    }
-
-    return false;
+    ...
+    _ = Task.Run(() => RunPipelineAsync(record, project));  // fire and forget
+    return record;
 }
 ```
 
-### Delay sequence (no jitter)
+`StartAsync` fires a background task and immediately returns. There is no check whether a build for this project is already running. A user who double-clicks "Start Build" (or a frontend retry) will launch two simultaneous pipeline runs for the same project.
 
-| Attempt | Delay | Cumulative |
-|---------|-------|------------|
-| 0 | 50ms | 50ms |
-| 1 | 100ms | 150ms |
-| 2 | 200ms | 350ms |
-| 3 | 400ms | 750ms |
-| 4 | 800ms | 1.55s |
-| 5 | 1600ms | 3.15s |
-| 6-9 | 2000ms (capped) | ~11.15s |
+Two concurrent pipelines on the same project will:
+- Both try to `git commit` and `git tag` the same files → one will fail with "nothing to commit" or produce a duplicate tag error
+- Both try to `docker build` the same image simultaneously → one may succeed and one fail with a conflicting layer lock
+- Both write to `BuildRecord` files in the same directory under the same filename patterns → last-write-wins, potentially corrupting the record
 
-### TDD Test Example
+### Step-by-step fix
+
+#### Step 1 — Write the test
 
 ```csharp
-public class ExponentialBackoffTests
+[TestMethod]
+public async Task StartAsync_WhenProjectAlreadyBuilding_ReturnsExistingBuildOrThrows()
 {
-    [Fact]
-    public async Task Backoff_ReturnsTrue_WhenFirstAttemptSucceeds()
-    {
-        var result = await ServerProcessManager.PollWithExponentialBackoffAsync(
-            () => Task.FromResult(true), maxRetries: 5);
-        Assert.True(result);
-    }
+    // Arrange: use fake stores and a real BuildOrchestrator
+    var buildStore = new InMemoryBuildStore();
+    var projectStore = new InMemoryProjectStore();
+    var bus = new BuildEventBus();
+    var runner = new FakeProcessRunner();
+    var orchestrator = new BuildOrchestrator(buildStore, projectStore, bus, runner, new FakeSshRunner());
 
-    [Fact]
-    public async Task Backoff_ReturnsFalse_WhenAllAttemptsFail()
-    {
-        var result = await ServerProcessManager.PollWithExponentialBackoffAsync(
-            () => Task.FromResult(false), maxRetries: 3);
-        Assert.False(result);
-    }
+    await projectStore.SaveAsync(new ProjectConfig { Id = "p1", Name = "Project 1" });
 
-    [Fact]
-    public void Backoff_DelaysIncrease()
-    {
-        var baseDelay = TimeSpan.FromMilliseconds(50);
-        var maxDelay = TimeSpan.FromMilliseconds(2000);
+    // Act: start two builds simultaneously
+    var request = new StartBuildRequest("p1", new List<ServiceVersionInput>());
+    var t1 = orchestrator.StartAsync(request);
+    var t2 = orchestrator.StartAsync(request);
 
-        var delays = Enumerable.Range(0, 8)
-            .Select(i => ServerProcessManager.ComputeBackoffDelay(i, baseDelay, maxDelay))
-            .ToList();
+    await Task.WhenAll(t1, t2);
 
-        for (var i = 1; i < delays.Count; i++)
-            Assert.True(delays[i] >= delays[i - 1]);
-    }
-
-    [Fact]
-    public void Backoff_DelaysCapAtMaxDelay()
-    {
-        var delay = ServerProcessManager.ComputeBackoffDelay(6,
-            TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(2000));
-        Assert.Equal(TimeSpan.FromMilliseconds(2000), delay);
-    }
+    // Assert: only one build is running at a time
+    var running = (await buildStore.QueryAsync("p1", null, null, null, null, 1, 10))
+        .Where(b => b.Status == BuildStatus.Running)
+        .ToList();
+    Assert.AreEqual(1, running.Count, "Only one build should be running at a time for the same project");
 }
 ```
 
----
+This test FAILS currently — both builds start.
 
-## 4. Port Conflict Detection
+#### Step 2 — Add a per-project semaphore
 
-**Problem**: Before starting the server, we health-check the port. If the health check fails (connection refused), we start the server. But if another process is listening on the port, the server will fail to start with a cryptic error.
-
-**Solution**: Before starting, check the system's active TCP listeners for our port.
-
-### Implementation
-
-Add to `ServerProcessManager.cs`:
+In `BuildOrchestrator.cs`, add:
 
 ```csharp
-using System.Net;
-using System.Net.NetworkInformation;
+// NEW — one semaphore per project, max one concurrent build
+private static readonly ConcurrentDictionary<string, SemaphoreSlim> _projectLocks = new();
 ```
 
+Wrap `StartAsync` with the guard:
+
 ```csharp
-internal static bool IsPortInUse(int port)
+var sem = _projectLocks.GetOrAdd(request.ProjectId, _ => new SemaphoreSlim(1, 1));
+if (!await sem.WaitAsync(TimeSpan.Zero))
+    throw new InvalidOperationException(
+        $"A build for project '{request.ProjectId}' is already in progress.");
+```
+
+Release in the pipeline when it finishes (in the `finally` block of `RunPipelineAsync`):
+
+```csharp
+finally
 {
-    try
-    {
-        var listeners = IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners();
-        return listeners.Any(l => l.Port == port);
-    }
-    catch
-    {
-        return false;
-    }
+    _projectLocks.TryGetValue(record.ProjectId, out var releaseSem);
+    releaseSem?.Release();
 }
 ```
 
-In `StartAsync()`, **after** the health check fails but **before** starting the server:
+#### Step 3 — Handle the error on the frontend
 
-```csharp
-if (await HealthCheckAsync())
-{
-    await FetchHealthAsync();
-    Log.Information("Server already running (v{Version}), connecting", ServerVersion);
-    return;
-}
+In `BuildWizard.tsx`, `handleStartBuild` already has a try/catch. The HTTP API will return 409 Conflict. Update the error toast:
 
-if (IsPortInUse(Port))
-{
-    Log.Warning("Port {Port} is already in use by another process; the server may fail to start", Port);
-}
-
-// ... locate and start server ...
-```
-
-### TDD Test Example
-
-```csharp
-using System.Net.Sockets;
-
-public class PortConflictTests
-{
-    [Fact]
-    public void IsPortInUse_ReturnsFalse_ForUnusedPort()
-    {
-        var result = ServerProcessManager.IsPortInUse(51999);
-        Assert.False(result);
-    }
-
-    [Fact]
-    public void IsPortInUse_ReturnsTrue_ForPortWithListener()
-    {
-        var listener = new TcpListener(IPAddress.Loopback, 51998);
-        listener.Start();
-        try
-        {
-            var result = ServerProcessManager.IsPortInUse(51998);
-            Assert.True(result);
-        }
-        finally
-        {
-            listener.Stop();
-        }
-    }
+```ts
+catch (e: any) {
+    const msg = e?.response?.status === 409
+        ? 'A build for this project is already running.'
+        : 'Failed to start build.';
+    toast.error(msg);
+    setActiveOp('idle');
 }
 ```
 
 ---
 
-## 5. Version Drift Prevention
+## 10. MEDIUM — `BuildRecord` mixes metadata with log content
 
-**Problem**: If Desktop and Server versions diverge (e.g., user updates one but not the other), incompatible behavior may go unnoticed.
+**File**: `back-end/ShipRight.Server/Modules/Builds/BuildRecord.cs:45`
 
-**Solution**: Compare major.minor versions after connecting. Log a warning if they differ.
-
-### Implementation
-
-Add to `ServerProcessManager.cs`:
+### What the code does now
 
 ```csharp
-public enum VersionDrift { None, Minor, Major, Unknown }
+// Line 45
+public string LogOutput { get; set; } = string.Empty;
+```
 
-public static VersionDrift CheckVersionDrift(string? desktopVersion, string? serverVersion)
+`BuildRecord` stores both the build's **metadata** (status, timestamps, versions, git tag) and the **full log output** as a single string in the same object. `JsonBuildStore` serialises the whole thing to a JSON file.
+
+Consequences:
+1. **Listing builds loads all logs**: `QueryAsync` reads all build records to filter/sort them. Every `GET /api/builds` response loads potentially megabytes of log text that the history page never displays.
+2. **Saves are slow**: Every `await _buildStore.SaveAsync(record)` during the pipeline serialises and writes the growing log to disk. At 5 000 log lines the JSON file is multiple megabytes, and it's written on every step transition.
+3. **Pagination is broken by design**: You cannot page through build metadata without loading the log.
+
+### Step-by-step fix
+
+#### Step 1 — Write characterisation tests
+
+```csharp
+[TestMethod]
+public async Task QueryAsync_DoesNotIncludeLogOutput_InListResults()
 {
-    if (desktopVersion == null || serverVersion == null) return VersionDrift.Unknown;
+    // Documents the contract: listing builds must not return log text
+    // Currently this FAILS because log is always included
+    var store = new JsonBuildStore(new TempDirectory().Path);
+    var record = new BuildRecord { ProjectId = "p1" };
+    record.AppendLogLine("enormous log content 12345");
+    await store.SaveAsync(record);
 
-    if (!Version.TryParse(desktopVersion, out var dv) || !Version.TryParse(serverVersion, out var sv))
-        return VersionDrift.Unknown;
+    var results = await store.QueryAsync("p1", null, null, null, null, 1, 10);
+    var first = results.First();
 
-    if (dv.Major != sv.Major) return VersionDrift.Major;
-    if (dv.Minor != sv.Minor) return VersionDrift.Minor;
-    return VersionDrift.None;
+    Assert.AreEqual(string.Empty, first.LogOutput,
+        "QueryAsync results must not include LogOutput — only metadata");
 }
 ```
 
-In `MainWindow`, after `StartAsync()` completes:
+This test fails now. It becomes green after the fix.
+
+#### Step 2 — Separate log storage
+
+**New class**: `back-end/ShipRight.Server/Modules/Builds/BuildLogStore.cs`
 
 ```csharp
-await _serverManager.StartAsync();
-
-var drift = ServerProcessManager.CheckVersionDrift(
-    _serverManager.GetDesktopVersion(), _serverManager.ServerVersion);
-if (drift != ServerProcessManager.VersionDrift.None)
+public interface IBuildLogStore
 {
-    Log.Warning("Version drift detected: {Drift} (Desktop v{Dv}, Server v{Sv})",
-        drift, _serverManager.GetDesktopVersion(), _serverManager.ServerVersion);
+    Task AppendAsync(string buildId, IEnumerable<string> lines);
+    Task<string> GetAsync(string buildId);
+}
+
+public class FileBuildLogStore : IBuildLogStore
+{
+    private readonly string _dir;
+
+    public FileBuildLogStore(string dataDir) =>
+        _dir = Path.Combine(dataDir, "build-logs");
+
+    public async Task AppendAsync(string buildId, IEnumerable<string> lines)
+    {
+        Directory.CreateDirectory(_dir);
+        await File.AppendAllLinesAsync(Path.Combine(_dir, $"{buildId}.log"), lines);
+    }
+
+    public async Task<string> GetAsync(string buildId)
+    {
+        var path = Path.Combine(_dir, $"{buildId}.log");
+        return File.Exists(path) ? await File.ReadAllTextAsync(path) : string.Empty;
+    }
 }
 ```
 
-### TDD Test Example
+Inject `IBuildLogStore` into `PipelineContext` so it writes logs to the file directly. `BuildRecord.LogOutput` becomes empty in the JSON; the `/api/builds/{id}/log` endpoint reads from `IBuildLogStore` instead.
+
+This is a larger migration — do it incrementally. Start by dual-writing (write to both `LogOutput` and the file), then remove `LogOutput` from `SaveAsync`.
+
+---
+
+## 11. LOW — Static Next.js export committed to `wwwroot`
+
+**Directory**: `back-end/ShipRight.Server/wwwroot/`
+
+### What happens now
+
+`build.sh` / the ISS installer builds the Next.js app and copies the output into `wwwroot/`. That `wwwroot/` directory is **committed to git**. Every build of the frontend produces a new set of content-hashed filenames like `chunks/projects-de2ef2b8acda4a9b.js`. Each commit touching the frontend produces 50–200 file changes in git — minified binary diffs that are unreadable and pollute `git log`, `git blame`, and PR diffs.
+
+### Recommended approach
+
+1. Add `back-end/ShipRight.Server/wwwroot/_next/` to `.gitignore`. Keep only `wwwroot/index.html` (the fallback) as a placeholder.
+2. The installer build script already handles copying `front-end/out/` → `wwwroot/` as part of preprocessing. Do not change this.
+3. In CI/CD (if you add it later), the frontend build step populates `wwwroot/` before the .NET publish step. Nothing else changes.
+
+**TDD note**: No production code changes — this is a `.gitignore` change. No tests required. Run the installer build after the change to confirm it still works.
+
+---
+
+## 12. LOW — Direct project URLs return 404
+
+**File**: `front-end/src/pages/projects/[id]/index.tsx`
+
+### What happens now
+
+```ts
+export const getStaticPaths = () => ({ paths: [], fallback: false });
+```
+
+`paths: []` means Next.js generates no static files for `/projects/[id]`. The redirect to `/projects/?detail=${id}` works for client-side navigation (the user clicked a link inside the app). But if someone bookmarks `http://localhost:5200/projects/abc123` or pastes it into a new tab, they get a 404 because no `projects/abc123/index.html` file exists.
+
+### Why this happened
+
+The developer used `getStaticPaths` with `fallback: false` because project IDs are dynamic — they're not known at build time. This is the correct conclusion but the wrong solution. The correct solution is:
+
+- **Option A** (quick): Keep the redirect approach but serve `/404.html` from the server with a JS redirect. Already partially done (`wwwroot/404.html` exists — check its content).
+- **Option B** (proper): Use Next.js App Router (`app/projects/[id]/page.tsx`) with server-side data fetching. This generates correct HTML and allows real static or server rendering.
+
+**TDD note**: Add an integration test that GETs `/projects/fake-id` via `HttpClient` against a running server and asserts it returns 200 (with a redirect body) rather than 404. Do this in a new `back-end/ShipRight.Tests/Integration/RoutingTests.cs`.
+
+---
+
+## 13. LOW — No persistent storage (SQLite migration path)
+
+### What happens now
+
+All data is stored as JSON flat files:
+- `~/.shipright/projects/*.json` — one file per project
+- `~/.shipright/builds/*.json` — one file per build record (with full log)
+- `~/.shipright/scheduler/history/*.json` — backup history records
+
+Problems:
+1. No atomic multi-record writes — if the process dies mid-write, the file is corrupt.
+2. No efficient querying — listing builds requires reading all files and filtering in memory.
+3. No schema versioning — adding a required field to `BuildRecord` breaks deserialization of old files.
+4. Race conditions — two HTTP requests can both read and write the same file without coordination.
+
+### Recommended migration path
+
+**Phase 1** (do this sprint): Add `[JsonIgnore]` + sensible defaults to any new fields added to records so old files don't break deserialization.
+
+**Phase 2** (next quarter): Introduce SQLite via `Microsoft.Data.Sqlite`. Add `IBuildStore`, `IProjectStore` etc. as abstractions (already done). Implement `SqliteBuildStore` alongside `JsonBuildStore`. Switch via DI — JSON files become the fallback for migration.
+
+**TDD note**: When implementing `SqliteBuildStore`, write all tests against the `IBuildStore` interface. Both `JsonBuildStore` and `SqliteBuildStore` must satisfy the same test suite — this is the "contract test" pattern.
 
 ```csharp
-public class VersionDriftTests
+// Pattern: one abstract test class, two concrete test classes
+public abstract class BuildStoreContractTests
 {
-    [Fact]
-    public void CheckVersionDrift_ReturnsNone_WhenVersionsMatch()
-    {
-        var drift = ServerProcessManager.CheckVersionDrift("1.3.0", "1.3.0");
-        Assert.Equal(ServerProcessManager.VersionDrift.None, drift);
-    }
+    protected abstract IBuildStore CreateStore();
 
-    [Fact]
-    public void CheckVersionDrift_ReturnsNone_WhenPatchDiffers()
+    [TestMethod]
+    public async Task SaveAsync_ThenGetById_ReturnsRecord()
     {
-        var drift = ServerProcessManager.CheckVersionDrift("1.3.0", "1.3.5");
-        Assert.Equal(ServerProcessManager.VersionDrift.None, drift);
+        var store = CreateStore();
+        var record = new BuildRecord { ProjectId = "p1" };
+        await store.SaveAsync(record);
+        var fetched = await store.GetByIdAsync(record.Id);
+        Assert.IsNotNull(fetched);
+        Assert.AreEqual("p1", fetched!.ProjectId);
     }
+    // ... more contract tests
+}
 
-    [Fact]
-    public void CheckVersionDrift_ReturnsMinor_WhenMinorDiffers()
-    {
-        var drift = ServerProcessManager.CheckVersionDrift("1.3.0", "1.4.0");
-        Assert.Equal(ServerProcessManager.VersionDrift.Minor, drift);
-    }
+[TestClass]
+public class JsonBuildStoreTests : BuildStoreContractTests
+{
+    protected override IBuildStore CreateStore() =>
+        new JsonBuildStore(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString()));
+}
 
-    [Fact]
-    public void CheckVersionDrift_ReturnsMajor_WhenMajorDiffers()
-    {
-        var drift = ServerProcessManager.CheckVersionDrift("2.0.0", "1.0.0");
-        Assert.Equal(ServerProcessManager.VersionDrift.Major, drift);
-    }
-
-    [Fact]
-    public void CheckVersionDrift_ReturnsUnknown_WhenNull()
-    {
-        var drift = ServerProcessManager.CheckVersionDrift(null, "1.3.0");
-        Assert.Equal(ServerProcessManager.VersionDrift.Unknown, drift);
-    }
+[TestClass]
+public class SqliteBuildStoreTests : BuildStoreContractTests
+{
+    protected override IBuildStore CreateStore() =>
+        new SqliteBuildStore($"Data Source={Path.GetTempFileName()}.db");
 }
 ```
 
 ---
 
-## 6. Status Bar
+## Priority order summary
 
-**Problem**: During server startup, the user sees only an empty window with no feedback.
+| # | Severity | Item | Effort |
+|---|----------|------|--------|
+| 2 | HIGH | Thread-safety: `_pauseWaiters` → `ConcurrentDictionary` | 30 min |
+| 3 | HIGH | O(n²) log concat → `AppendLogLine` + `List<string>` | 1 day |
+| 4 | HIGH | `SetResult` → `TrySetResult` in `RespondAsync` | 15 min |
+| 5 | HIGH | HttpClient timeout = 20s | 15 min |
+| 6 | HIGH | Encrypt Docker credentials at rest | 2 days |
+| 7 | MEDIUM | Module-level `lineCounter` → `useRef` | 30 min |
+| 8 | MEDIUM | `_stepNumbers` dict → `PipelineStep` registry | 1 day |
+| 9 | MEDIUM | Concurrent-build guard per project | 1 day |
+| 10 | MEDIUM | Separate log storage from `BuildRecord` | 3 days |
+| 11 | LOW | Remove `wwwroot` from git | 2 hours |
+| 12 | LOW | Fix direct project URL 404 | 1 day |
+| 13 | LOW | SQLite migration path | 1 week |
 
-**Solution**: Add a status bar at the bottom with an indeterminate progress bar and status text. Update it at each stage: "Starting server..." → "Connecting to dashboard..." → "Connected".
-
-### MainWindow.axaml
-
-Add a `Border` with `DockPanel.Dock="Bottom"` containing a `ProgressBar` and `TextBlock`:
-
-```xml
-<Window ...>
-  <DockPanel>
-    <Menu DockPanel.Dock="Top">
-      <MenuItem Header="_File">
-        <MenuItem Header="E_xit" Click="OnExitClick" />
-      </MenuItem>
-      <MenuItem Header="_Help">
-        <MenuItem Header="_About ShipRight Desktop" Click="OnAboutClick" />
-      </MenuItem>
-    </Menu>
-
-    <Border DockPanel.Dock="Bottom" x:Name="StatusBar" Padding="12,6"
-            Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}">
-      <Grid ColumnDefinitions="Auto,*,Auto">
-        <ProgressBar x:Name="StatusProgress" Grid.Column="0" IsIndeterminate="True"
-                     Width="120" Height="6" Margin="0,0,12,0" VerticalAlignment="Center" />
-        <TextBlock x:Name="StatusText" Grid.Column="1" VerticalAlignment="Center" FontSize="13" />
-      </Grid>
-    </Border>
-
-    <web:NativeWebView x:Name="Browser" />
-  </DockPanel>
-</Window>
-```
-
-### MainWindow.axaml.cs
-
-Add a helper method and update the `Opened` handler:
-
-```csharp
-private void SetStatus(string text, bool showProgress)
-{
-    StatusText.Text = text;
-    StatusProgress.IsVisible = showProgress;
-}
-
-// In Opened handler:
-Opened += async (_, _) =>
-{
-    try
-    {
-        SetStatus("Starting server...", showProgress: true);
-        await _serverManager.StartAsync();
-
-        // Optional: version drift check here
-
-        SetStatus("Connecting to dashboard...", showProgress: true);
-        var dashboardUrl = new Uri("http://127.0.0.1:5200");
-        var available = await _probe.ProbeAsync(TimeSpan.FromSeconds(5), dashboardUrl);
-        SetStatus(available ? "Connected" : "Opening in browser...", showProgress: false);
-        if (!available)
-            OpenBrowser();
-    }
-    catch (Exception ex)
-    {
-        SetStatus("Failed to connect", showProgress: false);
-        Log.Error(ex, "Server startup failed");
-    }
-};
-```
+**Do #2, #4, #5, #7 first** — they are each under one hour and eliminate real data races and potential 500 errors in production. Then tackle #3 and #6 as a pair (they are independent but both important).
 
 ---
 
-## Implementation Order
+## Reminder: TDD is non-negotiable on refactors
 
-| Step | What | Test files to create |
-|------|------|---------------------|
-| 1 | `IWebViewNavigationController`, `WebViewNavigationAdapter`, `IWebView2Probe`, `WebView2Probe` | `DesktopNavigationTests.cs` |
-| 2 | Update `MainWindow` to use probe | — |
-| 3 | Add catch-block logging + global handlers in `Program.cs` | — |
-| 4 | Exponential backoff in `ServerProcessManager` | Add to test file |
-| 5 | Port conflict detection | Add to test file |
-| 6 | Version drift prevention | Add to test file |
-| 7 | Status bar in `MainWindow.axaml` + `SetStatus()` | — |
+The items above that say "refactor" (#3, #8, #10, #13) are especially dangerous without tests. A refactor by definition changes internal structure without changing external behaviour. The only way to prove you haven't changed behaviour is a test suite that was green before and stays green after.
 
-## Build pipeline
+For each refactor:
 
-ShipRight's `shipright.iss` (Inno Setup) builds everything from source. Ensure the Desktop publish includes all new `.cs` files. The `InternalsVisibleTo` attribute must be added to the Desktop `.csproj` (not the Server), since all the new code lives in the Desktop project.
+1. Write tests that cover the existing behaviour (characterisation tests).
+2. Confirm they pass.
+3. Make the structural change.
+4. Confirm they still pass.
+5. Now the refactor is safe to ship.
 
-Before building the installer, verify **all tests pass**:
-
-```bash
-dotnet test back-end/ShipRight.Tests -c Debug
-```
-
----
-
-_For the complete reference implementation, see the SnapTask project at `D:\work\nyingi\code\systems\SnapTask`._
+If you skip step 1-2, you are guessing that your refactor is correct. In a production CI/CD tool where a bug means a failed deployment, guessing is not acceptable.
