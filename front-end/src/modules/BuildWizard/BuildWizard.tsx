@@ -12,6 +12,7 @@ import { IServiceVersion } from '@/shared/types/IBuildRecord';
 import { DeployMode } from '@/shared/types/IProject';
 import LogViewer, { LogEntry } from './LogViewer';
 import OptionPicker, { PickerOption } from './OptionPicker';
+import StepPicker, { BuildStep } from './StepPicker';
 import styles from './Styles/BuildWizard.module.css';
 
 interface Props {
@@ -120,6 +121,19 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
   // BRS #7: instance-scoped counter — module-level counter is shared across all mounted wizards
   const lineCounterRef = useRef(0);
 
+  // Step picker state — which steps to auto-run in express mode
+  const [showStepPicker, setShowStepPicker] = useState(false);
+  const [selectedSteps, setSelectedSteps] = useState<Set<BuildStep>>(() => new Set<BuildStep>(['build']));
+  // Ref mirrors selectedSteps so SSE handlers (memoized, stale closures) can read latest value
+  const autoChainRef = useRef({ push: false, deploy: false });
+  // pendingChain defers the chain call to the next render where handlePush/handleDeploy are fresh
+  const [pendingChain, setPendingChain] = useState<'push' | 'deploy' | null>(null);
+
+  const updateSelectedSteps = (steps: Set<BuildStep>) => {
+    autoChainRef.current = { push: steps.has('push'), deploy: steps.has('deploy') };
+    setSelectedSteps(steps);
+  };
+
   useEffect(() => {
     const map: Record<string, string> = {};
     currentVersions.forEach(v => { map[v.serviceName] = v.suggestedNext ?? v.version ?? ''; });
@@ -149,6 +163,16 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
       api.get<BuildStats>(`/api/projects/${projectId}/build-stats`).then(setBuildStats).catch(() => {});
     }
   }, [isOpen, projectId]);
+
+  // Auto-chain: deferred to next render so handlePush/handleDeploy have current buildId in closure
+  useEffect(() => {
+    if (!pendingChain) return;
+    const chain = pendingChain;
+    setPendingChain(null);
+    if (chain === 'push') handlePush();
+    else if (chain === 'deploy') handleDeploy();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingChain]);
 
   // Restore stored log when reopening a known build (e.g. after closing mid-job or re-entering push/deploy flow)
   useEffect(() => {
@@ -249,6 +273,7 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
           buildSse.disconnect();
           sseConnected.current = false;
         }
+        if (autoChainRef.current.push && e.status === 'ImageBuilt') setPendingChain('push');
         const elapsed = buildStartTimeRef.current ? Date.now() - buildStartTimeRef.current : Infinity;
         const isSuccess = e.status === 'ImageBuilt';
         const notifType = isSuccess ? 'build_success' : 'build_failed';
@@ -266,6 +291,7 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
         setPhase('done');
         buildSse.disconnect();
         sseConnected.current = false;
+        if (autoChainRef.current.deploy && e.status === 'PushSucceeded') setPendingChain('deploy');
         const elapsed = buildStartTimeRef.current ? Date.now() - buildStartTimeRef.current : Infinity;
         const isSuccess = e.status === 'PushSucceeded';
         const notifType = isSuccess ? 'push_success' : 'push_failed';
@@ -427,6 +453,10 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
       setBuildRecord(null);
       setElapsed(0);
       setServiceBuildProgress(null);
+      setShowStepPicker(false);
+      setSelectedSteps(new Set<BuildStep>(['build']));
+      setPendingChain(null);
+      autoChainRef.current = { push: false, deploy: false };
     }
   }, [isOpen]);
 
@@ -537,7 +567,7 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
                   </div>
                 )}
                 <div className={styles.actions}>
-                  <ZestButton onClick={handleStartBuild}
+                  <ZestButton onClick={() => setShowStepPicker(true)}
                     zest={{ visualOptions: { variant: 'standard' }, semanticType: 'submit' }}>
                     Start Build
                   </ZestButton>
@@ -754,6 +784,20 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
               </>
             )}
           </div>
+
+          {/* Step picker overlay */}
+          {showStepPicker && (
+            <div className={styles.pauseOverlay}>
+              <div className={styles.pauseCard}>
+                <StepPicker
+                  steps={selectedSteps}
+                  onChange={updateSelectedSteps}
+                  onConfirm={() => { setShowStepPicker(false); handleStartBuild(); }}
+                  onCancel={() => setShowStepPicker(false)}
+                />
+              </div>
+            </div>
+          )}
 
           {/* Pause overlay */}
           {pause && (

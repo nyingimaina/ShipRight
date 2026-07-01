@@ -51,6 +51,30 @@ jest.mock('../OptionPicker', () => ({
   ),
 }));
 
+jest.mock('../StepPicker', () => ({
+  __esModule: true,
+  default: ({ steps, onChange, onConfirm, onCancel }: any) => (
+    <div data-testid="step-picker">
+      {(['build', 'push', 'deploy'] as const).map(step => (
+        <input
+          key={step}
+          type="checkbox"
+          data-testid={`step-${step}`}
+          checked={steps.has(step)}
+          onChange={() => {
+            const next = new Set(steps);
+            next.has(step) ? next.delete(step) : next.add(step);
+            onChange(next);
+          }}
+        />
+      ))}
+      <button onClick={() => onChange(new Set(['build', 'push', 'deploy']))}>Select All</button>
+      <button onClick={onConfirm}>Confirm</button>
+      <button onClick={onCancel}>Cancel Picker</button>
+    </div>
+  ),
+}));
+
 jest.mock('canvas-confetti', () => jest.fn());
 
 let sseHandlers: Record<string, any> = {};
@@ -150,16 +174,18 @@ describe('BuildWizard', () => {
 
     it('shows building status indicator during build', async () => {
       render(<BuildWizard {...defaultProps} />);
+      act(() => { fireEvent.click(screen.getByText('Start Build')); });
       await act(async () => {
-        fireEvent.click(screen.getByText('Start Build'));
+        fireEvent.click(screen.getByText('Confirm'));
       });
       expect(screen.getByText('Building...')).toBeInTheDocument();
     });
 
     it('shows push status indicator during push', async () => {
       render(<BuildWizard {...defaultProps} />);
+      act(() => { fireEvent.click(screen.getByText('Start Build')); });
       await act(async () => {
-        fireEvent.click(screen.getByText('Start Build'));
+        fireEvent.click(screen.getByText('Confirm'));
       });
       await act(async () => {
         sseHandlers.onBuildCompleted?.({ status: 'ImageBuilt', gitTag: 'v1.0' });
@@ -172,8 +198,9 @@ describe('BuildWizard', () => {
 
     it('disables push button during active push', async () => {
       render(<BuildWizard {...defaultProps} />);
+      act(() => { fireEvent.click(screen.getByText('Start Build')); });
       await act(async () => {
-        fireEvent.click(screen.getByText('Start Build'));
+        fireEvent.click(screen.getByText('Confirm'));
       });
       await act(async () => {
         sseHandlers.onBuildCompleted?.({ status: 'ImageBuilt', gitTag: 'v1.0' });
@@ -186,8 +213,9 @@ describe('BuildWizard', () => {
 
     it('clears activeOp on push completed', async () => {
       render(<BuildWizard {...defaultProps} />);
+      act(() => { fireEvent.click(screen.getByText('Start Build')); });
       await act(async () => {
-        fireEvent.click(screen.getByText('Start Build'));
+        fireEvent.click(screen.getByText('Confirm'));
       });
       await act(async () => {
         sseHandlers.onBuildCompleted?.({ status: 'ImageBuilt', gitTag: 'v1.0' });
@@ -204,8 +232,9 @@ describe('BuildWizard', () => {
 
     it('shows SSE reconnect warning during active operation', async () => {
       render(<BuildWizard {...defaultProps} />);
+      act(() => { fireEvent.click(screen.getByText('Start Build')); });
       await act(async () => {
-        fireEvent.click(screen.getByText('Start Build'));
+        fireEvent.click(screen.getByText('Confirm'));
       });
       await act(async () => {
         sseHandlers.onConnectionChange?.('reconnecting');
@@ -216,8 +245,9 @@ describe('BuildWizard', () => {
 
     it('clears activeOp on deploy completed', async () => {
       render(<BuildWizard {...defaultProps} />);
+      act(() => { fireEvent.click(screen.getByText('Start Build')); });
       await act(async () => {
-        fireEvent.click(screen.getByText('Start Build'));
+        fireEvent.click(screen.getByText('Confirm'));
       });
       await act(async () => {
         sseHandlers.onBuildCompleted?.({ status: 'ImageBuilt', gitTag: 'v1.0' });
@@ -240,8 +270,9 @@ describe('BuildWizard', () => {
 
     it('disconnects SSE on build completed terminal status', async () => {
       render(<BuildWizard {...defaultProps} />);
+      act(() => { fireEvent.click(screen.getByText('Start Build')); });
       await act(async () => {
-        fireEvent.click(screen.getByText('Start Build'));
+        fireEvent.click(screen.getByText('Confirm'));
       });
       expect(buildSse.disconnect).not.toHaveBeenCalled();
       await act(async () => {
@@ -252,8 +283,9 @@ describe('BuildWizard', () => {
 
     it('disconnects SSE on push completed', async () => {
       render(<BuildWizard {...defaultProps} />);
+      act(() => { fireEvent.click(screen.getByText('Start Build')); });
       await act(async () => {
-        fireEvent.click(screen.getByText('Start Build'));
+        fireEvent.click(screen.getByText('Confirm'));
       });
       await act(async () => {
         sseHandlers.onBuildCompleted?.({ status: 'ImageBuilt', gitTag: 'v1.0' });
@@ -270,8 +302,9 @@ describe('BuildWizard', () => {
 
     it('disconnects SSE on deploy completed', async () => {
       render(<BuildWizard {...defaultProps} />);
+      act(() => { fireEvent.click(screen.getByText('Start Build')); });
       await act(async () => {
-        fireEvent.click(screen.getByText('Start Build'));
+        fireEvent.click(screen.getByText('Confirm'));
       });
       await act(async () => {
         sseHandlers.onBuildCompleted?.({ status: 'ImageBuilt', gitTag: 'v1.0' });
@@ -293,8 +326,9 @@ describe('BuildWizard', () => {
 
     it('switches phase to pipeline when push starts so elapsed timer is visible', async () => {
       render(<BuildWizard {...defaultProps} />);
+      act(() => { fireEvent.click(screen.getByText('Start Build')); });
       await act(async () => {
-        fireEvent.click(screen.getByText('Start Build'));
+        fireEvent.click(screen.getByText('Confirm'));
       });
       await act(async () => {
         sseHandlers.onBuildCompleted?.({ status: 'ImageBuilt', gitTag: 'v1.0' });
@@ -308,8 +342,9 @@ describe('BuildWizard', () => {
 
     it('switches phase to pipeline when deploy starts so elapsed timer is visible', async () => {
       render(<BuildWizard {...defaultProps} />);
+      act(() => { fireEvent.click(screen.getByText('Start Build')); });
       await act(async () => {
-        fireEvent.click(screen.getByText('Start Build'));
+        fireEvent.click(screen.getByText('Confirm'));
       });
       await act(async () => {
         sseHandlers.onBuildCompleted?.({ status: 'ImageBuilt', gitTag: 'v1.0' });
@@ -329,8 +364,9 @@ describe('BuildWizard', () => {
     it('resets activeOp to idle when build start API call fails', async () => {
       (api.post as jest.Mock).mockRejectedValueOnce({ message: 'Server error' });
       render(<BuildWizard {...defaultProps} />);
+      act(() => { fireEvent.click(screen.getByText('Start Build')); });
       await act(async () => {
-        fireEvent.click(screen.getByText('Start Build'));
+        fireEvent.click(screen.getByText('Confirm'));
       });
       expect(screen.queryByText('Building...')).not.toBeInTheDocument();
       expect(screen.getByText('Start Build')).toBeInTheDocument();
@@ -341,8 +377,9 @@ describe('BuildWizard', () => {
         .mockResolvedValueOnce({ buildId: 'test-123' })   // build start
         .mockRejectedValueOnce({ message: 'Push error' }); // push start
       render(<BuildWizard {...defaultProps} />);
+      act(() => { fireEvent.click(screen.getByText('Start Build')); });
       await act(async () => {
-        fireEvent.click(screen.getByText('Start Build'));
+        fireEvent.click(screen.getByText('Confirm'));
       });
       await act(async () => {
         sseHandlers.onBuildCompleted?.({ status: 'ImageBuilt', gitTag: 'v1.0' });
@@ -351,6 +388,89 @@ describe('BuildWizard', () => {
         fireEvent.click(screen.getByText('Push to Registry'));
       });
       expect(screen.queryByText('Pushing to registry...')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Step Picker / Express Build', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      sseHandlers = {};
+      (api.post as jest.Mock).mockResolvedValue({ buildId: 'test-123' });
+      (api.get as jest.Mock).mockResolvedValue({ id: 'test-123', status: 'Building' });
+    });
+
+    it('opens step picker when Start Build is clicked', () => {
+      render(<BuildWizard {...defaultProps} />);
+      act(() => { fireEvent.click(screen.getByText('Start Build')); });
+      expect(screen.getByTestId('step-picker')).toBeInTheDocument();
+    });
+
+    it('starts build when step picker is confirmed', async () => {
+      render(<BuildWizard {...defaultProps} />);
+      act(() => { fireEvent.click(screen.getByText('Start Build')); });
+      await act(async () => {
+        fireEvent.click(screen.getByText('Confirm'));
+      });
+      expect(api.post).toHaveBeenCalledWith('/api/builds/start', expect.any(Object));
+    });
+
+    it('closes step picker when Cancel Picker is clicked', () => {
+      render(<BuildWizard {...defaultProps} />);
+      act(() => { fireEvent.click(screen.getByText('Start Build')); });
+      act(() => { fireEvent.click(screen.getByText('Cancel Picker')); });
+      expect(screen.queryByTestId('step-picker')).not.toBeInTheDocument();
+    });
+
+    it('select-all checks all three steps', () => {
+      render(<BuildWizard {...defaultProps} />);
+      act(() => { fireEvent.click(screen.getByText('Start Build')); });
+      act(() => { fireEvent.click(screen.getByText('Select All')); });
+      expect(screen.getByTestId('step-build')).toBeChecked();
+      expect(screen.getByTestId('step-push')).toBeChecked();
+      expect(screen.getByTestId('step-deploy')).toBeChecked();
+    });
+
+    it('auto-chains push after build when push step is selected', async () => {
+      render(<BuildWizard {...defaultProps} />);
+      act(() => { fireEvent.click(screen.getByText('Start Build')); });
+      fireEvent.click(screen.getByText('Select All')); // ensure push is selected
+      await act(async () => { fireEvent.click(screen.getByText('Confirm')); });
+      await act(async () => {
+        sseHandlers.onBuildCompleted?.({ status: 'ImageBuilt', gitTag: 'v1.0' });
+      });
+      await act(async () => {}); // flush pendingChain useEffect
+      expect(api.post).toHaveBeenCalledWith('/api/builds/test-123/push', {});
+    });
+
+    it('auto-chains deploy after push when deploy step is selected', async () => {
+      render(<BuildWizard {...defaultProps} />);
+      act(() => { fireEvent.click(screen.getByText('Start Build')); });
+      fireEvent.click(screen.getByText('Select All')); // ensure push + deploy selected
+      await act(async () => { fireEvent.click(screen.getByText('Confirm')); });
+      await act(async () => {
+        sseHandlers.onBuildCompleted?.({ status: 'ImageBuilt', gitTag: 'v1.0' });
+      });
+      await act(async () => {}); // flush push chain
+      await act(async () => {
+        sseHandlers.onPushCompleted?.({ status: 'PushSucceeded' });
+      });
+      await act(async () => {}); // flush deploy chain
+      expect(api.post).toHaveBeenCalledWith('/api/builds/test-123/deploy', expect.any(Object));
+    });
+
+    it('does not auto-chain push when push step is not selected', async () => {
+      render(<BuildWizard {...defaultProps} />);
+      act(() => { fireEvent.click(screen.getByText('Start Build')); });
+      // push and deploy unchecked by default — just confirm build-only
+      await act(async () => { fireEvent.click(screen.getByText('Confirm')); });
+      await act(async () => {
+        sseHandlers.onBuildCompleted?.({ status: 'ImageBuilt', gitTag: 'v1.0' });
+      });
+      await act(async () => {}); // flush any effects
+      const pushCalls = (api.post as jest.Mock).mock.calls.filter(
+        ([url]: [string]) => url.includes('/push')
+      );
+      expect(pushCalls).toHaveLength(0);
     });
   });
 
