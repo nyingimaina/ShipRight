@@ -23,14 +23,13 @@ public class BuildOrchestrator
     private readonly BuildEventBus _bus;
     private readonly IProcessRunner _runner;
     private readonly ISshRunner _ssh;
-    private readonly Dictionary<string, TaskCompletionSource<RespondRequest>> _pauseWaiters = new();
+    // BRS #2: ConcurrentDictionary prevents data race between pipeline thread and HTTP handler
+    private readonly ConcurrentDictionary<string, TaskCompletionSource<RespondRequest>> _pauseWaiters = new();
     private static readonly ConcurrentDictionary<string, CancellationTokenSource> _cancellations = new();
-    private static readonly HttpClient _httpClient = new();
-    private static readonly Dictionary<string, int> _stepNumbers = new()
-    {
-        ["PreconditionCheck"] = 1, ["GitStatusCheck"] = 2, ["BranchCheck"] = 3,
-        ["WriteVersionsAndTag"] = 4, ["ComposeRepoSync"] = 5, ["DockerBuild"] = 6, ["BuildComplete"] = 7,
-    };
+    // BRS #5: 20s timeout prevents pipeline hanging > 1 min on unreachable GitHub API
+    private static readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(20) };
+    // BRS #9: one semaphore per project — only one build may run at a time
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> _projectLocks = new();
 
     public bool CancelBuild(string buildId)
     {
@@ -71,9 +70,19 @@ public class BuildOrchestrator
             Versions = versions,
         };
 
+        // BRS #9: enforce one build at a time per project
+        var sem = _projectLocks.GetOrAdd(request.ProjectId, _ => new SemaphoreSlim(1, 1));
+        if (!await sem.WaitAsync(TimeSpan.Zero))
+            throw new InvalidOperationException(
+                $"A build for project '{request.ProjectId}' is already in progress.");
+
         await _buildStore.SaveAsync(record);
         _bus.Register(record.Id);
-        _ = Task.Run(() => RunPipelineAsync(record, project));
+        _ = Task.Run(async () =>
+        {
+            try   { await RunPipelineAsync(record, project); }
+            finally { sem.Release(); }
+        });
         return record;
     }
 
@@ -137,7 +146,7 @@ public class BuildOrchestrator
         }
 
         record.StepDurations["Deploy"] = (int)(DateTime.UtcNow - deployStartedAt).TotalSeconds;
-        record.LogOutput += $"\n[Deployment finished: {record.Status}]";
+        record.AppendLogLine($"[Deployment finished: {record.Status}]");
         await _buildStore.SaveAsync(record);
         await ctx.DeployCompletedAsync();
     }
@@ -145,8 +154,9 @@ public class BuildOrchestrator
     public async Task<bool> RespondAsync(string buildId, RespondRequest response)
     {
         if (!_pauseWaiters.TryGetValue(buildId, out var tcs)) return false;
-        tcs.SetResult(response);
-        _pauseWaiters.Remove(buildId);
+        // BRS #4: TrySetResult prevents InvalidOperationException on double-submit or late response
+        if (!tcs.TrySetResult(response)) return false;
+        _pauseWaiters.TryRemove(buildId, out _);
         return true;
     }
 
@@ -312,14 +322,14 @@ public class BuildOrchestrator
                 var candidate = recentBuilds
                     .Where(b => b.Id != record.Id && b.Status == BuildStatus.BuildFailed && b.FailedStep != null)
                     .Where(b => b.SucceededSteps.Contains("WriteVersionsAndTag"))
-                    .Where(b => _stepNumbers.TryGetValue(b.FailedStep!, out var n) && n > 3)
+                    .Where(b => PipelineStep.All.Any(s => s.Name == b.FailedStep && s.Number > 3))
                     .FirstOrDefault(b => b.Versions.Count == record.Versions.Count &&
                                          b.Versions.All(lv => record.Versions.Any(rv =>
                                              rv.ServiceName == lv.ServiceName && rv.NewVersion == lv.NewVersion)));
 
                 if (candidate != null)
                 {
-                    var failedStepNum = _stepNumbers[candidate.FailedStep!];
+                    var failedStepNum = PipelineStep.NumberOf(candidate.FailedStep!);
                     await ctx.PauseAsync("smart_resume",
                         $"Last build failed at '{candidate.FailedStep}'. No code changes detected — resume from '{candidate.FailedStep}', skipping already-completed steps?",
                         ["resume", "start_fresh"]);

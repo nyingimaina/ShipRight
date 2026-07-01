@@ -1,30 +1,157 @@
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
 
+/* ── Design tokens — dark (default) ──────────────────────────────────────── */
+:root {
+  /* Backgrounds */
+  --bg-base:     #0B1120;
+  --bg-card:     #131D30;
+  --bg-elevated: #1A2640;
+  --bg-input:    #0F1825;
+  --bg-overlay:  rgba(0, 0, 0, 0.65);
+
+  /* Text */
+  --text-primary:   #F0F2F5;
+  --text-secondary: #A8B8CC;
+  --text-muted:     #637389;
+
+  /* Accent (gold) */
+  --accent:        #C9A84C;
+  --accent-rgb:    201, 168, 76;
+  --accent-dim:    rgba(201, 168, 76, 0.10);
+  --accent-border: rgba(201, 168, 76, 0.20);
+
+  /* Status */
+  --success:       #3D9970;
+  --success-rgb:   61, 153, 112;
+  --success-dim:   rgba(61, 153, 112, 0.10);
+  --success-border:rgba(61, 153, 112, 0.25);
+
+  --error:         #B84040;
+  --error-rgb:     184, 64, 64;
+  --error-dim:     rgba(184, 64, 64, 0.10);
+  --error-border:  rgba(184, 64, 64, 0.20);
+
+  --warning:       #C9943A;
+  --warning-rgb:   201, 148, 58;
+  --warning-dim:   rgba(201, 148, 58, 0.10);
+
+  --info:          #4A7FA8;
+  --info-rgb:      74, 127, 168;
+  --info-dim:      rgba(74, 127, 168, 0.12);
+
+  /* Borders */
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-medium: rgba(255, 255, 255, 0.14);
+  --border-strong: rgba(255, 255, 255, 0.22);
+}
+
+/* ── Light theme ─────────────────────────────────────────────────────────── */
+[data-theme="light"] {
+  --bg-base:     #F0F4F8;
+  --bg-card:     #FFFFFF;
+  --bg-elevated: #F8FAFC;
+  --bg-input:    #FFFFFF;
+  --bg-overlay:  rgba(0, 0, 0, 0.45);
+
+  --text-primary:   #1A2640;
+  --text-secondary: #4A5B70;
+  --text-muted:     #7A8FA6;
+
+  --accent:        #9A7030;
+  --accent-rgb:    154, 112, 48;
+  --accent-dim:    rgba(154, 112, 48, 0.10);
+  --accent-border: rgba(154, 112, 48, 0.20);
+
+  --success:       #276B49;
+  --success-rgb:   39, 107, 73;
+  --success-dim:   rgba(39, 107, 73, 0.09);
+  --success-border:rgba(39, 107, 73, 0.22);
+
+  --error:         #9B2020;
+  --error-rgb:     155, 32, 32;
+  --error-dim:     rgba(155, 32, 32, 0.08);
+  --error-border:  rgba(155, 32, 32, 0.18);
+
+  --warning:       #9A6820;
+  --warning-rgb:   154, 104, 32;
+  --warning-dim:   rgba(154, 104, 32, 0.09);
+
+  --info:          #2A5F88;
+  --info-rgb:      42, 95, 136;
+  --info-dim:      rgba(42, 95, 136, 0.10);
+
+  --border-subtle: rgba(0, 0, 0, 0.08);
+  --border-medium: rgba(0, 0, 0, 0.13);
+  --border-strong: rgba(0, 0, 0, 0.22);
+}
+
+/* ── System preference: apply light tokens when no explicit choice is made ─ */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]):not([data-theme="light"]) {
+    --bg-base:     #F0F4F8;
+    --bg-card:     #FFFFFF;
+    --bg-elevated: #F8FAFC;
+    --bg-input:    #FFFFFF;
+    --bg-overlay:  rgba(0, 0, 0, 0.45);
+
+    --text-primary:   #1A2640;
+    --text-secondary: #4A5B70;
+    --text-muted:     #7A8FA6;
+
+    --accent:        #9A7030;
+    --accent-rgb:    154, 112, 48;
+    --accent-dim:    rgba(154, 112, 48, 0.10);
+    --accent-border: rgba(154, 112, 48, 0.20);
+
+    --success:       #276B49;
+    --success-rgb:   39, 107, 73;
+    --success-dim:   rgba(39, 107, 73, 0.09);
+    --success-border:rgba(39, 107, 73, 0.22);
+
+    --error:         #9B2020;
+    --error-rgb:     155, 32, 32;
+    --error-dim:     rgba(155, 32, 32, 0.08);
+    --error-border:  rgba(155, 32, 32, 0.18);
+
+    --warning:       #9A6820;
+    --warning-rgb:   154, 104, 32;
+    --warning-dim:   rgba(154, 104, 32, 0.09);
+
+    --info:          #2A5F88;
+    --info-rgb:      42, 95, 136;
+    --info-dim:      rgba(42, 95, 136, 0.10);
+
+    --border-subtle: rgba(0, 0, 0, 0.08);
+    --border-medium: rgba(0, 0, 0, 0.13);
+    --border-strong: rgba(0, 0, 0, 0.22);
+  }
+}
+
+/* ── Base styles ─────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body {
-  background: #0B1120;
-  color: #F0F2F5;
+  background: var(--bg-base);
+  color: var(--text-primary);
   font-size: 14px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
+  transition: background 0.2s ease, color 0.2s ease;
 }
 
-a { color: #C9A84C; text-decoration: none; }
+a { color: var(--accent); text-decoration: none; }
 
 code, pre { font-family: 'JetBrains Mono', 'Fira Code', monospace; }
 
-/* ── Shared animation primitives ─────────────────────────────────────────── */
+/* ── Animation primitives ───────────────────────────────────────────────── */
 
-/* Heartbeat: apply to any container that is actively doing work */
 @keyframes alive-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(201, 168, 76, 0.22); }
-  50%       { box-shadow: 0 0 0 7px rgba(201, 168, 76, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0.22); }
+  50%       { box-shadow: 0 0 0 7px rgba(var(--accent-rgb), 0); }
 }
 .alive { animation: alive-pulse 2s ease-in-out infinite; }
 
-/* Skeleton shimmer for loading placeholders */
 @keyframes shimmer {
   0%   { background-position: -600px 0; }
   100% { background-position: 600px 0; }
@@ -32,27 +159,27 @@ code, pre { font-family: 'JetBrains Mono', 'Fira Code', monospace; }
 .skeleton {
   background: linear-gradient(
     90deg,
-    rgba(26, 38, 64, 0.9) 25%,
-    rgba(35, 47, 71, 0.9) 50%,
-    rgba(26, 38, 64, 0.9) 75%
+    var(--bg-elevated) 25%,
+    var(--bg-card) 50%,
+    var(--bg-elevated) 75%
   );
   background-size: 1200px 100%;
   animation: shimmer 1.6s ease-in-out infinite;
   border-radius: 4px;
 }
 
-/* Elapsed timer bar — reusable across pages */
+/* Elapsed timer bar */
 .elapsedBar {
   display: flex;
   align-items: center;
   gap: 10px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 12px;
-  color: #637389;
+  color: var(--text-muted);
   padding: 6px 0 2px;
 }
 .elapsedTime {
-  color: #C9A84C;
+  color: var(--accent);
   font-weight: 700;
   letter-spacing: 0.06em;
   font-variant-numeric: tabular-nums;
@@ -61,7 +188,7 @@ code, pre { font-family: 'JetBrains Mono', 'Fira Code', monospace; }
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #C9A84C;
+  background: var(--accent);
   animation: alive-pulse 1.4s ease-in-out infinite;
   flex-shrink: 0;
 }

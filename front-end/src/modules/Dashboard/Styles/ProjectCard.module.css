@@ -1,6 +1,6 @@
 .card {
-  background: #131D30;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
   border-radius: 10px;
   padding: 20px;
   display: flex;
@@ -11,7 +11,7 @@
   text-decoration: none;
 }
 
-.card:hover { border-color: rgba(255, 255, 255, 0.18); }
+.card:hover { border-color: var(--border-medium); }
 
 .cardHeader {
   display: flex;
@@ -23,12 +23,10 @@
 .projectName {
   font-size: 15px;
   font-weight: 700;
-  color: #F0F2F5;
+  color: var(--text-primary);
 }
 
-.buildBtn {
-  flex-shrink: 0;
-}
+.buildBtn { flex-shrink: 0; }
 
 .chips {
   display: flex;
@@ -37,8 +35,8 @@
 }
 
 .chip {
-  background: rgba(201, 168, 76, 0.12);
-  color: #C9A84C;
+  background: var(--accent-dim);
+  color: var(--accent);
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
   padding: 2px 8px;
@@ -46,11 +44,11 @@
   font-weight: 500;
 }
 
-.chipUnknown { background: #1A2640; color: #637389; }
+.chipUnknown { background: var(--bg-elevated); color: var(--text-muted); }
 
 .chipDb {
-  background: rgba(74, 127, 168, 0.15);
-  color: #4A7FA8;
+  background: var(--info-dim);
+  color: var(--info);
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
   padding: 2px 8px;
@@ -59,7 +57,7 @@
   text-decoration: none;
   transition: background 0.15s;
 }
-.chipDb:hover { background: rgba(74, 127, 168, 0.28); }
+.chipDb:hover { background: rgba(var(--info-rgb), 0.25); }
 
 .meta {
   display: flex;
@@ -72,10 +70,10 @@
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: #A8B8CC;
+  color: var(--text-secondary);
 }
 
-.metaLabel { color: #637389; min-width: 80px; }
+.metaLabel { color: var(--text-muted); min-width: 80px; }
 
 .statusBadge {
   display: inline-block;
@@ -85,27 +83,30 @@
   font-weight: 600;
 }
 
-.statusBuildSucceeded { background: rgba(61,153,112,0.15); color: #3D9970; }
-.statusDeployed       { background: rgba(61,153,112,0.15); color: #3D9970; }
-.statusRunning        { background: rgba(201,168,76,0.15);  color: #C9A84C; }
-.statusBuildFailed    { background: rgba(184,64,64,0.15);   color: #B84040; }
-.statusDeployFailed   { background: rgba(184,64,64,0.15);   color: #B84040; }
-.statusAborted        { background: rgba(99,115,137,0.15);  color: #637389; }
-.statusInterrupted    { background: rgba(201,148,58,0.15);  color: #C9943A; }
-.statusPending        { background: rgba(99,115,137,0.15);  color: #637389; }
-.statusDeploying      { background: rgba(201,168,76,0.15);  color: #C9A84C; }
-.statusPaused         { background: rgba(74,127,168,0.15);  color: #4A7FA8; }
+.statusBuildSucceeded { background: var(--success-dim); color: var(--success); }
+.statusDeployed       { background: var(--success-dim); color: var(--success); }
+.statusRunning        { background: var(--accent-dim);  color: var(--accent); }
+.statusBuildFailed    { background: var(--error-dim);   color: var(--error); }
+.statusDeployFailed   { background: var(--error-dim);   color: var(--error); }
+.statusAborted        { background: rgba(var(--text-muted), 0.12); color: var(--text-muted); }
+.statusInterrupted    { background: var(--warning-dim); color: var(--warning); }
+.statusPending        { background: rgba(var(--text-muted), 0.12); color: var(--text-muted); }
+.statusDeploying      { background: var(--accent-dim);  color: var(--accent); }
+.statusPaused         { background: var(--info-dim);    color: var(--info); }
+.statusImageBuilt     { background: var(--info-dim);    color: var(--info); }
+.statusPushSucceeded  { background: var(--success-dim); color: var(--success); }
+.statusPushFailed     { background: var(--error-dim);   color: var(--error); }
 
 .successBar {
   height: 4px;
-  background: #1A2640;
+  background: var(--bg-elevated);
   border-radius: 2px;
   overflow: hidden;
 }
 
 .successFill {
   height: 100%;
-  background: #3D9970;
+  background: var(--success);
   border-radius: 2px;
   transition: width 0.4s ease;
 }
@@ -113,16 +114,12 @@
 .tagMono {
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
-  color: #637389;
+  color: var(--text-muted);
 }
-
-.statusImageBuilt    { background: rgba(74,127,168,0.15);  color: #4A7FA8; }
-.statusPushSucceeded { background: rgba(61,153,112,0.15);  color: #3D9970; }
-.statusPushFailed    { background: rgba(184,64,64,0.15);   color: #B84040; }
 
 .quickActions {
   display: flex;
   gap: 8px;
   padding-top: 4px;
-  border-top: 1px solid rgba(255,255,255,0.06);
+  border-top: 1px solid var(--border-subtle);
 }

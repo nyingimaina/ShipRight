@@ -51,9 +51,9 @@ try
                   .AllowAnyHeader()
                   .AllowAnyMethod()));
 
-    builder.Services.AddSingleton<JsonProjectStore>();
+    builder.Services.AddSingleton<SqliteProjectStore>(_ => new SqliteProjectStore(dataDir));
     builder.Services.AddSingleton<IProjectStore>(sp =>
-        new DockerCredentialPreservingProjectStore(sp.GetRequiredService<JsonProjectStore>()));
+        new DockerCredentialPreservingProjectStore(sp.GetRequiredService<SqliteProjectStore>()));
     builder.Services.AddSingleton<IBuildStore, JsonBuildStore>();
     builder.Services.AddSingleton<BuildEventBus>();
     builder.Services.AddSingleton<IProcessRunner, ProcessRunner>();
@@ -107,7 +107,7 @@ try
 
     var projectCount = app.Services.GetRequiredService<IProjectStore>().Count;
     var buildCount   = app.Services.GetRequiredService<IBuildStore>().Count;
-    Log.Information("ShipRight {Version} starting on port {Port}", "2.2.4", 5200);
+    Log.Information("ShipRight {Version} starting on port {Port}", "2.6.0", 5200);
     Log.Information("Data directory: {DataDir}", dataDir);
     Log.Information("{ProjectCount} projects, {BuildCount} builds loaded", projectCount, buildCount);
 

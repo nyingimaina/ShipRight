@@ -1,0 +1,46 @@
+.toggle {
+  display: flex;
+  background: var(--bg-base);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 3px;
+  gap: 2px;
+  width: 100%;
+}
+
+.option {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 7px 6px;
+  border-radius: 5px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 500;
+  transition: background 0.12s, color 0.12s;
+  min-height: 34px; /* touch target */
+  white-space: nowrap;
+}
+
+.option:hover {
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+}
+
+.active {
+  background: var(--bg-elevated);
+  color: var(--accent);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+
+.label {
+  /* Hide labels on very narrow sidebars */
+  @media (max-width: 900px) {
+    display: none;
+  }
+}

@@ -1,6 +1,6 @@
 .tabList {
   display: flex;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--border-subtle);
   margin-bottom: 24px;
   padding: 0;
   list-style: none;
@@ -12,56 +12,35 @@
   border: none;
   border-bottom: 2px solid transparent;
   background: none;
-  color: #A8B8CC;
+  color: var(--text-secondary);
   font-size: 14px;
   font-weight: 400;
   outline: none;
 }
 
-.tabActive {
-  color: #C9A84C;
-  border-bottom-color: #C9A84C;
-  font-weight: 600;
-}
+.tabActive { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.tabError  { color: var(--error); }
 
-.tabError {
-  color: #B84040;
-}
+.errorDot  { color: var(--error); margin-left: 4px; }
 
-.errorDot {
-  color: #B84040;
-  margin-left: 4px;
-}
+.panel       { display: none; }
+.panelActive { display: block; }
 
-.panel {
-  display: none;
-}
-
-.panelActive {
-  display: block;
-}
-
-.formRow {
-  margin-bottom: 16px;
-}
+.formRow { margin-bottom: 16px; }
 
 .label {
   display: block;
   font-size: 12px;
-  color: #A8B8CC;
+  color: var(--text-secondary);
   margin-bottom: 4px;
   font-weight: 500;
 }
 
-.errorText {
-  color: #B84040;
-  font-size: 12px;
-  margin-top: 4px;
-}
+.errorText { color: var(--error); font-size: 12px; margin-top: 4px; }
 
 .serviceCard {
-  background: #131D30;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 12px;
@@ -74,15 +53,12 @@
   margin-bottom: 12px;
 }
 
-.serviceLabel {
-  font-weight: 600;
-  color: #A8B8CC;
-}
+.serviceLabel { font-weight: 600; color: var(--text-secondary); }
 
 .footer {
   display: flex;
   gap: 8px;
   margin-top: 32px;
   padding-top: 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--border-subtle);
 }
