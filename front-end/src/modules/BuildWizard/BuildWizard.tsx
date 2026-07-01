@@ -150,6 +150,24 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
     }
   }, [isOpen, projectId]);
 
+  // Restore stored log when reopening a known build (e.g. after closing mid-job or re-entering push/deploy flow)
+  useEffect(() => {
+    if (!isOpen || !initialBuildId) return;
+    api.getRaw(`/api/builds/${initialBuildId}/log`).then(content => {
+      if (!content.trim()) return;
+      const parsed: LogEntry[] = content.split('\n').filter(Boolean).map((line, i) => ({
+        id: i,
+        source: line.startsWith('[docker]') ? 'docker'
+              : line.startsWith('[git]')    ? 'git'
+              : line.startsWith('[ssh]')    ? 'ssh'
+              : 'shipright',
+        line,
+      }));
+      lineCounterRef.current = parsed.length;
+      setLines(parsed);
+    }).catch(() => {});
+  }, [isOpen, initialBuildId]);
+
   // Elapsed timer — runs while pipeline phase is active
   useEffect(() => {
     if (phase === 'pipeline') {

@@ -353,4 +353,55 @@ describe('BuildWizard', () => {
       expect(screen.queryByText('Pushing to registry...')).not.toBeInTheDocument();
     });
   });
+
+  describe('log restoration via initialBuildId', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      (api.get as jest.Mock).mockImplementation((url: string) => {
+        if (url.includes('/builds/')) {
+          return Promise.resolve({ id: 'build-123', status: 'ImageBuilt', gitTag: 'v1.0' });
+        }
+        return Promise.resolve(null); // build-stats
+      });
+    });
+
+    it('loads stored log lines from API when initialBuildId is provided', async () => {
+      (api.getRaw as jest.Mock).mockResolvedValue(
+        '[shipright] Step 1 done\n[docker] Building image\n[git] Pushing tag\n'
+      );
+
+      render(<BuildWizard {...defaultProps} initialBuildId="build-123" />);
+      await act(async () => {});
+
+      expect(api.getRaw).toHaveBeenCalledWith('/api/builds/build-123/log');
+      expect(screen.getByText('[shipright] Step 1 done')).toBeInTheDocument();
+      expect(screen.getByText('[docker] Building image')).toBeInTheDocument();
+      expect(screen.getByText('[git] Pushing tag')).toBeInTheDocument();
+    });
+
+    it('does not call getRaw when no initialBuildId is provided', async () => {
+      render(<BuildWizard {...defaultProps} />);
+      await act(async () => {});
+
+      expect(api.getRaw).not.toHaveBeenCalled();
+    });
+
+    it('shows log viewer in done phase when log is restored', async () => {
+      (api.getRaw as jest.Mock).mockResolvedValue('[shipright] Build complete\n');
+
+      render(<BuildWizard {...defaultProps} initialBuildId="build-123" />);
+      await act(async () => {});
+
+      expect(screen.getByTestId('log-viewer')).toBeInTheDocument();
+    });
+
+    it('silently ignores getRaw errors without crashing', async () => {
+      (api.getRaw as jest.Mock).mockRejectedValue(new Error('network error'));
+
+      expect(() => {
+        render(<BuildWizard {...defaultProps} initialBuildId="build-123" />);
+      }).not.toThrow();
+      await act(async () => {});
+    });
+  });
 });
