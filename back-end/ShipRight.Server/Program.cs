@@ -51,9 +51,9 @@ try
                   .AllowAnyHeader()
                   .AllowAnyMethod()));
 
-    builder.Services.AddSingleton<JsonProjectStore>();
+    builder.Services.AddSingleton<SqliteProjectStore>(_ => new SqliteProjectStore(dataDir));
     builder.Services.AddSingleton<IProjectStore>(sp =>
-        new DockerCredentialPreservingProjectStore(sp.GetRequiredService<JsonProjectStore>()));
+        new DockerCredentialPreservingProjectStore(sp.GetRequiredService<SqliteProjectStore>()));
     builder.Services.AddSingleton<IBuildStore, JsonBuildStore>();
     builder.Services.AddSingleton<BuildEventBus>();
     builder.Services.AddSingleton<IProcessRunner, ProcessRunner>();
