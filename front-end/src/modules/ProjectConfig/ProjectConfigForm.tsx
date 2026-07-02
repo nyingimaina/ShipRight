@@ -7,6 +7,7 @@ import ZestTextbox from 'jattac.libs.web.zest-textbox';
 import { RiAddLine, RiDeleteBinLine } from 'react-icons/ri';
 import { IApiError, IDatabaseConfig, IProjectInput, IServerConfig, DbProviderType, DeployMode, emptyDatabaseConfig, emptyProjectInput } from '@/shared/types/IProject';
 import { api } from '@/shared/ApiService';
+import SshKeySection from './SshKeySection';
 import styles from './Styles/ProjectConfigForm.module.css';
 
 interface Props {
@@ -373,6 +374,7 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
               </p>
             </div>
           )}
+          {projectId && <SshKeySection projectId={projectId} />}
         </TabPanel>
         <TabPanel className={styles.panel} selectedClassName={styles.panelActive}>
           <div className={styles.formRow} style={{ alignItems: 'center', flexDirection: 'row', gap: 12 }}>

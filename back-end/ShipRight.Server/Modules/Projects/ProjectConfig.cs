@@ -76,6 +76,8 @@ public record ServerConfig
     public string RemoteWorkingDir { get; init; } = string.Empty;
     public string RebuildScript { get; init; } = "rebuild.sh";
     public DeployMode DeployMode { get; init; } = DeployMode.GitScript;
+    /// When true, SshKeyPath points to a key generated and managed by ShipRight (via Managed SSH Key).
+    public bool ManagedSshKey { get; init; } = false;
 }
 
 public record ProjectConfig

@@ -29,6 +29,7 @@ export interface IServerConfig {
   remoteWorkingDir: string;
   rebuildScript: string;
   deployMode: DeployMode;
+  managedSshKey?: boolean;
 }
 
 export type DbProviderType = 'MariaDb' | 'SqlServer';
