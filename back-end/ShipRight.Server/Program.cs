@@ -71,6 +71,7 @@ try
     builder.Services.AddSingleton<IServerStore, JsonServerStore>();
     builder.Services.AddSingleton<SshKeyStore>(_ => new SshKeyStore(dataDir));
     builder.Services.AddSingleton<IRemoteHostProvider, LinuxSshProvider>();
+    builder.Services.AddSingleton<IMonitoringProvider, LinuxSshMonitoringProvider>();
     builder.Services.AddSchedulerModule();
     builder.Services.AddWatchBranchModule();
 

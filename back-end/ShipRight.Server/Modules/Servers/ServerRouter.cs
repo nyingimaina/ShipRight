@@ -2,6 +2,7 @@ using System.Text.Json;
 using Serilog;
 using ShipRight.Modules.Database;
 using ShipRight.Modules.Projects;
+using ShipRight.Modules.RemoteHost;
 using ShipRight.Shared.Events;
 using ShipRight.Shared.SshRunner;
 
@@ -54,6 +55,24 @@ public static class ServerRouter
 
             await store.DeleteAsync(serverId);
             return Results.Ok(new { message = "Server deleted." });
+        });
+
+        // ── Monitoring metrics ────────────────────────────────────────────────
+
+        app.MapGet("/api/servers/{serverId}/metrics", async (
+            string serverId, IServerStore store, IMonitoringProvider monitoring, CancellationToken ct) =>
+        {
+            var server = await store.GetByIdAsync(serverId);
+            if (server is null)
+                return Results.NotFound(new { isError = true, message = $"Server '{serverId}' not found." });
+
+            if (string.IsNullOrWhiteSpace(server.SshKeyPath))
+                return Results.Ok(SystemMetrics.Unreachable(
+                    "No SSH key configured — generate one in the Server settings."));
+
+            var config = new RemoteHostConfig(server.Host, 22, server.Username);
+            var metrics = await monitoring.GetMetricsAsync(config, server.SshKeyPath, ct);
+            return Results.Ok(metrics);
         });
 
         // ── SSH exec (standalone, no project dependency) ──────────────────────
