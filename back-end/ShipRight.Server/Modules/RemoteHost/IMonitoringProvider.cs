@@ -10,6 +10,12 @@ public record ContainerMetric(
     long MemUsedMb,
     long MemLimitMb);
 
+public record SslCertMetric(string Domain, DateTime IssuedUtc, DateTime ExpiresUtc);
+
+public record OomEventMetric(string ProcessName, long Pid, long MemoryMb, string? OccurredAt);
+
+public record ZombieProcess(long Pid, string ProcessName, string ParentName);
+
 public record SystemMetrics(
     bool Reachable,
     double CpuPercent,
@@ -23,10 +29,14 @@ public record SystemMetrics(
     long UptimeSeconds,
     IReadOnlyList<DiskMetric> Disks,
     IReadOnlyList<ContainerMetric> Containers,
+    IReadOnlyList<SslCertMetric> Certs,
+    IReadOnlyList<OomEventMetric> OomEvents,
+    IReadOnlyList<ZombieProcess> Zombies,
+    IReadOnlyList<string> FailedServices,
     string? Error = null)
 {
     public static SystemMetrics Unreachable(string error) =>
-        new(false, 0, 0, 0, 0, 0, 0, 0, 0, 0, [], [], error);
+        new(false, 0, 0, 0, 0, 0, 0, 0, 0, 0, [], [], [], [], [], [], error);
 }
 
 public interface IMonitoringProvider

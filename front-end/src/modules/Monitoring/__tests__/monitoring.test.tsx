@@ -1,5 +1,5 @@
-import { render, screen, waitFor } from '@testing-library/react';
-import MonitoringPage from '../monitoring';
+import { render, screen } from '@testing-library/react';
+import MonitoringPage from '@/pages/monitoring';
 
 jest.mock('next/head', () => ({ __esModule: true, default: ({ children }: any) => <>{children}</> }));
 jest.mock('next/router', () => ({ useRouter: () => ({ push: jest.fn(), pathname: '/monitoring' }) }));
@@ -17,6 +17,10 @@ jest.mock('jattac-web-poller', () => ({
 
 const mockServer = { id: 'srv1', name: 'Production', host: '1.2.3.4', username: 'ubuntu', sshKeyPath: '/key.pem' };
 
+const future = new Date(Date.now() + 45 * 86400000).toISOString();
+const past90  = new Date(Date.now() - 90 * 86400000).toISOString();
+const past3   = new Date(Date.now() - 3  * 86400000).toISOString();
+
 const mockMetrics = {
   reachable: true,
   cpuPercent: 32,
@@ -33,6 +37,17 @@ const mockMetrics = {
     { name: 'myapp', image: 'nginx:alpine', status: 'Healthy', cpuPercent: 8.5, memUsedMb: 256, memLimitMb: 1024 },
     { name: 'mydb', image: 'mariadb:10.11', status: 'Stopped', cpuPercent: 0, memUsedMb: 0, memLimitMb: 0 },
   ],
+  certs: [
+    { domain: 'example.com', issuedUtc: past90, expiresUtc: future },
+    { domain: 'api.example.com', issuedUtc: past3, expiresUtc: past3 },
+  ],
+  oomEvents: [
+    { processName: 'java', pid: 1234, memoryMb: 512, occurredAt: 'Jun 14 at 10:23' },
+  ],
+  zombies: [
+    { pid: 5678, processName: 'worker', parentName: 'nginx' },
+  ],
+  failedServices: ['nginx.service'],
 };
 
 global.fetch = jest.fn((url: string) => {
@@ -77,5 +92,30 @@ describe('MonitoringPage', () => {
   it('shows Stopped badge for stopped containers', async () => {
     render(<MonitoringPage />);
     expect(await screen.findByText('Stopped')).toBeInTheDocument();
+  });
+
+  it('shows SSL certificate domain', async () => {
+    render(<MonitoringPage />);
+    expect(await screen.findByText('example.com')).toBeInTheDocument();
+  });
+
+  it('shows expired SSL cert badge', async () => {
+    render(<MonitoringPage />);
+    expect(await screen.findByText('api.example.com')).toBeInTheDocument();
+  });
+
+  it('shows failed service name', async () => {
+    render(<MonitoringPage />);
+    expect(await screen.findByText('nginx.service')).toBeInTheDocument();
+  });
+
+  it('shows OOM event process name', async () => {
+    render(<MonitoringPage />);
+    expect(await screen.findByText('java')).toBeInTheDocument();
+  });
+
+  it('shows zombie process name', async () => {
+    render(<MonitoringPage />);
+    expect(await screen.findByText('worker')).toBeInTheDocument();
   });
 });

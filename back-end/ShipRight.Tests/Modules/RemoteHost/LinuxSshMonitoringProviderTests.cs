@@ -172,4 +172,169 @@ public class LinuxSshMonitoringProviderTests
         Assert.AreEqual(8.5, result[0].CpuPercent, 0.01);
         Assert.AreEqual(256L, result[0].MemUsedMb);
     }
+
+    // ── ParseSslCerts ────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void ParseSslCerts_WhenEmpty_ReturnsEmpty()
+    {
+        var result = LinuxSshMonitoringProvider.ParseSslCerts([]);
+        Assert.AreEqual(0, result.Count);
+    }
+
+    [TestMethod]
+    public void ParseSslCerts_WhenUnavailable_ReturnsEmpty()
+    {
+        var result = LinuxSshMonitoringProvider.ParseSslCerts(["unavailable"]);
+        Assert.AreEqual(0, result.Count);
+    }
+
+    [TestMethod]
+    public void ParseSslCerts_ParsesDomainAndDates()
+    {
+        var lines = new[] { "example.com|Jun 15 12:00:00 2024 GMT|Sep 13 12:00:00 2024 GMT" };
+        var result = LinuxSshMonitoringProvider.ParseSslCerts(lines);
+        Assert.AreEqual(1, result.Count);
+        Assert.AreEqual("example.com", result[0].Domain);
+        Assert.AreEqual(new DateTime(2024, 6, 15, 12, 0, 0, DateTimeKind.Utc), result[0].IssuedUtc);
+        Assert.AreEqual(new DateTime(2024, 9, 13, 12, 0, 0, DateTimeKind.Utc), result[0].ExpiresUtc);
+    }
+
+    [TestMethod]
+    public void ParseSslCerts_HandlesSingleDigitDayWithDoubleSpace()
+    {
+        var lines = new[] { "example.com|Jun  5 12:00:00 2024 GMT|Sep  1 12:00:00 2024 GMT" };
+        var result = LinuxSshMonitoringProvider.ParseSslCerts(lines);
+        Assert.AreEqual(1, result.Count);
+        Assert.AreEqual(new DateTime(2024, 6, 5, 12, 0, 0, DateTimeKind.Utc), result[0].IssuedUtc);
+        Assert.AreEqual(new DateTime(2024, 9, 1, 12, 0, 0, DateTimeKind.Utc), result[0].ExpiresUtc);
+    }
+
+    [TestMethod]
+    public void ParseSslCerts_SkipsLinesWithBadDates()
+    {
+        var lines = new[] { "bad|notadate|Sep 13 12:00:00 2024 GMT", "ok|Jun 15 12:00:00 2024 GMT|Sep 13 12:00:00 2024 GMT" };
+        var result = LinuxSshMonitoringProvider.ParseSslCerts(lines);
+        Assert.AreEqual(1, result.Count);
+        Assert.AreEqual("ok", result[0].Domain);
+    }
+
+    [TestMethod]
+    public void ParseSslCerts_ParsesMultipleCerts()
+    {
+        var lines = new[]
+        {
+            "example.com|Jun 15 12:00:00 2024 GMT|Sep 13 12:00:00 2024 GMT",
+            "api.example.com|Jul  1 00:00:00 2024 GMT|Sep 29 00:00:00 2024 GMT",
+        };
+        var result = LinuxSshMonitoringProvider.ParseSslCerts(lines);
+        Assert.AreEqual(2, result.Count);
+        Assert.AreEqual("api.example.com", result[1].Domain);
+        Assert.AreEqual(new DateTime(2024, 7, 1, 0, 0, 0, DateTimeKind.Utc), result[1].IssuedUtc);
+    }
+
+    // ── ParseFailedServices ──────────────────────────────────────────────────
+
+    [TestMethod]
+    public void ParseFailedServices_WhenEmpty_ReturnsEmpty()
+    {
+        var result = LinuxSshMonitoringProvider.ParseFailedServices([]);
+        Assert.AreEqual(0, result.Count);
+    }
+
+    [TestMethod]
+    public void ParseFailedServices_ReturnsServiceNames()
+    {
+        var lines = new[] { "nginx.service", "postgresql.service" };
+        var result = LinuxSshMonitoringProvider.ParseFailedServices(lines);
+        Assert.AreEqual(2, result.Count);
+        Assert.AreEqual("nginx.service", result[0]);
+        Assert.AreEqual("postgresql.service", result[1]);
+    }
+
+    [TestMethod]
+    public void ParseFailedServices_SkipsBlankAndUnavailable()
+    {
+        var lines = new[] { "", "  ", "unavailable", "myapp.service" };
+        var result = LinuxSshMonitoringProvider.ParseFailedServices(lines);
+        Assert.AreEqual(1, result.Count);
+        Assert.AreEqual("myapp.service", result[0]);
+    }
+
+    // ── ParseOomEvents ───────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void ParseOomEvents_WhenEmpty_ReturnsEmpty()
+    {
+        var result = LinuxSshMonitoringProvider.ParseOomEvents([]);
+        Assert.AreEqual(0, result.Count);
+    }
+
+    [TestMethod]
+    public void ParseOomEvents_ParsesProcessNameAndPid()
+    {
+        var lines = new[]
+        {
+            "[Fri Jun 14 10:23:45 2024] Out of memory: Killed process 1234 (nginx) total-vm:102400kB, anon-rss:51200kB",
+        };
+        var result = LinuxSshMonitoringProvider.ParseOomEvents(lines);
+        Assert.AreEqual(1, result.Count);
+        Assert.AreEqual("nginx", result[0].ProcessName);
+        Assert.AreEqual(1234L, result[0].Pid);
+    }
+
+    [TestMethod]
+    public void ParseOomEvents_ParsesMemoryMb()
+    {
+        var lines = new[]
+        {
+            "[Fri Jun 14 10:23:45 2024] Out of memory: Killed process 5678 (java) total-vm:2048000kB, anon-rss:204800kB",
+        };
+        var result = LinuxSshMonitoringProvider.ParseOomEvents(lines);
+        Assert.AreEqual(200L, result[0].MemoryMb); // 204800 kB / 1024 = 200 MB
+    }
+
+    [TestMethod]
+    public void ParseOomEvents_HandlesLineWithoutDmesgTimestamp()
+    {
+        // Kernel uptime seconds format (no -T flag)
+        var lines = new[]
+        {
+            "[ 12345.678901] Out of memory: Killed process 999 (oom_victim) total-vm:512kB, anon-rss:256kB",
+        };
+        var result = LinuxSshMonitoringProvider.ParseOomEvents(lines);
+        Assert.AreEqual(1, result.Count);
+        Assert.AreEqual("oom_victim", result[0].ProcessName);
+        Assert.IsNull(result[0].OccurredAt); // Can't parse uptime seconds as wall time
+    }
+
+    // ── ParseZombies ─────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public void ParseZombies_WhenEmpty_ReturnsEmpty()
+    {
+        var result = LinuxSshMonitoringProvider.ParseZombies([]);
+        Assert.AreEqual(0, result.Count);
+    }
+
+    [TestMethod]
+    public void ParseZombies_ParsesPidProcessAndParent()
+    {
+        var lines = new[] { "1234|nginx|worker" };
+        var result = LinuxSshMonitoringProvider.ParseZombies(lines);
+        Assert.AreEqual(1, result.Count);
+        Assert.AreEqual(1234L, result[0].Pid);
+        Assert.AreEqual("worker", result[0].ProcessName);
+        Assert.AreEqual("nginx", result[0].ParentName);
+    }
+
+    [TestMethod]
+    public void ParseZombies_SkipsInvalidLines()
+    {
+        var lines = new[] { "notanumber|parent|child", "5678|bash|defunct" };
+        var result = LinuxSshMonitoringProvider.ParseZombies(lines);
+        Assert.AreEqual(1, result.Count);
+        Assert.AreEqual(5678L, result[0].Pid);
+        Assert.AreEqual("bash", result[0].ParentName);
+    }
 }

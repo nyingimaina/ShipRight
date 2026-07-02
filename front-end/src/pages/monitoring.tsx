@@ -6,11 +6,12 @@ import { api } from '@/shared/ApiService';
 import { IServerConfig } from '@/shared/types/IProject';
 import styles from './Styles/Monitoring.module.css';
 
-interface DiskMetric   { mount: string; usedGb: number; totalGb: number; }
-interface ContainerMetric {
-  name: string; image: string; status: string;
-  cpuPercent: number; memUsedMb: number; memLimitMb: number;
-}
+interface DiskMetric      { mount: string; usedGb: number; totalGb: number; }
+interface ContainerMetric { name: string; image: string; status: string; cpuPercent: number; memUsedMb: number; memLimitMb: number; }
+interface SslCertMetric   { domain: string; issuedUtc: string; expiresUtc: string; }
+interface OomEventMetric  { processName: string; pid: number; memoryMb: number; occurredAt: string | null; }
+interface ZombieProcess   { pid: number; processName: string; parentName: string; }
+
 interface SystemMetrics {
   reachable: boolean;
   cpuPercent: number;
@@ -20,6 +21,10 @@ interface SystemMetrics {
   uptimeSeconds: number;
   disks: DiskMetric[];
   containers: ContainerMetric[];
+  certs: SslCertMetric[];
+  oomEvents: OomEventMetric[];
+  zombies: ZombieProcess[];
+  failedServices: string[];
   error?: string;
 }
 type ServerMetrics = SystemMetrics & { serverId: string };
@@ -37,10 +42,24 @@ function fmtMb(mb: number): string {
   return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`;
 }
 
+function daysUntil(isoDate: string): number {
+  return Math.floor((new Date(isoDate).getTime() - Date.now()) / 86400000);
+}
+
+function daysSince(isoDate: string): number {
+  return Math.floor((Date.now() - new Date(isoDate).getTime()) / 86400000);
+}
+
 function barColor(pct: number, thresholds: [number, number]): string {
   if (pct <= thresholds[0]) return styles.green;
   if (pct <= thresholds[1]) return styles.amber;
   return styles.red;
+}
+
+function certBadgeClass(daysLeft: number): string {
+  if (daysLeft > 30) return styles.badgeHealthy;
+  if (daysLeft > 7)  return styles.badgeRestarting;
+  return styles.badgeUnhealthy;
 }
 
 function MetricBar({
@@ -55,10 +74,7 @@ function MetricBar({
       <div className={styles.metricLabel}>{label}</div>
       <div className={styles.metricExplainer}>{explainer}</div>
       <div className={styles.bar}>
-        <div
-          className={`${styles.barFill} ${barColor(pct, thresholds)}`}
-          style={{ width: `${pct}%` }}
-        />
+        <div className={`${styles.barFill} ${barColor(pct, thresholds)}`} style={{ width: `${pct}%` }} />
       </div>
       <div className={styles.metricValue}>{valueLabel}</div>
     </div>
@@ -81,15 +97,17 @@ function ServerCard({ server, metrics }: { server: IServerConfig; metrics?: Serv
   const offline  = metrics && !metrics.reachable;
   const online   = metrics?.reachable;
 
-  const dotClass = loading
-    ? styles.statusNoKey
-    : online
-      ? styles.statusOnline
-      : styles.statusOffline;
+  const dotClass = loading ? styles.statusNoKey : online ? styles.statusOnline : styles.statusOffline;
 
   const largestDisk = online
     ? [...(metrics?.disks ?? [])].sort((a, b) => (b.usedGb / b.totalGb) - (a.usedGb / a.totalGb))[0]
     : null;
+
+  const hasAnomalies = online && (
+    (metrics!.failedServices.length > 0) ||
+    (metrics!.oomEvents.length > 0) ||
+    (metrics!.zombies.length > 0)
+  );
 
   return (
     <div className={styles.serverCard}>
@@ -97,9 +115,7 @@ function ServerCard({ server, metrics }: { server: IServerConfig; metrics?: Serv
         <span className={`${styles.statusDot} ${dotClass}`} />
         <span className={styles.serverName}>{server.name || server.host}</span>
         {online && (
-          <span className={styles.serverMeta}>
-            Online for {fmtUptime(metrics!.uptimeSeconds)}
-          </span>
+          <span className={styles.serverMeta}>Online for {fmtUptime(metrics!.uptimeSeconds)}</span>
         )}
       </div>
 
@@ -113,6 +129,7 @@ function ServerCard({ server, metrics }: { server: IServerConfig; metrics?: Serv
 
       {online && (
         <>
+          {/* Resource bars */}
           <div className={styles.metrics}>
             <MetricBar
               label="Processor load"
@@ -150,27 +167,19 @@ function ServerCard({ server, metrics }: { server: IServerConfig; metrics?: Serv
             )}
           </div>
 
+          {/* Docker containers */}
           {metrics!.containers.length > 0 && (
             <>
-              <div className={styles.containersLabel}>Services</div>
+              <div className={styles.sectionLabel}>Services</div>
               <table className={styles.table}>
                 <thead>
-                  <tr>
-                    <th>Service</th>
-                    <th>Status</th>
-                    <th>Processor load</th>
-                    <th>Memory</th>
-                  </tr>
+                  <tr><th>Service</th><th>Status</th><th>CPU</th><th>Memory</th></tr>
                 </thead>
                 <tbody>
                   {metrics!.containers.map(c => (
                     <tr key={c.name}>
                       <td>{c.name}</td>
-                      <td>
-                        <span className={`${styles.badge} ${containerBadgeClass(c.status)}`}>
-                          {c.status}
-                        </span>
-                      </td>
+                      <td><span className={`${styles.badge} ${containerBadgeClass(c.status)}`}>{c.status}</span></td>
                       <td>{c.cpuPercent > 0 ? `${c.cpuPercent.toFixed(1)}%` : '—'}</td>
                       <td>{c.memUsedMb > 0 ? fmtMb(c.memUsedMb) : '—'}</td>
                     </tr>
@@ -179,9 +188,101 @@ function ServerCard({ server, metrics }: { server: IServerConfig; metrics?: Serv
               </table>
             </>
           )}
-
           {metrics!.containers.length === 0 && (
             <p className={styles.noContainers}>No Docker services found on this server.</p>
+          )}
+
+          {/* SSL certificates */}
+          {metrics!.certs.length > 0 && (
+            <>
+              <div className={styles.sectionLabel}>SSL Certificates</div>
+              <table className={styles.table}>
+                <thead>
+                  <tr><th>Domain</th><th>Expires</th><th>Renewed</th></tr>
+                </thead>
+                <tbody>
+                  {metrics!.certs.map(c => {
+                    const days = daysUntil(c.expiresUtc);
+                    const renewed = daysSince(c.issuedUtc);
+                    return (
+                      <tr key={c.domain}>
+                        <td>{c.domain}</td>
+                        <td>
+                          <span className={`${styles.badge} ${certBadgeClass(days)}`}>
+                            {days > 0 ? `${days}d left` : `Expired ${Math.abs(days)}d ago`}
+                          </span>
+                        </td>
+                        <td className={styles.dimText}>{renewed}d ago</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </>
+          )}
+
+          {/* Anomalies */}
+          <div className={styles.sectionLabel}>Anomalies</div>
+          {!hasAnomalies && (
+            <p className={styles.allClear}>No anomalies detected.</p>
+          )}
+
+          {metrics!.failedServices.length > 0 && (
+            <div className={styles.anomalyBlock}>
+              <div className={styles.anomalyTitle}>Failed services</div>
+              <div className={styles.tagList}>
+                {metrics!.failedServices.map(s => (
+                  <span key={s} className={`${styles.badge} ${styles.badgeUnhealthy}`}>{s}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {metrics!.oomEvents.length > 0 && (
+            <div className={styles.anomalyBlock}>
+              <div className={styles.anomalyTitle}>
+                Out of memory kills
+                <span className={styles.anomalyHint}> — server ran out of RAM and forcibly stopped a process</span>
+              </div>
+              <table className={styles.table}>
+                <thead>
+                  <tr><th>Process</th><th>PID</th><th>Memory freed</th><th>When</th></tr>
+                </thead>
+                <tbody>
+                  {metrics!.oomEvents.map((e, i) => (
+                    <tr key={i}>
+                      <td>{e.processName}</td>
+                      <td className={styles.dimText}>{e.pid}</td>
+                      <td>{e.memoryMb > 0 ? fmtMb(e.memoryMb) : '—'}</td>
+                      <td className={styles.dimText}>{e.occurredAt ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {metrics!.zombies.length > 0 && (
+            <div className={styles.anomalyBlock}>
+              <div className={styles.anomalyTitle}>
+                Stuck processes
+                <span className={styles.anomalyHint}> — processes that have finished but weren't cleaned up by their parent</span>
+              </div>
+              <table className={styles.table}>
+                <thead>
+                  <tr><th>Process</th><th>PID</th><th>Parent</th></tr>
+                </thead>
+                <tbody>
+                  {metrics!.zombies.map(z => (
+                    <tr key={z.pid}>
+                      <td>{z.processName}</td>
+                      <td className={styles.dimText}>{z.pid}</td>
+                      <td className={styles.dimText}>{z.parentName}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </>
       )}
@@ -190,10 +291,10 @@ function ServerCard({ server, metrics }: { server: IServerConfig; metrics?: Serv
 }
 
 export default function MonitoringPage() {
-  const [servers, setServers]     = useState<IServerConfig[]>([]);
-  const [metrics, setMetrics]     = useState<Record<string, ServerMetrics>>({});
+  const [servers, setServers]         = useState<IServerConfig[]>([]);
+  const [metrics, setMetrics]         = useState<Record<string, ServerMetrics>>({});
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [loading, setLoading]     = useState(true);
+  const [loading, setLoading]         = useState(true);
 
   useEffect(() => {
     let poller: Poller<ServerMetrics[]> | null = null;
@@ -217,7 +318,9 @@ export default function MonitoringPage() {
                     cpuPercent: 0, memUsedMb: 0, memTotalMb: 0,
                     swapUsedMb: 0, swapTotalMb: 0,
                     load1m: 0, load5m: 0, load15m: 0,
-                    uptimeSeconds: 0, disks: [], containers: [],
+                    uptimeSeconds: 0,
+                    disks: [], containers: [], certs: [],
+                    oomEvents: [], zombies: [], failedServices: [],
                   } as ServerMetrics))
               )
             ),

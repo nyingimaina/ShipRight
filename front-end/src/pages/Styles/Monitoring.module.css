@@ -85,14 +85,29 @@
 .red    { background: var(--error, #E05252); }
 
 /* Containers section */
-.containersLabel {
+/* Section labels */
+.sectionLabel {
   font-size: 12px;
   font-weight: 500;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.06em;
+  margin-top: 20px;
   margin-bottom: 8px;
 }
+
+/* Anomalies */
+.anomalyBlock { margin-bottom: 16px; }
+.anomalyTitle {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+.anomalyHint  { font-weight: 400; color: var(--text-muted); font-size: 12px; }
+.allClear     { font-size: 13px; color: var(--success, #4CAF79); padding: 4px 0; }
+.tagList      { display: flex; flex-wrap: wrap; gap: 6px; }
+.dimText      { color: var(--text-muted) !important; font-size: 12px; }
 
 .table { width: 100%; border-collapse: collapse; }
 .table th {
