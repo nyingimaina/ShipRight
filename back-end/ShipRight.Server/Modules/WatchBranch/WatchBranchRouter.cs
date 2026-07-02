@@ -1,5 +1,7 @@
 using Jattac.Libs.Tempo;
 using Jattac.Libs.Tempo.Scheduling;
+using Serilog;
+using ShipRight.Modules.Projects;
 
 namespace ShipRight.Modules.WatchBranch;
 
@@ -72,6 +74,56 @@ public static class WatchBranchRouter
         {
             var records = store.Query(projectId, status, limit);
             return Results.Ok(new { records, count = records.Count });
+        });
+
+        // Syncs a project's watch schedule live — no restart needed.
+        // Called by the frontend after saving project config that includes watch branch settings.
+        app.MapPost("/api/watch-branch/sync/{projectId}", async (
+            string projectId,
+            IProjectStore projectStore,
+            TempoScheduler<WatchBranchJob> scheduler) =>
+        {
+            var project = await projectStore.GetByIdAsync(projectId);
+            if (project is null)
+                return Results.NotFound(new { isError = true, message = $"Project '{projectId}' not found." });
+
+            // Remove any existing schedule for this project (idempotent — safe to call if not registered)
+            WatchBranchModule.UnregisterProject(projectId, scheduler);
+
+            if (string.IsNullOrWhiteSpace(project.WatchBranch) || project.GitRepos.Count == 0)
+            {
+                Log.Information("WatchBranch: cleared schedule for project {ProjectId} (watch disabled)", projectId);
+                return Results.Ok(new { registered = false, message = "Watch schedule removed." });
+            }
+
+            var interval = TimeSpan.FromSeconds(Math.Max(60, project.WatchPollSeconds));
+            var scheduleId = scheduler.Register(
+                new WatchBranchJob
+                {
+                    TenantId    = WatchBranchJob.TenantIdFromProject(projectId),
+                    ProjectId   = projectId,
+                    ProjectName = project.Name,
+                    RepoPath    = project.GitRepos[0].RepoPath,
+                    BranchName  = project.WatchBranch,
+                    WatchSteps  = project.WatchSteps,
+                },
+                new TempoSchedule.Every(interval),
+                MissedRunPolicy.Skip,
+                OverlapPolicy.Skip);
+
+            WatchBranchModule.TrackSchedule(projectId, scheduleId);
+
+            Log.Information("WatchBranch: synced live — watching {Project}/{Branch} every {Interval}s",
+                project.Name, project.WatchBranch, interval.TotalSeconds);
+
+            return Results.Ok(new
+            {
+                registered = true,
+                scheduleId,
+                branchName  = project.WatchBranch,
+                intervalSeconds = (int)interval.TotalSeconds,
+                message = $"Now watching '{project.WatchBranch}' — first poll in ~{(int)interval.TotalSeconds}s.",
+            });
         });
     }
 

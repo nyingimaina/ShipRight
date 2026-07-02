@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Jattac.Libs.Tempo;
 using Jattac.Libs.Tempo.Scheduling;
 using Microsoft.Extensions.Logging;
@@ -11,6 +12,25 @@ namespace ShipRight.Modules.WatchBranch;
 
 public static class WatchBranchModule
 {
+    // Maps projectId → active Tempo scheduleId so the sync endpoint can unregister without restart.
+    private static readonly ConcurrentDictionary<string, Guid> _scheduleIds = new();
+
+    internal static void TrackSchedule(string projectId, Guid scheduleId) =>
+        _scheduleIds[projectId] = scheduleId;
+
+    internal static void UnregisterProject(string projectId, TempoScheduler<WatchBranchJob> scheduler)
+    {
+        if (_scheduleIds.TryRemove(projectId, out var scheduleId))
+        {
+            try { scheduler.Unregister(scheduleId); }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "WatchBranch: could not unregister schedule {ScheduleId} for project {ProjectId}",
+                    scheduleId, projectId);
+            }
+        }
+    }
+
     public static void AddWatchBranchModule(this IServiceCollection services)
     {
         services.AddSingleton<WatchBranchHistoryStore>(sp =>
@@ -119,7 +139,7 @@ public static class WatchBranchModule
 
             try
             {
-                scheduler.Register(
+                var scheduleId = scheduler.Register(
                     new WatchBranchJob
                     {
                         TenantId    = WatchBranchJob.TenantIdFromProject(project.Id),
@@ -133,6 +153,7 @@ public static class WatchBranchModule
                     MissedRunPolicy.Skip,
                     OverlapPolicy.Skip);
 
+                TrackSchedule(project.Id, scheduleId);
                 registered++;
                 Log.Information("WatchBranch: registered watch for {Project}/{Branch} every {Interval}s",
                     project.Name, project.WatchBranch, interval.TotalSeconds);

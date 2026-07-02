@@ -106,6 +106,7 @@ try
     app.MapServerRoutes();
     app.MapSchedulerRoutes();
     app.MapSshKeyRoutes();
+    app.MapServerSshKeyRoutes();
     app.MapWatchBranchRoutes();
 
     app.MapFallbackToFile("index.html");

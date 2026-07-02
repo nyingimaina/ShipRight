@@ -9,6 +9,7 @@ import OverflowMenu from 'jattac.libs.web.overflow-menu';
 import AppShell from '@/modules/AppShell/AppShell';
 import { api } from '@/shared/ApiService';
 import { IServerConfig, IProject, DeployMode } from '@/shared/types/IProject';
+import SshKeySection from '@/modules/ProjectConfig/SshKeySection';
 import styles from './Styles/Servers.module.css';
 
 type ServerInput = Omit<IServerConfig, 'id'> & { id?: string };
@@ -214,6 +215,9 @@ function ServerForm({ initial, onSave, onCancel }: {
           <option value="EnvCompose">Env + Compose</option>
         </select>
       </div>
+      {initial.id && (
+        <SshKeySection apiBase={`/api/servers/${initial.id}/ssh-key`} />
+      )}
       <div className={styles.footer}>
         <ZestButton onClick={handleSubmit} disabled={saving}
           zest={{ visualOptions: { variant: 'standard' }, buttonStyle: 'solid', semanticType: 'save' }}>

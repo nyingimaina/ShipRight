@@ -9,10 +9,12 @@ interface SshKeyStatus {
 }
 
 interface Props {
-  projectId: string;
+  projectId?: string;
+  apiBase?: string;
 }
 
-export default function SshKeySection({ projectId }: Props) {
+export default function SshKeySection({ projectId, apiBase: apiBaseProp }: Props) {
+  const apiBase = apiBaseProp ?? `/api/projects/${projectId}/ssh-key`;
   const [status, setStatus] = useState<SshKeyStatus | null>(null);
   const [generating, setGenerating] = useState(false);
   const [showAuthorize, setShowAuthorize] = useState(false);
@@ -23,18 +25,18 @@ export default function SshKeySection({ projectId }: Props) {
 
   const loadStatus = async () => {
     try {
-      const s = await api.get<SshKeyStatus>(`/api/projects/${projectId}/ssh-key/status`);
+      const s = await api.get<SshKeyStatus>(`${apiBase}/status`);
       setStatus(s);
     } catch { /* server not reachable yet */ }
   };
 
-  useEffect(() => { loadStatus(); }, [projectId]);
+  useEffect(() => { loadStatus(); }, [apiBase]);
 
   const handleGenerate = async () => {
     setGenerating(true);
     setNotice(null);
     try {
-      await api.post(`/api/projects/${projectId}/ssh-key/generate`, {});
+      await api.post(`${apiBase}/generate`, {});
       await loadStatus();
       setNotice({ text: 'SSH key generated. Click "Authorize on Server" to push it.', isError: false });
     } catch {
@@ -49,7 +51,7 @@ export default function SshKeySection({ projectId }: Props) {
     setAuthorizing(true);
     setNotice(null);
     try {
-      await api.post(`/api/projects/${projectId}/ssh-key/authorize`, {
+      await api.post(`${apiBase}/authorize`, {
         password,
         port: parseInt(port) || 22,
       });

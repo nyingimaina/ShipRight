@@ -147,6 +147,9 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
         database: dbEnabled ? db : undefined,
       };
       await onSave(payload);
+      if (projectId) {
+        await api.post(`/api/watch-branch/sync/${projectId}`, {}).catch(() => {});
+      }
     } catch (errs: unknown) {
       const apiErrors: Record<string, string> = {};
       const list = Array.isArray(errs) ? errs : [errs];
