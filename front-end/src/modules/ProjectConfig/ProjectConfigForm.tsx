@@ -8,6 +8,7 @@ import { RiAddLine, RiDeleteBinLine } from 'react-icons/ri';
 import { IApiError, IDatabaseConfig, IProjectInput, IServerConfig, DbProviderType, DeployMode, emptyDatabaseConfig, emptyProjectInput } from '@/shared/types/IProject';
 import { api } from '@/shared/ApiService';
 import SshKeySection from './SshKeySection';
+import WatchBranchSection from './WatchBranchSection';
 import styles from './Styles/ProjectConfigForm.module.css';
 
 interface Props {
@@ -283,6 +284,19 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
             <ZestTextbox value={form.wsl.workingDir} onChange={e => set('wsl.workingDir', e.target.value)}
               placeholder="/home/nyingi/work/jattac/docker/..." zest={{ stretch: true }} />
           </Field>
+          <WatchBranchSection
+            fields={{
+              watchBranch: form.watchBranch,
+              watchPollSeconds: form.watchPollSeconds ?? 300,
+              watchSteps: form.watchSteps ?? 'Build',
+            }}
+            onChange={f => setForm(prev => ({
+              ...prev,
+              watchBranch: f.watchBranch,
+              watchPollSeconds: f.watchPollSeconds,
+              watchSteps: f.watchSteps,
+            }))}
+          />
         </TabPanel>
 
         <TabPanel className={styles.panel} selectedClassName={styles.panelActive}>

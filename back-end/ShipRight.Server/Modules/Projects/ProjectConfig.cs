@@ -93,4 +93,10 @@ public record ProjectConfig
     public DatabaseConfig? Database { get; init; }
     public DateTime CreatedAt { get; init; }
     public DateTime ModifiedAt { get; set; }
+    /// Remote branch to watch for SHA changes. Null means watching is disabled for this project.
+    public string? WatchBranch { get; init; }
+    /// How often (in seconds) to poll the remote. Defaults to 5 minutes.
+    public int WatchPollSeconds { get; init; } = 300;
+    /// Which pipeline steps to run when a SHA change is detected: "Build", "BuildAndPush", or "BuildPushAndDeploy".
+    public string WatchSteps { get; init; } = "Build";
 }

@@ -1,6 +1,6 @@
 import { useRouter } from 'next/router';
 import SidekickMenu from 'jattac.libs.web.zest-sidekick-menu';
-import { RiStackLine, RiTimeLine, RiTerminalBoxLine, RiDatabase2Line, RiServerLine, RiCalendarCheckLine } from 'react-icons/ri';
+import { RiStackLine, RiTimeLine, RiTerminalBoxLine, RiDatabase2Line, RiServerLine, RiCalendarCheckLine, RiGitBranchLine } from 'react-icons/ri';
 import ThemeToggle from '@/shared/theme/ThemeToggle';
 import styles from './Styles/AppShell.module.css';
 import packageJson from '../../../package.json';
@@ -18,7 +18,8 @@ export default function AppShell({ children }: Props) {
     { id: 'terminal',  label: 'Terminal',  icon: <RiTerminalBoxLine size={18} />, searchTerms: 'terminal ssh',        onClick: () => router.push('/terminal') },
     { id: 'databases', label: 'Databases', icon: <RiDatabase2Line size={18} />,   searchTerms: 'databases db sql',    onClick: () => router.push('/databases') },
     { id: 'history',   label: 'History',   icon: <RiTimeLine size={18} />,        searchTerms: 'history builds',      onClick: () => router.push('/history') },
-    { id: 'backups',   label: 'Backups',   icon: <RiCalendarCheckLine size={18} />, searchTerms: 'backups scheduler', onClick: () => router.push('/backups') },
+    { id: 'backups',      label: 'Backups',      icon: <RiCalendarCheckLine size={18} />, searchTerms: 'backups scheduler',           onClick: () => router.push('/backups') },
+    { id: 'watch-branch', label: 'Watch Branch', icon: <RiGitBranchLine size={18} />,     searchTerms: 'watch branch auto build ci', onClick: () => router.push('/watch-branch') },
   ];
 
   return (

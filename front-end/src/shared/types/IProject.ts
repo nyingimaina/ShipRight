@@ -53,6 +53,9 @@ export interface IProject {
   wsl: IWslConfig;
   server: IServerConfig;
   database?: IDatabaseConfig;
+  watchBranch?: string;
+  watchPollSeconds?: number;
+  watchSteps?: string;
   createdAt: string;
   modifiedAt: string;
 }

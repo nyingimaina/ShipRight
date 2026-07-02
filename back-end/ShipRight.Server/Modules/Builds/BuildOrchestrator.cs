@@ -1363,6 +1363,89 @@ public class BuildOrchestrator
         }
     }
 
+    /// Triggered by the watched-branch Tempo job when the remote branch SHA advances.
+    /// Reads current version files, increments the patch number, and starts a build.
+    /// If watchSteps includes push or deploy, auto-chains those steps via background polling.
+    public async Task StartWatchedBuildAsync(string projectId, string watchSteps, CancellationToken ct = default)
+    {
+        var project = await _projectStore.GetByIdAsync(projectId)
+            ?? throw new InvalidOperationException($"Project '{projectId}' not found.");
+
+        if (project.Services.Count == 0)
+        {
+            Log.Warning("WatchBranch: project {ProjectId} has no services — skipping watched build", projectId);
+            return;
+        }
+
+        var serviceVersions = new List<ServiceVersionInput>();
+        foreach (var svc in project.Services)
+        {
+            var v = await VersionFileService.ReadAsync(svc);
+            serviceVersions.Add(new ServiceVersionInput(svc.Name, VersionFileService.SuggestNext(v.Version)));
+        }
+
+        var record = await StartAsync(new StartBuildRequest(projectId, serviceVersions));
+        Log.Information("WatchBranch triggered build {BuildId} for project {ProjectId} (steps: {Steps})",
+            record.Id, projectId, watchSteps);
+
+        if (watchSteps is "BuildAndPush" or "BuildPushAndDeploy")
+            _ = Task.Run(() => WatchedBuildChainAsync(record.Id, watchSteps, ct), CancellationToken.None);
+    }
+
+    private async Task WatchedBuildChainAsync(string buildId, string watchSteps, CancellationToken ct)
+    {
+        try
+        {
+            var built = await PollBuildStatusAsync(buildId,
+                BuildStatus.ImageBuilt,
+                [BuildStatus.BuildFailed, BuildStatus.Aborted, BuildStatus.Interrupted],
+                TimeSpan.FromHours(2), ct);
+
+            if (built?.Status != BuildStatus.ImageBuilt)
+            {
+                Log.Information("WatchBranch: build {BuildId} did not reach ImageBuilt — skipping push", buildId);
+                return;
+            }
+
+            await PushAsync(buildId);
+
+            if (watchSteps != "BuildPushAndDeploy") return;
+
+            var pushed = await PollBuildStatusAsync(buildId,
+                BuildStatus.PushSucceeded,
+                [BuildStatus.PushFailed, BuildStatus.Aborted],
+                TimeSpan.FromMinutes(30), ct);
+
+            if (pushed?.Status != BuildStatus.PushSucceeded)
+            {
+                Log.Information("WatchBranch: push for {BuildId} did not succeed — skipping deploy", buildId);
+                return;
+            }
+
+            await DeployAsync(buildId);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "WatchBranch: auto-chain failed for build {BuildId}", buildId);
+        }
+    }
+
+    private async Task<BuildRecord?> PollBuildStatusAsync(
+        string buildId, BuildStatus target, IReadOnlyList<BuildStatus> stopOn,
+        TimeSpan timeout, CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (!ct.IsCancellationRequested && DateTime.UtcNow < deadline)
+        {
+            var r = await _buildStore.GetByIdAsync(buildId);
+            if (r is null) { await Task.Delay(3000, CancellationToken.None); continue; }
+            if (r.Status == target) return r;
+            if (stopOn.Contains(r.Status)) return r;
+            await Task.Delay(3000, CancellationToken.None);
+        }
+        return null;
+    }
+
     private static string TryReadVersion(string path)
     {
         try { return File.ReadAllText(path).Trim(); }

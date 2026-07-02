@@ -9,6 +9,7 @@ using ShipRight.Modules.Projects;
 using ShipRight.Modules.RepoMaintenance;
 using ShipRight.Modules.RemoteHost;
 using ShipRight.Modules.Scheduler;
+using ShipRight.Modules.WatchBranch;
 using ShipRight.Modules.Services;
 using ShipRight.Modules.Servers;
 using ShipRight.Modules.Ssh;
@@ -71,6 +72,7 @@ try
     builder.Services.AddSingleton<SshKeyStore>(_ => new SshKeyStore(dataDir));
     builder.Services.AddSingleton<IRemoteHostProvider, LinuxSshProvider>();
     builder.Services.AddSchedulerModule();
+    builder.Services.AddWatchBranchModule();
 
     var app = builder.Build();
 
@@ -104,6 +106,7 @@ try
     app.MapServerRoutes();
     app.MapSchedulerRoutes();
     app.MapSshKeyRoutes();
+    app.MapWatchBranchRoutes();
 
     app.MapFallbackToFile("index.html");
 
@@ -111,7 +114,7 @@ try
 
     var projectCount = app.Services.GetRequiredService<IProjectStore>().Count;
     var buildCount   = app.Services.GetRequiredService<IBuildStore>().Count;
-    Log.Information("ShipRight {Version} starting on port {Port}", "2.8.0", 5200);
+    Log.Information("ShipRight {Version} starting on port {Port}", "2.9.0", 5200);
     Log.Information("Data directory: {DataDir}", dataDir);
     Log.Information("{ProjectCount} projects, {BuildCount} builds loaded", projectCount, buildCount);
 
