@@ -5,7 +5,7 @@ import CreatableSelect from 'react-select/creatable';
 import ZestButton from 'jattac.libs.web.zest-button';
 import ZestTextbox from 'jattac.libs.web.zest-textbox';
 import { RiAddLine, RiDeleteBinLine } from 'react-icons/ri';
-import { IApiError, IDatabaseConfig, IProjectInput, IServerConfig, DbProviderType, DeployMode, emptyDatabaseConfig, emptyProjectInput } from '@/shared/types/IProject';
+import { IApiError, IDatabaseConfig, IProjectInput, IServerConfig, DbProviderType, DeployMode, emptyDatabaseConfig, emptyProjectInput, IPipelineResource } from '@/shared/types/IProject';
 import { api } from '@/shared/ApiService';
 import SshKeySection from './SshKeySection';
 import WatchBranchSection from './WatchBranchSection';
@@ -29,10 +29,14 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
   const [loadingDatabases, setLoadingDatabases] = useState(false);
 
   const [globalServers, setGlobalServers] = useState<IServerConfig[]>([]);
+  const [pipelines, setPipelines] = useState<IPipelineResource[]>([]);
 
   useEffect(() => {
     api.get<IServerConfig[]>('/api/servers')
       .then(setGlobalServers)
+      .catch(() => {});
+    api.get<IPipelineResource[]>('/api/resources/pipelines')
+      .then(setPipelines)
       .catch(() => {});
   }, []);
 
@@ -56,6 +60,7 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
           remoteWorkingDir: s.remoteWorkingDir,
           rebuildScript: s.rebuildScript,
           deployMode: s.deployMode,
+          pipelineResourceId: s.pipelineResourceId,
         },
       }));
     }
@@ -357,6 +362,18 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
               <option value="EnvCompose">Env + Compose — inject image tags at deploy, docker compose up (enables rollback)</option>
             </select>
           </Field>
+          {pipelines.length > 0 && (
+            <Field label="Pipeline">
+              <select value={form.server.pipelineResourceId ?? ''}
+                onChange={e => set('server.pipelineResourceId', e.target.value || undefined)}
+                style={{ background: '#131D30', color: '#F0F2F5', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, padding: '6px 10px', width: '100%' }}>
+                <option value="">— None (use StepPicker) —</option>
+                {pipelines.map(p => (
+                  <option key={p.id} value={p.id}>{p.name} ({p.scope})</option>
+                ))}
+              </select>
+            </Field>
+          )}
           {(form.server.deployMode ?? 'GitScript') === 'EnvCompose' && form.services.length > 0 && (
             <div style={{ marginTop: 8, background: '#131D30', border: '1px solid rgba(74,127,168,0.3)',
               borderRadius: 8, padding: '12px 16px' }}>

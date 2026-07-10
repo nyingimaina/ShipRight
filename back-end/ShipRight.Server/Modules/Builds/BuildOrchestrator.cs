@@ -8,10 +8,11 @@ using ShipRight.Modules.VersionFiles;
 using ShipRight.Shared.Events;
 using ShipRight.Shared.ProcessRunner;
 using ShipRight.Shared.SshRunner;
+using ShipRight.Modules.Resources;
 
 namespace ShipRight.Modules.Builds;
 
-public record StartBuildRequest(string ProjectId, List<ServiceVersionInput> ServiceVersions);
+public record StartBuildRequest(string ProjectId, List<ServiceVersionInput> ServiceVersions, string? PipelineResourceId = null);
 public record ServiceVersionInput(string ServiceName, string NewVersion);
 public record RespondRequest(string Reason, string Choice, Dictionary<string, string>? Data);
 public record DeployRequest(string? DeployModeOverride);
@@ -23,6 +24,7 @@ public class BuildOrchestrator
     private readonly BuildEventBus _bus;
     private readonly IProcessRunner _runner;
     private readonly ISshRunner _ssh;
+    private readonly ResourceResolutionService _resourceResolution;
     // BRS #2: ConcurrentDictionary prevents data race between pipeline thread and HTTP handler
     private readonly ConcurrentDictionary<string, TaskCompletionSource<RespondRequest>> _pauseWaiters = new();
     private static readonly ConcurrentDictionary<string, CancellationTokenSource> _cancellations = new();
@@ -39,13 +41,14 @@ public class BuildOrchestrator
     }
 
     public BuildOrchestrator(IBuildStore buildStore, IProjectStore projectStore,
-        BuildEventBus bus, IProcessRunner runner, ISshRunner ssh)
+        BuildEventBus bus, IProcessRunner runner, ISshRunner ssh, ResourceResolutionService resourceResolution)
     {
         _buildStore = buildStore;
         _projectStore = projectStore;
         _bus = bus;
         _runner = runner;
         _ssh = ssh;
+        _resourceResolution = resourceResolution;
     }
 
     public async Task<BuildRecord> StartAsync(StartBuildRequest request)
@@ -107,12 +110,19 @@ public class BuildOrchestrator
         {
             await ctx.EmitLogAsync($"Connecting to {project.Server.Username}@{project.Server.Host}…", "ssh");
 
-            var cmd = effectiveMode switch
+            string cmd;
+            switch (effectiveMode)
             {
-                DeployMode.GitCompose => BuildGitComposeDeployCmd(project),
-                DeployMode.EnvCompose => BuildEnvComposeDeployCmd(project, record.Versions),
-                _                     => BuildGitScriptDeployCmd(project),  // GitScript (default)
-            };
+                case DeployMode.GitCompose:
+                    cmd = BuildGitComposeDeployCmd(project);
+                    break;
+                case DeployMode.EnvCompose:
+                    cmd = BuildEnvComposeDeployCmd(project, record.Versions);
+                    break;
+                default:
+                    cmd = await BuildGitScriptDeployCmd(project);
+                    break;
+            }
             var modeLabel = deployModeOverride is not null
                 ? $"{effectiveMode} (override; project default: {project.Server.DeployMode})"
                 : effectiveMode.ToString();
@@ -692,23 +702,27 @@ public class BuildOrchestrator
                 await _runner.RunAsync("docker", logoutArgs.ToArray(), null, null, null);
                 await ctx.EmitLogAsync(Ts($"Logged out of {registry}."), "shipright");
 
-                // Check for stored credentials in the project config
-                var creds = services
-                    .Select(g => g.Svc)
-                    .FirstOrDefault(s => !string.IsNullOrEmpty(s.DockerUsername) && !string.IsNullOrEmpty(s.DockerPassword));
+                // Check for stored credentials — resolve via resource first, then inline fallback
+                var firstSvc = services.Select(g => g.Svc).First();
+                var (resolvedUser, resolvedPass) = await _resourceResolution.ResolveDockerCredentialsAsync(
+                    firstSvc,
+                    services.Select(g => g.Svc).FirstOrDefault(s => !string.IsNullOrEmpty(s.DockerUsername))?.DockerUsername ?? "",
+                    services.Select(g => g.Svc).FirstOrDefault(s => !string.IsNullOrEmpty(s.DockerPassword))?.DockerPassword ?? "");
+
+                var hasCreds = !string.IsNullOrEmpty(resolvedUser) && !string.IsNullOrEmpty(resolvedPass);
 
                 await ctx.EmitLogAsync(Ts(
-                    creds is not null
+                    hasCreds
                         ? $"Stored credentials found for {registry}."
                         : $"No stored credentials for {registry}."), "shipright");
 
                 bool loggedIn = false;
-                if (creds is not null)
+                if (hasCreds)
                 {
                     try
                     {
                         loggedIn = await DockerLoginAsync(ctx, record, registry,
-                            creds.DockerUsername, creds.DockerPassword,
+                            resolvedUser, resolvedPass,
                             $"Docker credentials required for {registry}.");
                     }
                     catch
@@ -1120,10 +1134,11 @@ public class BuildOrchestrator
     /// GitScript: git pull the compose repo on the server, then run the configured script.
     /// The script is responsible for any docker operations it needs.
     /// </summary>
-    private static string BuildGitScriptDeployCmd(ProjectConfig project)
+    private async Task<string> BuildGitScriptDeployCmd(ProjectConfig project)
     {
         var branch = project.GitRepos.FirstOrDefault()?.DeployBranch ?? "master";
-        return $"cd {project.Server.RemoteWorkingDir} && git pull origin {branch} && bash {project.Server.RebuildScript}";
+        var script = await _resourceResolution.ResolveRebuildScriptAsync(project.Server);
+        return $"cd {project.Server.RemoteWorkingDir} && git pull origin {branch} && bash {script}";
     }
 
     /// <summary>

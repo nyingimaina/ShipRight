@@ -13,6 +13,8 @@ import { DeployMode } from '@/shared/types/IProject';
 import LogViewer, { LogEntry } from './LogViewer';
 import OptionPicker, { PickerOption } from './OptionPicker';
 import StepPicker, { BuildStep } from './StepPicker';
+import PipelineSelector from './PipelineSelector';
+import type { IPipelineResource } from '@/shared/types/IProject';
 import styles from './Styles/BuildWizard.module.css';
 
 interface Props {
@@ -128,6 +130,9 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
   const autoChainRef = useRef({ push: false, deploy: false });
   // pendingChain defers the chain call to the next render where handlePush/handleDeploy are fresh
   const [pendingChain, setPendingChain] = useState<'push' | 'deploy' | null>(null);
+  // Pipeline selection state
+  const [showPipelineSelector, setShowPipelineSelector] = useState(false);
+  const [selectedPipeline, setSelectedPipeline] = useState<IPipelineResource | null>(null);
 
   const updateSelectedSteps = (steps: Set<BuildStep>) => {
     autoChainRef.current = { push: steps.has('push'), deploy: steps.has('deploy') };
@@ -364,7 +369,7 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
         serviceName: v.serviceName,
         newVersion: newVersions[v.serviceName] ?? '',
       }));
-      const result = await api.post<{ buildId: string }>('/api/builds/start', { projectId, serviceVersions });
+      const result = await api.post<{ buildId: string }>('/api/builds/start', { projectId, serviceVersions, pipelineResourceId: selectedPipeline?.id });
       setBuildId(result.buildId);
       const record = await api.get<IBuildRecord>(`/api/builds/${result.buildId}`);
       setBuildRecord(record);
@@ -456,6 +461,8 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
       setShowStepPicker(false);
       setSelectedSteps(new Set<BuildStep>(['build']));
       setPendingChain(null);
+      setShowPipelineSelector(false);
+      setSelectedPipeline(null);
       autoChainRef.current = { push: false, deploy: false };
     }
   }, [isOpen]);
@@ -567,7 +574,7 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
                   </div>
                 )}
                 <div className={styles.actions}>
-                  <ZestButton onClick={() => setShowStepPicker(true)}
+                  <ZestButton onClick={() => setShowPipelineSelector(true)}
                     zest={{ visualOptions: { variant: 'standard' }, semanticType: 'submit' }}>
                     Start Build
                   </ZestButton>
@@ -784,6 +791,27 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
               </>
             )}
           </div>
+
+          {/* Pipeline selector overlay */}
+          {showPipelineSelector && (
+            <div className={styles.pauseOverlay}>
+              <div className={styles.pauseCard}>
+                <PipelineSelector
+                  onSelectPipeline={(pipeline) => {
+                    setSelectedPipeline(pipeline);
+                    setShowPipelineSelector(false);
+                    handleStartBuild();
+                  }}
+                  onUseCustom={() => {
+                    setSelectedPipeline(null);
+                    setShowPipelineSelector(false);
+                    setShowStepPicker(true);
+                  }}
+                  onCancel={() => setShowPipelineSelector(false)}
+                />
+              </div>
+            </div>
+          )}
 
           {/* Step picker overlay */}
           {showStepPicker && (

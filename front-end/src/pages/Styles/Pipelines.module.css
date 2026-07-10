@@ -1,0 +1,87 @@
+.heading {
+  font-size: 24px;
+  font-weight: 600;
+  color: #F0F2F5;
+  margin: 0;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.card {
+  background: #1A2540;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 16px;
+  transition: border-color 0.15s;
+}
+
+.card:hover {
+  border-color: rgba(201, 168, 76, 0.3);
+}
+
+.cardTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.cardContent {
+  flex: 1;
+  min-width: 0;
+}
+
+.cardTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: #F0F2F5;
+  margin: 0 0 4px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cardScope {
+  font-size: 12px;
+  color: #8B95A5;
+  margin: 0 0 8px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stepIcons {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.stepIcon {
+  font-size: 16px;
+}
+
+.cardDetail {
+  font-size: 13px;
+  color: #637389;
+  margin: 0;
+}
+
+.skeletonCard {
+  min-height: 120px;
+}
+
+.skeletonTitle {
+  width: 60%;
+  height: 20px;
+}
+
+.empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: #637389;
+  font-size: 14px;
+  padding: 32px;
+}

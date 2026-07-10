@@ -18,6 +18,8 @@ using ShipRight.Shared.Events;
 using ShipRight.Shared.ProcessRunner;
 using ShipRight.Shared.SshRunner;
 using ShipRight.Shared.Store;
+using ShipRight.Modules.Resources;
+using ShipRight.Modules.Resources.Stores;
 
 var dataDir = DataDirectory.Resolve();
 
@@ -74,6 +76,10 @@ try
     builder.Services.AddSingleton<IMonitoringProvider, LinuxSshMonitoringProvider>();
     builder.Services.AddSchedulerModule();
     builder.Services.AddWatchBranchModule();
+    builder.Services.AddSingleton<IDockerRegistryResourceStore, SqliteDockerRegistryResourceStore>();
+    builder.Services.AddSingleton<IScriptResourceStore, SqliteScriptResourceStore>();
+    builder.Services.AddSingleton<IPipelineResourceStore, SqlitePipelineResourceStore>();
+    builder.Services.AddSingleton<ResourceResolutionService>();
 
     var app = builder.Build();
 
@@ -109,6 +115,8 @@ try
     app.MapSshKeyRoutes();
     app.MapServerSshKeyRoutes();
     app.MapWatchBranchRoutes();
+    app.MapResourceRoutes();
+    app.MapPipelineRoutes();
 
     app.MapFallbackToFile("index.html");
 

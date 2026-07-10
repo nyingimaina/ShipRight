@@ -46,6 +46,11 @@ public record ServiceConfig
     /// alongside other config. Leave empty to enter credentials at build time.
     /// </summary>
     public string DockerPassword { get; init; } = string.Empty;
+    /// <summary>
+    /// When set, Docker credentials are resolved from the referenced
+    /// DockerRegistryResource at build time instead of using inline values.
+    /// </summary>
+    public Guid? DockerRegistryResourceId { get; init; }
 }
 
 public record GitConfig
@@ -78,6 +83,17 @@ public record ServerConfig
     public DeployMode DeployMode { get; init; } = DeployMode.GitScript;
     /// When true, SshKeyPath points to a key generated and managed by ShipRight (via Managed SSH Key).
     public bool ManagedSshKey { get; init; } = false;
+    /// <summary>
+    /// When set, the rebuild script content is resolved from the referenced
+    /// ScriptResource at deploy time instead of using inline RebuildScript.
+    /// </summary>
+    public Guid? RebuildScriptResourceId { get; init; }
+    /// <summary>
+    /// When set, the build pipeline is driven by the referenced PipelineResource.
+    /// Pipeline steps define script injection points, build, push, and deploy order.
+    /// Takes precedence over RebuildScriptResourceId when both are set.
+    /// </summary>
+    public Guid? PipelineResourceId { get; init; }
 }
 
 public record ProjectConfig

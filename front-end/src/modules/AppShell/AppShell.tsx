@@ -1,6 +1,6 @@
 import { useRouter } from 'next/router';
 import SidekickMenu from 'jattac.libs.web.zest-sidekick-menu';
-import { RiStackLine, RiTimeLine, RiTerminalBoxLine, RiDatabase2Line, RiServerLine, RiCalendarCheckLine, RiGitBranchLine, RiHeartPulseLine } from 'react-icons/ri';
+import { RiStackLine, RiTimeLine, RiTerminalBoxLine, RiDatabase2Line, RiServerLine, RiCalendarCheckLine, RiGitBranchLine, RiHeartPulseLine, RiBox3Line, RiListCheck } from 'react-icons/ri';
 import ThemeToggle from '@/shared/theme/ThemeToggle';
 import styles from './Styles/AppShell.module.css';
 import packageJson from '../../../package.json';
@@ -15,6 +15,8 @@ export default function AppShell({ children }: Props) {
   const menuItems = [
     { id: 'projects',  label: 'Projects',  icon: <RiStackLine size={18} />,       searchTerms: 'projects',            onClick: () => router.push('/projects') },
     { id: 'servers',   label: 'Servers',   icon: <RiServerLine size={18} />,      searchTerms: 'servers hosts ssh',   onClick: () => router.push('/servers') },
+    { id: 'resources', label: 'Resources', icon: <RiBox3Line size={18} />,      searchTerms: 'resources shared reusable registry script', onClick: () => router.push('/resources') },
+    { id: 'pipelines', label: 'Pipelines', icon: <RiListCheck size={18} />,    searchTerms: 'pipelines build deploy scripts', onClick: () => router.push('/pipelines') },
     { id: 'terminal',  label: 'Terminal',  icon: <RiTerminalBoxLine size={18} />, searchTerms: 'terminal ssh',        onClick: () => router.push('/terminal') },
     { id: 'databases', label: 'Databases', icon: <RiDatabase2Line size={18} />,   searchTerms: 'databases db sql',    onClick: () => router.push('/databases') },
     { id: 'history',   label: 'History',   icon: <RiTimeLine size={18} />,        searchTerms: 'history builds',      onClick: () => router.push('/history') },

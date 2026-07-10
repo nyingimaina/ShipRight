@@ -7,6 +7,7 @@ export interface IServiceConfig {
   composeServiceName: string;
   dockerUsername?: string;
   dockerPassword?: string;
+  dockerRegistryResourceId?: string;
 }
 
 export interface IGitConfig {
@@ -20,6 +21,11 @@ export interface IWslConfig {
 
 export type DeployMode = 'GitScript' | 'GitCompose' | 'EnvCompose';
 
+export type ScriptPlatform = 'Bash' | 'PowerShell' | 'Cmd' | 'Python' | 'Sh';
+export type ExecutionTarget = 'Local' | 'Remote';
+export type PipelineScope = 'Global' | 'Project';
+export type PipelineStepType = 'Script' | 'Build' | 'Push' | 'Deploy';
+
 export interface IServerConfig {
   id?: string;
   name?: string;
@@ -30,6 +36,8 @@ export interface IServerConfig {
   rebuildScript: string;
   deployMode: DeployMode;
   managedSshKey?: boolean;
+  rebuildScriptResourceId?: string;
+  pipelineResourceId?: string;
 }
 
 export type DbProviderType = 'MariaDb' | 'SqlServer';
@@ -82,4 +90,45 @@ export interface IApiError {
   isError: boolean;
   field?: string;
   message: string;
+}
+
+export interface IDockerRegistryResource {
+  id: string;
+  name: string;
+  registry: string;
+  username: string;
+  password?: string;
+  createdAt: string;
+  modifiedAt: string;
+}
+
+export interface IScriptResource {
+  id: string;
+  name: string;
+  content: string;
+  platform: ScriptPlatform;
+  target: ExecutionTarget;
+  scope: PipelineScope;
+  projectId?: string;
+  createdAt: string;
+  modifiedAt: string;
+}
+
+export interface IPipelineStep {
+  id: string;
+  type: PipelineStepType;
+  scriptResourceId?: string;
+  deployMode?: DeployMode;
+  label?: string;
+  continueOnError?: boolean;
+}
+
+export interface IPipelineResource {
+  id: string;
+  name: string;
+  steps: IPipelineStep[];
+  scope: PipelineScope;
+  projectId?: string;
+  createdAt: string;
+  modifiedAt: string;
 }

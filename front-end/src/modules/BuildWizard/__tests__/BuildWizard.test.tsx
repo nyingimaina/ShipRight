@@ -1,4 +1,5 @@
 import { render, screen, act, fireEvent } from '@testing-library/react';
+import React from 'react';
 import BuildWizard from '../BuildWizard';
 import { api } from '@/shared/ApiService';
 import { buildSse } from '@/shared/SseService';
@@ -73,6 +74,15 @@ jest.mock('../StepPicker', () => ({
       <button onClick={onCancel}>Cancel Picker</button>
     </div>
   ),
+}));
+
+jest.mock('../PipelineSelector', () => ({
+  __esModule: true,
+  default: ({ onUseCustom }: any) => {
+    // Auto-advance to step picker so existing tests don't need to change
+    React.useEffect(() => { onUseCustom(); }, []);
+    return <div data-testid="pipeline-selector" />;
+  },
 }));
 
 jest.mock('canvas-confetti', () => jest.fn());
