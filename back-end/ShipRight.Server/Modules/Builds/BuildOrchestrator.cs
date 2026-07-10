@@ -9,6 +9,9 @@ using ShipRight.Shared.Events;
 using ShipRight.Shared.ProcessRunner;
 using ShipRight.Shared.SshRunner;
 using ShipRight.Modules.Resources;
+using ShipRight.Modules.Resources.Models;
+using ShipRight.Modules.Resources.Stores;
+using ResourcePipelineStep = ShipRight.Modules.Resources.Models.PipelineStep;
 
 namespace ShipRight.Modules.Builds;
 
@@ -25,6 +28,9 @@ public class BuildOrchestrator
     private readonly IProcessRunner _runner;
     private readonly ISshRunner _ssh;
     private readonly ResourceResolutionService _resourceResolution;
+    private readonly IPipelineResourceStore _pipelineStore;
+    private readonly IScriptResourceStore _scriptStore;
+    private readonly ScriptExecutor _scriptExecutor;
     // BRS #2: ConcurrentDictionary prevents data race between pipeline thread and HTTP handler
     private readonly ConcurrentDictionary<string, TaskCompletionSource<RespondRequest>> _pauseWaiters = new();
     private static readonly ConcurrentDictionary<string, CancellationTokenSource> _cancellations = new();
@@ -41,7 +47,8 @@ public class BuildOrchestrator
     }
 
     public BuildOrchestrator(IBuildStore buildStore, IProjectStore projectStore,
-        BuildEventBus bus, IProcessRunner runner, ISshRunner ssh, ResourceResolutionService resourceResolution)
+        BuildEventBus bus, IProcessRunner runner, ISshRunner ssh, ResourceResolutionService resourceResolution,
+        IPipelineResourceStore pipelineStore, IScriptResourceStore scriptStore, ScriptExecutor scriptExecutor)
     {
         _buildStore = buildStore;
         _projectStore = projectStore;
@@ -49,6 +56,9 @@ public class BuildOrchestrator
         _runner = runner;
         _ssh = ssh;
         _resourceResolution = resourceResolution;
+        _pipelineStore = pipelineStore;
+        _scriptStore = scriptStore;
+        _scriptExecutor = scriptExecutor;
     }
 
     public async Task<BuildRecord> StartAsync(StartBuildRequest request)
@@ -81,9 +91,20 @@ public class BuildOrchestrator
 
         await _buildStore.SaveAsync(record);
         _bus.Register(record.Id);
+
+        PipelineResource? pipeline = null;
+        if (Guid.TryParse(request.PipelineResourceId, out var pipelineId))
+            pipeline = await _pipelineStore.GetByIdAsync(pipelineId);
+
         _ = Task.Run(async () =>
         {
-            try   { await RunPipelineAsync(record, project); }
+            try
+            {
+                if (pipeline is not null)
+                    await RunCustomPipelineAsync(record, project, pipeline);
+                else
+                    await RunPipelineAsync(record, project);
+            }
             finally { sem.Release(); }
         });
         return record;
@@ -864,6 +885,249 @@ public class BuildOrchestrator
         {
             _cancellations.TryRemove(buildId, out var _unused);
         }
+    }
+
+    private async Task RunCustomPipelineAsync(BuildRecord record, ProjectConfig project, PipelineResource pipeline)
+    {
+        using var logBuildId = LogContext.PushProperty("BuildId", record.Id);
+        using var logProjectId = LogContext.PushProperty("ProjectId", record.ProjectId);
+
+        var ctx = new PipelineContext(record, _bus);
+        async Task SaveStep() => await _buildStore.SaveAsync(record);
+
+        using var cts = new CancellationTokenSource();
+        _cancellations[record.Id] = cts;
+        var ct = cts.Token;
+
+        try
+        {
+            Log.Information("Build {BuildId} custom pipeline '{PipelineName}' started ({StepCount} steps)",
+                record.Id, pipeline.Name, pipeline.Steps.Count);
+            await ctx.EmitLogAsync($"Custom pipeline: {pipeline.Name} ({pipeline.Steps.Count} steps)", "shipright");
+
+            var stepGroups = PipelineExecutor.GroupStepsByPosition(pipeline.Steps);
+
+            // ── Pre-build script steps ──────────────────────────────────────────
+            foreach (var step in stepGroups.PreBuild)
+                await ExecuteScriptStepAsync(ctx, record, project, step, SaveStep, ct);
+
+            // ── Build step ──────────────────────────────────────────────────────
+            var hasBuild = pipeline.Steps.Any(s => s.Type == PipelineStepType.Build);
+            if (hasBuild)
+                await RunDockerBuildAsync(ctx, record, project, SaveStep, useBuildKit: false, ct);
+
+            // ── Pre-push script steps ───────────────────────────────────────────
+            foreach (var step in stepGroups.PrePush)
+                await ExecuteScriptStepAsync(ctx, record, project, step, SaveStep, ct);
+
+            // ── Push step (inline — avoids _bus.Complete from PushAsync) ────────
+            var hasPush = pipeline.Steps.Any(s => s.Type == PipelineStepType.Push);
+            if (hasPush)
+                await RunCustomPushAsync(record, project, ctx, SaveStep, ct);
+
+            // ── Pre-deploy script steps ─────────────────────────────────────────
+            foreach (var step in stepGroups.PreDeploy)
+                await ExecuteScriptStepAsync(ctx, record, project, step, SaveStep, ct);
+
+            // ── Deploy step (inline — avoids _bus.Complete from DeployAsync) ────
+            var hasDeploy = pipeline.Steps.Any(s => s.Type == PipelineStepType.Deploy);
+            if (hasDeploy)
+            {
+                var deployStep = pipeline.Steps.First(s => s.Type == PipelineStepType.Deploy);
+                var deployMode = deployStep.DeployMode ?? project.Server.DeployMode;
+                await RunCustomDeployAsync(record, project, ctx, deployMode, ct);
+            }
+
+            // ── Post-deploy script steps ────────────────────────────────────────
+            foreach (var step in stepGroups.PostDeploy)
+                await ExecuteScriptStepAsync(ctx, record, project, step, SaveStep, ct);
+
+            // ── Build complete ──────────────────────────────────────────────────
+            var currentStatus = record.Status;
+            if (currentStatus is BuildStatus.Running or BuildStatus.Pending or BuildStatus.ImageBuilt
+                or BuildStatus.PushSucceeded)
+            {
+                record.Status = hasBuild ? record.Status : BuildStatus.ImageBuilt;
+                record.CompletedAt = DateTime.UtcNow;
+                await SaveStep();
+                await ctx.BuildCompletedAsync();
+            }
+
+            Log.Information("Build {BuildId} custom pipeline completed: {Status}", record.Id, record.Status);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            Log.Warning("Build {BuildId} custom pipeline cancelled at step {Step}", record.Id, record.CurrentStepName);
+            record.Status = BuildStatus.Aborted;
+            record.FailedStep = record.CurrentStepName;
+            record.ErrorSummary = "Cancelled by user.";
+            record.CompletedAt = DateTime.UtcNow;
+            try { await _buildStore.SaveAsync(record); await ctx.EmitLogAsync("Build cancelled.", "shipright"); } catch { }
+            await ctx.BuildCompletedAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Build {BuildId} custom pipeline failed at step {Step}", record.Id, record.CurrentStepName);
+            record.Status = BuildStatus.BuildFailed;
+            record.FailedStep = record.CurrentStepName;
+            record.ErrorSummary = ex.Message;
+            record.CompletedAt = DateTime.UtcNow;
+            try
+            {
+                await _buildStore.SaveAsync(record);
+                await ctx.EmitLogAsync($"[ERROR] {ex.Message}", "shipright");
+            }
+            catch (Exception saveEx)
+            {
+                Log.Error(saveEx, "Failed to persist failed-build record {BuildId}", record.Id);
+            }
+            await ctx.BuildCompletedAsync();
+        }
+        finally
+        {
+            _cancellations.TryRemove(record.Id, out _);
+        }
+    }
+
+    private async Task RunCustomPushAsync(BuildRecord record, ProjectConfig project,
+        PipelineContext ctx, Func<Task> save, CancellationToken ct)
+    {
+        record.Status = BuildStatus.Running;
+        await ctx.EmitLogAsync("Push started.", "shipright");
+
+        var servicesByRegistry = new Dictionary<string, List<(ServiceConfig Svc, ServiceVersion Sv)>>();
+        foreach (var sv in record.Versions)
+        {
+            var svc = project.Services.FirstOrDefault(s => s.Name == sv.ServiceName);
+            if (svc is null) continue;
+            var registry = ResolveRegistry(svc);
+            if (!servicesByRegistry.ContainsKey(registry))
+                servicesByRegistry[registry] = new();
+            servicesByRegistry[registry].Add((svc, sv));
+        }
+
+        foreach (var (registry, services) in servicesByRegistry)
+        {
+            foreach (var (svc, sv) in services)
+            {
+                var pushResult = await _runner.RunAsync("docker",
+                    ["push", $"{svc.DockerImageName}:{sv.NewVersion}"],
+                    null,
+                    line => ctx.EmitLogAsync(line, "docker"),
+                    line => ctx.EmitLogAsync(line, "docker"),
+                    ct);
+
+                if (!pushResult.Success)
+                    throw new InvalidOperationException($"docker push failed for {svc.Name} (exit {pushResult.ExitCode}).");
+
+                await ctx.EmitLogAsync($"Pushed {svc.DockerImageName}:{sv.NewVersion}", "shipright");
+            }
+        }
+
+        record.Status = BuildStatus.PushSucceeded;
+        await save();
+        await ctx.EmitLogAsync("Push completed.", "shipright");
+    }
+
+    private async Task RunCustomDeployAsync(BuildRecord record, ProjectConfig project,
+        PipelineContext ctx, DeployMode? deployModeOverride, CancellationToken ct)
+    {
+        var effectiveMode = deployModeOverride ?? project.Server.DeployMode;
+        record.Status = BuildStatus.Deploying;
+        await _buildStore.SaveAsync(record);
+
+        await ctx.EmitLogAsync($"Deploy mode: {effectiveMode}", "shipright");
+        await ctx.EmitLogAsync($"Connecting to {project.Server.Username}@{project.Server.Host}…", "ssh");
+
+        string cmd = effectiveMode switch
+        {
+            DeployMode.GitCompose => BuildGitComposeDeployCmd(project),
+            DeployMode.EnvCompose => BuildEnvComposeDeployCmd(project, record.Versions),
+            _ => await BuildGitScriptDeployCmd(project),
+        };
+
+        var exitCode = await _ssh.RunAsync(
+            project.Server.Host,
+            project.Server.Username,
+            project.Server.SshKeyPath,
+            cmd,
+            line => ctx.EmitLogAsync(line, "ssh"),
+            ct: ct);
+
+        if (exitCode != 0)
+        {
+            record.Status = BuildStatus.DeployFailed;
+            record.ErrorSummary = $"Deploy exited with code {exitCode}.";
+            throw new InvalidOperationException($"Deploy failed with exit code {exitCode}");
+        }
+
+        record.Status = BuildStatus.Deployed;
+        record.DeployedAt = DateTime.UtcNow;
+        await _buildStore.SaveAsync(record);
+        await ctx.EmitLogAsync("Deploy completed.", "shipright");
+    }
+
+    private async Task ExecuteScriptStepAsync(PipelineContext ctx, BuildRecord record,
+        ProjectConfig project, ResourcePipelineStep step, Func<Task> save, CancellationToken ct)
+    {
+        var stepNum = (record.CurrentStepNumber ?? 0) + 1;
+        var stepLabel = step.Label ?? "Script";
+
+        await ctx.StepStartedAsync(stepNum, stepLabel);
+
+        if (step.ScriptResourceId is not Guid scriptId)
+        {
+            await ctx.EmitLogAsync($"Script step '{stepLabel}' has no ScriptResourceId — skipping", "shipright");
+            await ctx.StepCompletedAsync(stepNum, stepLabel);
+            return;
+        }
+
+        var script = await _scriptStore.GetByIdAsync(scriptId);
+        if (script is null)
+        {
+            var msg = $"Script resource '{scriptId}' not found for step '{stepLabel}'";
+            if (step.ContinueOnError)
+            {
+                await ctx.EmitLogAsync($"[WARN] {msg} — skipping (continue on error)", "shipright");
+                await ctx.StepCompletedAsync(stepNum, stepLabel, success: false);
+                return;
+            }
+            throw new InvalidOperationException(msg);
+        }
+
+        await ctx.EmitLogAsync($"Running script: {script.Name} ({script.Platform}, {script.Target})", "shipright");
+
+        var envVars = new Dictionary<string, string>
+        {
+            ["GIT_BRANCH"] = project.GitRepos.FirstOrDefault()?.DeployBranch ?? "",
+            ["PROJECT_ID"] = project.Id,
+            ["PROJECT_NAME"] = project.Name,
+        };
+
+        var result = await _scriptExecutor.ExecuteAsync(
+            script,
+            workingDir: project.Wsl.WorkingDir,
+            envVars: envVars,
+            serverConfig: project.Server,
+            onOutput: line => ctx.EmitLogAsync(line, "script"),
+            ct: ct);
+
+        if (result.ExitCode != 0)
+        {
+            var msg = $"Script '{script.Name}' failed (exit code {result.ExitCode}): {result.Error}";
+            if (step.ContinueOnError)
+            {
+                await ctx.EmitLogAsync($"[WARN] {msg} — continuing (continue on error)", "shipright");
+                await ctx.StepCompletedAsync(stepNum, stepLabel, success: false);
+                await save();
+                return;
+            }
+            throw new InvalidOperationException(msg);
+        }
+
+        await ctx.EmitLogAsync($"Script '{script.Name}' completed successfully", "shipright");
+        await ctx.StepCompletedAsync(stepNum, stepLabel);
+        await save();
     }
 
     protected virtual async Task RunDockerBuildAsync(PipelineContext ctx, BuildRecord record,

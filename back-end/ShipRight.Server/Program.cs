@@ -80,6 +80,7 @@ try
     builder.Services.AddSingleton<IScriptResourceStore, SqliteScriptResourceStore>();
     builder.Services.AddSingleton<IPipelineResourceStore, SqlitePipelineResourceStore>();
     builder.Services.AddSingleton<ResourceResolutionService>();
+    builder.Services.AddSingleton<ScriptExecutor>();
 
     var app = builder.Build();
 
