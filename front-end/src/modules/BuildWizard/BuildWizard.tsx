@@ -25,6 +25,7 @@ interface Props {
   isOpen: boolean;
   onClose: () => void;
   initialBuildId?: string;
+  initialPipeline?: IPipelineResource;
   onVersionCreated?: () => void;
 }
 
@@ -45,6 +46,16 @@ const BUILD_STEP_NAMES = [
   'WriteVersionsAndTag', 'ComposeRepoSync', 'DockerBuild', 'BuildComplete',
 ];
 const PUSH_STEP_NAMES = ['DockerLoginCheck', 'DockerPush', 'PushComplete'];
+
+function deriveCustomPipelineStepNames(pipeline: IPipelineResource): string[] {
+  const names: string[] = [];
+  for (const step of pipeline.steps) {
+    if (step.type === 'Script') names.push(step.label || 'Script');
+    else if (step.type === 'Build') names.push('DockerBuild');
+    // Push/Deploy don't emit individual step events in custom pipelines
+  }
+  return names;
+}
 
 const OPTION_LABELS: Record<string, string> = {
   commit_and_push:          'Commit & Push',
@@ -95,7 +106,7 @@ const fmtExpected = (s: number | null | undefined) => {
   return `~${Math.floor(s / 60)}m${s % 60 > 0 ? `${s % 60}s` : ''}`;
 };
 
-export default function BuildWizard({ projectId, projectName, currentVersions, defaultDeployMode, isOpen, onClose, initialBuildId, onVersionCreated }: Props) {
+export default function BuildWizard({ projectId, projectName, currentVersions, defaultDeployMode, isOpen, onClose, initialBuildId, initialPipeline, onVersionCreated }: Props) {
   const [phase, setPhase] = useState<Phase>('versions');
   const [deployModeOverride, setDeployModeOverride] = useState<DeployMode>(defaultDeployMode);
   const [newVersions, setNewVersions] = useState<Record<string, string>>({});
@@ -132,7 +143,8 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
   const [pendingChain, setPendingChain] = useState<'push' | 'deploy' | null>(null);
   // Pipeline selection state
   const [showPipelineSelector, setShowPipelineSelector] = useState(false);
-  const [selectedPipeline, setSelectedPipeline] = useState<IPipelineResource | null>(null);
+  const [selectedPipeline, setSelectedPipeline] = useState<IPipelineResource | null>(initialPipeline ?? null);
+  const [hasPipelines, setHasPipelines] = useState<boolean | null>(null);
 
   const updateSelectedSteps = (steps: Set<BuildStep>) => {
     autoChainRef.current = { push: steps.has('push'), deploy: steps.has('deploy') };
@@ -168,6 +180,17 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
       api.get<BuildStats>(`/api/projects/${projectId}/build-stats`).then(setBuildStats).catch(() => {});
     }
   }, [isOpen, projectId]);
+
+  // Check if project has any pipelines (for conditional PipelineSelector)
+  useEffect(() => {
+    if (isOpen && projectId && !initialPipeline) {
+      api.get<unknown[]>(`/api/resources/pipelines?projectId=${projectId}`)
+        .then(list => setHasPipelines(list.length > 0))
+        .catch(() => setHasPipelines(false));
+    } else if (isOpen && initialPipeline) {
+      setHasPipelines(true);
+    }
+  }, [isOpen, projectId, initialPipeline]);
 
   // Auto-chain: deferred to next render so handlePush/handleDeploy have current buildId in closure
   useEffect(() => {
@@ -462,7 +485,8 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
       setSelectedSteps(new Set<BuildStep>(['build']));
       setPendingChain(null);
       setShowPipelineSelector(false);
-      setSelectedPipeline(null);
+      setSelectedPipeline(initialPipeline ?? null);
+      setHasPipelines(null);
       autoChainRef.current = { push: false, deploy: false };
     }
   }, [isOpen]);
@@ -482,7 +506,9 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
   const isPushSucceeded = status === 'PushSucceeded' || status === 'BuildSucceeded';
   const isPushFailed    = status === 'PushFailed';
   const isDeployed      = status === 'Deployed' || status === 'DeployFailed';
-  const activeStepNames = activePushPhase ? PUSH_STEP_NAMES : BUILD_STEP_NAMES;
+  const activeStepNames = selectedPipeline && !activePushPhase
+    ? deriveCustomPipelineStepNames(selectedPipeline)
+    : activePushPhase ? PUSH_STEP_NAMES : BUILD_STEP_NAMES;
 
   // Expected duration for current step and overall
   const stepExpected = currentStepName && buildStats ? buildStats.stageExpected[currentStepName] : null;
@@ -574,7 +600,16 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
                   </div>
                 )}
                 <div className={styles.actions}>
-                  <ZestButton onClick={() => setShowPipelineSelector(true)}
+                  <ZestButton onClick={() => {
+                    if (initialPipeline) {
+                      setSelectedPipeline(initialPipeline);
+                      handleStartBuild();
+                    } else if (hasPipelines === false) {
+                      handleStartBuild();
+                    } else {
+                      setShowPipelineSelector(true);
+                    }
+                  }}
                     zest={{ visualOptions: { variant: 'standard' }, semanticType: 'submit' }}>
                     Start Build
                   </ZestButton>
@@ -797,6 +832,8 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
             <div className={styles.pauseOverlay}>
               <div className={styles.pauseCard}>
                 <PipelineSelector
+                  projectId={projectId}
+                  initialPipelineId={initialPipeline?.id}
                   onSelectPipeline={(pipeline) => {
                     setSelectedPipeline(pipeline);
                     setShowPipelineSelector(false);

@@ -3,11 +3,13 @@ import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { ZestResponsiveLayout } from 'jattac.libs.web.zest-responsive-layout';
 import ZestButton from 'jattac.libs.web.zest-button';
+import ZestTextbox from 'jattac.libs.web.zest-textbox';
 import OverflowMenu from 'jattac.libs.web.overflow-menu';
 import AppShell from '@/modules/AppShell/AppShell';
 import PipelineBuilder from '@/modules/BuildWizard/PipelineBuilder';
+import BuildWizard from '@/modules/BuildWizard/BuildWizard';
 import { api } from '@/shared/ApiService';
-import type { IPipelineResource, IPipelineStep } from '@/shared/types/IProject';
+import type { IPipelineResource, IPipelineStep, IProject, IServiceVersion } from '@/shared/types/IProject';
 import styles from './Styles/Pipelines.module.css';
 
 const STEP_ICONS: Record<string, string> = {
@@ -22,12 +24,30 @@ export default function PipelinesPage() {
   const [loading, setLoading] = useState(true);
   const [paneTarget, setPaneTarget] = useState<'new' | 'edit' | undefined>(undefined);
   const [editPipeline, setEditPipeline] = useState<IPipelineResource | null>(null);
+  // Build state
+  const [buildWizardOpen, setBuildWizardOpen] = useState(false);
+  const [buildProject, setBuildProject] = useState<IProject | null>(null);
+  const [buildPipeline, setBuildPipeline] = useState<IPipelineResource | null>(null);
+  const [buildVersions, setBuildVersions] = useState<IServiceVersion[]>([]);
+  // Project picker for global pipelines
+  const [showProjectPicker, setShowProjectPicker] = useState(false);
+  const [pickerPipeline, setPickerPipeline] = useState<IPipelineResource | null>(null);
+  const [projects, setProjects] = useState<IProject[]>([]);
+  const [projectSearch, setProjectSearch] = useState('');
+  const [loadingProjects, setLoadingProjects] = useState(false);
+  // Project filter for pipeline list
+  const [filterProjectId, setFilterProjectId] = useState<string>('');
+  const [allProjects, setAllProjects] = useState<IProject[]>([]);
 
   const load = async () => {
     setLoading(true);
     try {
-      const data = await api.get<IPipelineResource[]>('/api/resources/pipelines');
+      const [data, projs] = await Promise.all([
+        api.get<IPipelineResource[]>('/api/resources/pipelines'),
+        api.get<IProject[]>('/api/projects').catch(() => []),
+      ]);
       setPipelines(data);
+      setAllProjects(projs);
     } catch {
       toast.error('Failed to load pipelines.');
     } finally {
@@ -60,6 +80,54 @@ export default function PipelinesPage() {
     }
   };
 
+  const openBuild = async (p: IPipelineResource) => {
+    if (p.scope === 'Project' && p.projectId) {
+      try {
+        const [project, versions] = await Promise.all([
+          api.get<IProject>(`/api/projects/${p.projectId}`),
+          api.get<IServiceVersion[]>(`/api/projects/${p.projectId}/current-versions`).catch(() => []),
+        ]);
+        setBuildProject(project);
+        setBuildPipeline(p);
+        setBuildVersions(versions);
+        setBuildWizardOpen(true);
+      } catch {
+        toast.error('Failed to load project for this pipeline.');
+      }
+    } else {
+      // Global pipeline — show project picker
+      setPickerPipeline(p);
+      setShowProjectPicker(true);
+      setLoadingProjects(true);
+      try {
+        const list = await api.get<IProject[]>('/api/projects');
+        setProjects(list);
+      } catch {
+        toast.error('Failed to load projects.');
+      } finally {
+        setLoadingProjects(false);
+      }
+    }
+  };
+
+  const handleProjectPick = async (project: IProject) => {
+    setShowProjectPicker(false);
+    try {
+      const versions = await api.get<IServiceVersion[]>(`/api/projects/${project.id}/current-versions`).catch(() => []);
+      setBuildProject(project);
+      setBuildPipeline(pickerPipeline);
+      setBuildVersions(versions);
+      setBuildWizardOpen(true);
+    } catch {
+      toast.error('Failed to load project versions.');
+    }
+    setPickerPipeline(null);
+  };
+
+  const filteredProjects = projects.filter(p =>
+    p.name.toLowerCase().includes(projectSearch.toLowerCase())
+  );
+
   const getStepSummary = (steps: IPipelineStep[]) => {
     const counts = steps.reduce((acc, s) => {
       acc[s.type] = (acc[s.type] || 0) + 1;
@@ -75,6 +143,10 @@ export default function PipelinesPage() {
   const paneTitle = paneTarget === 'new' ? 'New Pipeline'
     : paneTarget === 'edit' ? `Edit: ${editPipeline?.name || ''}`
     : '';
+
+  const filteredPipelines = filterProjectId
+    ? pipelines.filter(p => p.projectId === filterProjectId)
+    : pipelines;
 
   return (
     <>
@@ -98,10 +170,28 @@ export default function PipelinesPage() {
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
             <h1 className={styles.heading}>Pipelines</h1>
-            <ZestButton onClick={openNew}
-              zest={{ visualOptions: { variant: 'standard' }, semanticType: 'add' }}>
-              New Pipeline
-            </ZestButton>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              {allProjects.length > 0 && (
+                <select
+                  value={filterProjectId}
+                  onChange={e => setFilterProjectId(e.target.value)}
+                  style={{
+                    background: '#131D30', color: '#C9D6E3',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    borderRadius: 6, padding: '7px 10px', fontSize: 13,
+                  }}
+                >
+                  <option value="">All projects</option>
+                  {allProjects.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              )}
+              <ZestButton onClick={openNew}
+                zest={{ visualOptions: { variant: 'standard' }, semanticType: 'add' }}>
+                New Pipeline
+              </ZestButton>
+            </div>
           </div>
 
           <div className={styles.grid}>
@@ -110,7 +200,7 @@ export default function PipelinesPage() {
                 <div className={`skeleton ${styles.skeletonTitle}`} />
               </div>
             ))}
-            {!loading && pipelines.map(p => (
+            {!loading && filteredPipelines.map(p => (
               <div key={p.id} className={styles.card}>
                 <div className={styles.cardTop}>
                   <div className={styles.cardContent}>
@@ -125,25 +215,84 @@ export default function PipelinesPage() {
                     </div>
                     <p className={styles.cardDetail}>{getStepSummary(p.steps)}</p>
                   </div>
-                  <OverflowMenu items={[
-                    { content: 'Edit', onClick: () => openEdit(p) },
-                    { content: 'Delete', onClick: () => handleDelete(p) },
-                  ]} />
+                  <div className={styles.cardActions}>
+                    <ZestButton
+                      onClick={() => openBuild(p)}
+                      zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}
+                    >
+                      Build
+                    </ZestButton>
+                    <OverflowMenu items={[
+                      { content: 'Edit', onClick: () => openEdit(p) },
+                      { content: 'Delete', onClick: () => handleDelete(p) },
+                    ]} />
+                  </div>
                 </div>
               </div>
             ))}
-            {!loading && pipelines.length === 0 && (
+            {!loading && filteredPipelines.length === 0 && (
               <p className={styles.empty}>
-                No pipelines configured.{' '}
-                <button onClick={openNew}
-                  style={{ background: 'none', border: 'none', color: '#C9A84C', cursor: 'pointer' }}>
-                  Create one
-                </button>.
+                {filterProjectId
+                  ? 'No pipelines for the selected project.'
+                  : <>No pipelines configured.{' '}
+                    <button onClick={openNew}
+                      style={{ background: 'none', border: 'none', color: '#C9A84C', cursor: 'pointer' }}>
+                      Create one
+                    </button>.</>
+                }
               </p>
             )}
           </div>
         </ZestResponsiveLayout>
       </AppShell>
+
+      {/* Project picker for global pipeline build */}
+      {showProjectPicker && (
+        <div className={styles.pickerOverlay}>
+          <div className={styles.pickerCard}>
+            <h3 className={styles.pickerTitle}>Select Project</h3>
+            <ZestTextbox
+              value={projectSearch}
+              onChange={e => setProjectSearch(e.target.value)}
+              placeholder="Search projects..."
+              zest={{ stretch: true, zSize: 'sm' }}
+            />
+            <div className={styles.pickerList}>
+              {loadingProjects && <div className={styles.pickerEmpty}>Loading projects...</div>}
+              {!loadingProjects && filteredProjects.length === 0 && (
+                <div className={styles.pickerEmpty}>No projects found.</div>
+              )}
+              {!loadingProjects && filteredProjects.map(p => (
+                <button key={p.id} className={styles.pickerItem} onClick={() => handleProjectPick(p)}>
+                  {p.name}
+                </button>
+              ))}
+            </div>
+            <ZestButton onClick={() => { setShowProjectPicker(false); setPickerPipeline(null); }}
+              zest={{ buttonStyle: 'outline' }}>
+              Cancel
+            </ZestButton>
+          </div>
+        </div>
+      )}
+
+      {/* Build wizard */}
+      {buildProject && (
+        <BuildWizard
+          projectId={buildProject.id}
+          projectName={buildProject.name}
+          currentVersions={buildVersions}
+          defaultDeployMode={buildProject.server.deployMode}
+          isOpen={buildWizardOpen}
+          initialPipeline={buildPipeline ?? undefined}
+          onClose={() => {
+            setBuildWizardOpen(false);
+            setBuildProject(null);
+            setBuildPipeline(null);
+            setBuildVersions([]);
+          }}
+        />
+      )}
     </>
   );
 }

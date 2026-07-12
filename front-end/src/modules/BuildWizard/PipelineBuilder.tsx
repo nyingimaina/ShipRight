@@ -23,6 +23,7 @@ import type {
   IPipelineResource,
   IPipelineStep,
   IScriptResource,
+  IProject,
   PipelineStepType,
   ScriptPlatform,
   ExecutionTarget,
@@ -59,6 +60,8 @@ export default function PipelineBuilder({ pipeline, onSave, onCancel }: Props) {
   const [scope, setScope] = useState<'Global' | 'Project'>(pipeline?.scope || 'Global');
   const [steps, setSteps] = useState<IPipelineStep[]>(pipeline?.steps || []);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
+  const [projectId, setProjectId] = useState<string | undefined>(pipeline?.projectId);
+  const [projects, setProjects] = useState<IProject[]>([]);
   const [scripts, setScripts] = useState<IScriptResource[]>([]);
   const [saving, setSaving] = useState(false);
 
@@ -72,6 +75,14 @@ export default function PipelineBuilder({ pipeline, onSave, onCancel }: Props) {
       .then(setScripts)
       .catch(() => toast.error('Failed to load scripts'));
   }, []);
+
+  useEffect(() => {
+    if (scope === 'Project') {
+      api.get<IProject[]>('/api/projects')
+        .then(setProjects)
+        .catch(() => toast.error('Failed to load projects'));
+    }
+  }, [scope]);
 
   const selectedStep = steps.find(s => s.id === selectedStepId);
 
@@ -137,6 +148,10 @@ export default function PipelineBuilder({ pipeline, onSave, onCancel }: Props) {
       toast.error('Pipeline must have at least one step.');
       return;
     }
+    if (scope === 'Project' && !projectId) {
+      toast.error('Please select a project for this pipeline.');
+      return;
+    }
 
     // Validate step order
     const errors = validateStepOrder(steps);
@@ -159,7 +174,7 @@ export default function PipelineBuilder({ pipeline, onSave, onCancel }: Props) {
         name: name.trim(),
         steps,
         scope,
-        projectId: pipeline?.projectId,
+        projectId: scope === 'Project' ? projectId : undefined,
         createdAt: pipeline?.createdAt || new Date().toISOString(),
         modifiedAt: new Date().toISOString(),
       };
@@ -190,11 +205,27 @@ export default function PipelineBuilder({ pipeline, onSave, onCancel }: Props) {
         <select
           className={styles.scopeSelect}
           value={scope}
-          onChange={e => setScope(e.target.value as 'Global' | 'Project')}
+          onChange={e => {
+            const newScope = e.target.value as 'Global' | 'Project';
+            setScope(newScope);
+            if (newScope === 'Global') setProjectId(undefined);
+          }}
         >
           <option value="Global">Global</option>
           <option value="Project">Project</option>
         </select>
+        {scope === 'Project' && (
+          <select
+            className={styles.scopeSelect}
+            value={projectId || ''}
+            onChange={e => setProjectId(e.target.value || undefined)}
+          >
+            <option value="">Select project…</option>
+            {projects.map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       <div className={styles.body}>

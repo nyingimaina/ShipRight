@@ -5,6 +5,8 @@ import type { IPipelineResource, IPipelineStep } from '@/shared/types/IProject';
 import styles from './Styles/StepPicker.module.css';
 
 interface Props {
+  projectId: string;
+  initialPipelineId?: string;
   onSelectPipeline: (pipeline: IPipelineResource) => void;
   onUseCustom: () => void;
   onCancel: () => void;
@@ -17,17 +19,17 @@ const STEP_ICONS: Record<string, string> = {
   Deploy: '🚀',
 };
 
-export default function PipelineSelector({ onSelectPipeline, onUseCustom, onCancel }: Props) {
+export default function PipelineSelector({ projectId, initialPipelineId, onSelectPipeline, onUseCustom, onCancel }: Props) {
   const [pipelines, setPipelines] = useState<IPipelineResource[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialPipelineId ?? null);
 
   useEffect(() => {
-    api.get<IPipelineResource[]>('/api/resources/pipelines')
+    api.get<IPipelineResource[]>(`/api/resources/pipelines?projectId=${projectId}`)
       .then(setPipelines)
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [projectId]);
 
   const handleConfirm = () => {
     const pipeline = pipelines.find(p => p.id === selectedId);
