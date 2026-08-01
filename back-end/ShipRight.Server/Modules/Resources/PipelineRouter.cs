@@ -18,9 +18,9 @@ public static class PipelineRouter
             var projectIdStr = http.Request.Query["projectId"].FirstOrDefault();
 
             List<PipelineResource> pipelines;
-            if (Guid.TryParse(projectIdStr, out var projectId))
+            if (!string.IsNullOrWhiteSpace(projectIdStr))
             {
-                pipelines = await store.GetByProjectAsync(projectId);
+                pipelines = await store.GetByProjectAsync(projectIdStr);
             }
             else if (scope == "global")
             {

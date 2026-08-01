@@ -14,7 +14,7 @@ import LogViewer, { LogEntry } from './LogViewer';
 import OptionPicker, { PickerOption } from './OptionPicker';
 import StepPicker, { BuildStep } from './StepPicker';
 import PipelineSelector from './PipelineSelector';
-import type { IPipelineResource } from '@/shared/types/IProject';
+import type { IPipelineResource, ICredentialResource, IProjectInput, IProject } from '@/shared/types/IProject';
 import styles from './Styles/BuildWizard.module.css';
 
 interface Props {
@@ -145,6 +145,12 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
   const [showPipelineSelector, setShowPipelineSelector] = useState(false);
   const [selectedPipeline, setSelectedPipeline] = useState<IPipelineResource | null>(initialPipeline ?? null);
   const [hasPipelines, setHasPipelines] = useState<boolean | null>(null);
+  // Credential sidepane state
+  const [credentials, setCredentials] = useState<ICredentialResource[]>([]);
+  const [selectedCredentialId, setSelectedCredentialId] = useState('');
+  const [showCredentialPane, setShowCredentialPane] = useState(false);
+  const [credentialNewName, setCredentialNewName] = useState('');
+  const [credentialNewValue, setCredentialNewValue] = useState('');
 
   const updateSelectedSteps = (steps: Set<BuildStep>) => {
     autoChainRef.current = { push: steps.has('push'), deploy: steps.has('deploy') };
@@ -180,6 +186,16 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
       api.get<BuildStats>(`/api/projects/${projectId}/build-stats`).then(setBuildStats).catch(() => {});
     }
   }, [isOpen, projectId]);
+
+  // Load credentials when push fails with CredentialHost
+  useEffect(() => {
+    if (buildRecord?.credentialHost) {
+      api.get<ICredentialResource[]>('/api/resources/credentials').then(setCredentials).catch(() => {});
+      setShowCredentialPane(true);
+    } else {
+      setShowCredentialPane(false);
+    }
+  }, [buildRecord?.credentialHost]);
 
   // Check if project has any pipelines (for conditional PipelineSelector)
   useEffect(() => {
@@ -738,14 +754,33 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
                 )}
 
                 {isPushFailed && (
-                  <div className={styles.deploySection}>
-                    <span className={styles.deployInfo}>✗ Push to registry failed</span>
-                    <div className={styles.actionRow}>
-                      <ZestButton onClick={handlePush} disabled={activeOp !== 'idle'} zest={{ visualOptions: { variant: 'standard' } }}>
-                        Retry Push
-                      </ZestButton>
-                      <ZestButton onClick={handleClose} zest={{ buttonStyle: 'outline' }}>Close</ZestButton>
+                  <div>
+                    <div className={styles.deploySection}>
+                      <span className={styles.deployInfo}>✗ Push to registry failed</span>
+                      <div className={styles.actionRow}>
+                        <ZestButton onClick={handlePush} disabled={activeOp !== 'idle'} zest={{ visualOptions: { variant: 'standard' } }}>
+                          Retry Push
+                        </ZestButton>
+                        <ZestButton onClick={handleClose} zest={{ buttonStyle: 'outline' }}>Close</ZestButton>
+                      </div>
                     </div>
+                    {buildRecord?.credentialHost && showCredentialPane && (
+                      <CredentialPane
+                        credentialHost={buildRecord.credentialHost}
+                        projectId={projectId}
+                        credentials={credentials}
+                        selectedCredentialId={selectedCredentialId}
+                        onSelectCredential={setSelectedCredentialId}
+                        newName={credentialNewName}
+                        newValue={credentialNewValue}
+                        onNewNameChange={setCredentialNewName}
+                        onNewValueChange={setCredentialNewValue}
+                        onCredentialApplied={() => {
+                          setShowCredentialPane(false);
+                          toast.success('Credential applied. Retry push.');
+                        }}
+                      />
+                    )}
                   </div>
                 )}
 
@@ -816,11 +851,30 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
                 )}
 
                 {(status === 'BuildFailed' || status === 'Aborted' || status === 'Interrupted') && (
-                  <div className={styles.deploySection}>
-                    <span className={styles.deployInfo}>
-                      {status === 'Aborted' ? 'Build aborted' : status === 'Interrupted' ? 'Build interrupted' : '✗ Build failed'}
-                    </span>
-                    <ZestButton onClick={handleClose} zest={{ buttonStyle: 'outline' }}>Close</ZestButton>
+                  <div>
+                    <div className={styles.deploySection}>
+                      <span className={styles.deployInfo}>
+                        {status === 'Aborted' ? 'Build aborted' : status === 'Interrupted' ? 'Build interrupted' : '✗ Build failed'}
+                      </span>
+                      <ZestButton onClick={handleClose} zest={{ buttonStyle: 'outline' }}>Close</ZestButton>
+                    </div>
+                    {buildRecord?.credentialHost && showCredentialPane && (
+                      <CredentialPane
+                        credentialHost={buildRecord.credentialHost}
+                        projectId={projectId}
+                        credentials={credentials}
+                        selectedCredentialId={selectedCredentialId}
+                        onSelectCredential={setSelectedCredentialId}
+                        newName={credentialNewName}
+                        newValue={credentialNewValue}
+                        onNewNameChange={setCredentialNewName}
+                        onNewValueChange={setCredentialNewValue}
+                        onCredentialApplied={() => {
+                          setShowCredentialPane(false);
+                          toast.success('Credential applied. Restart the build.');
+                        }}
+                      />
+                    )}
                   </div>
                 )}
               </>
@@ -928,5 +982,125 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
         </Drawer.Content>
       </Drawer.Portal>
     </Drawer.Root>
+  );
+}
+
+function CredentialPane({ credentialHost, projectId, credentials, selectedCredentialId, onSelectCredential, newName, newValue, onNewNameChange, onNewValueChange, onCredentialApplied }: {
+  credentialHost: string;
+  projectId: string;
+  credentials: ICredentialResource[];
+  selectedCredentialId: string;
+  onSelectCredential: (id: string) => void;
+  newName: string;
+  newValue: string;
+  onNewNameChange: (v: string) => void;
+  onNewValueChange: (v: string) => void;
+  onCredentialApplied: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [mode, setMode] = useState<'select' | 'create'>('select');
+
+  const handleApplyExisting = async () => {
+    if (!selectedCredentialId) { toast.error('Select a credential.'); return; }
+    setSaving(true);
+    try {
+      const project = await api.get<IProject>(`/api/projects/${projectId}/config`);
+      const input = { ...project, gitRepos: project.gitRepos.map((r: { credentialResourceId?: string }) => ({
+        ...r,
+        credentialResourceId: r.credentialResourceId || selectedCredentialId,
+      })) };
+      await api.put(`/api/projects/${projectId}`, input);
+      onCredentialApplied();
+    } catch { toast.error('Failed to apply credential.'); }
+    finally { setSaving(false); }
+  };
+
+  const handleCreateAndApply = async () => {
+    if (!newName.trim()) { toast.error('Name is required.'); return; }
+    if (!newValue.trim()) { toast.error('Value is required.'); return; }
+    setSaving(true);
+    try {
+      const created = await api.post<ICredentialResource>('/api/resources/credentials', {
+        name: newName, value: newValue, hostPattern: credentialHost,
+      });
+      const project = await api.get<IProject>(`/api/projects/${projectId}/config`);
+      const input = { ...project, gitRepos: project.gitRepos.map((r: { credentialResourceId?: string }) => ({
+        ...r,
+        credentialResourceId: r.credentialResourceId || created.id,
+      })) };
+      await api.put(`/api/projects/${projectId}`, input);
+      onCredentialApplied();
+    } catch { toast.error('Failed to create and apply credential.'); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div style={{
+      marginTop: 12, padding: 16, background: '#1A2540', borderRadius: 8,
+      border: '1px solid rgba(201,168,76,0.3)',
+    }}>
+      <div style={{ marginBottom: 8, fontSize: 14, color: '#C9A84C', fontWeight: 600 }}>
+        Credential Required for {credentialHost}
+      </div>
+      <div style={{ fontSize: 12, color: '#637389', marginBottom: 12 }}>
+        Git push needs authentication. Select an existing credential or create a new one.
+      </div>
+
+      {mode === 'select' && (
+        <>
+          <select
+            value={selectedCredentialId}
+            onChange={e => onSelectCredential(e.target.value)}
+            style={{
+              width: '100%', background: '#131D30', color: '#F0F2F5',
+              border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6,
+              padding: '8px 12px', fontSize: 14, marginBottom: 8,
+            }}
+          >
+            <option value="">Select credential…</option>
+            {credentials.map(c => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+            <ZestButton onClick={handleApplyExisting} disabled={!selectedCredentialId || saving}
+              zest={{ visualOptions: { size: 'sm' }, buttonStyle: 'outline' }}>
+              {saving ? 'Applying…' : 'Apply & Retry'}
+            </ZestButton>
+            <button
+              onClick={() => setMode('create')}
+              style={{ background: 'none', border: 'none', color: '#C9A84C', cursor: 'pointer', fontSize: 12 }}
+            >
+              Create new
+            </button>
+          </div>
+        </>
+      )}
+
+      {mode === 'create' && (
+        <>
+          <ZestTextbox value={newName} onChange={e => onNewNameChange(e.target.value)}
+            placeholder="Credential name" zest={{ stretch: true, zSize: 'sm' }} />
+          <div style={{ height: 8 }} />
+          <ZestTextbox value={newValue} onChange={e => onNewValueChange(e.target.value)}
+            placeholder="PAT / token / password" zest={{ stretch: true, zSize: 'sm' }} />
+          <div style={{ fontSize: 11, color: '#637389', marginTop: 4, marginBottom: 8 }}>
+            Will be stored encrypted (AES-256-GCM) and bound to repos in this project.
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <ZestButton onClick={handleCreateAndApply} disabled={!newName.trim() || !newValue.trim() || saving}
+              zest={{ visualOptions: { size: 'sm' }, buttonStyle: 'outline' }}>
+              {saving ? 'Creating…' : 'Create & Apply'}
+            </ZestButton>
+            <button
+              onClick={() => setMode('select')}
+              style={{ background: 'none', border: 'none', color: '#C9A84C', cursor: 'pointer', fontSize: 12 }}
+            >
+              Pick existing
+            </button>
+          </div>
+        </>
+      )}
+    </div>
   );
 }

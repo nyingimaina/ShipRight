@@ -1,9 +1,18 @@
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
+let _accessToken: string | null = null;
+
+export function setAccessToken(token: string | null) {
+  _accessToken = token;
+}
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (_accessToken) headers['Authorization'] = `Bearer ${_accessToken}`;
+  if (body) headers['Content-Type'] = 'application/json';
+
   const res = await fetch(`${BASE}${path}`, {
     method,
-    headers: body ? { 'Content-Type': 'application/json' } : {},
+    headers,
     body: body ? JSON.stringify(body) : undefined,
   });
 
@@ -15,7 +24,10 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 }
 
 async function getRaw(path: string): Promise<string> {
-  const res = await fetch(`${BASE}${path}`);
+  const headers: Record<string, string> = {};
+  if (_accessToken) headers['Authorization'] = `Bearer ${_accessToken}`;
+
+  const res = await fetch(`${BASE}${path}`, { headers });
   if (!res.ok) {
     const data = await res.json().catch(() => ({ message: `HTTP ${res.status}` }));
     throw data;

@@ -1,11 +1,54 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using ShipRight.Modules.Builds;
+using ShipRight.Modules.Projects;
 
 namespace ShipRight.Tests.Modules.Builds;
 
 [TestClass]
 public class BuildOrchestratorTests
 {
+    [TestMethod]
+    public void ResolveRegistry_ExplicitDockerRegistryField_ReturnsThatHost()
+    {
+        var svc = new ServiceConfig { DockerRegistry = "ghcr.io", DockerImageName = "org/app" };
+        Assert.AreEqual("ghcr.io", BuildOrchestrator.ResolveRegistry(svc));
+    }
+
+    [TestMethod]
+    public void ResolveRegistry_NoDockerRegistry_ImageWithHostPrefix_ReturnsPrefix()
+    {
+        var svc = new ServiceConfig { DockerImageName = "ghcr.io/org/app" };
+        Assert.AreEqual("ghcr.io", BuildOrchestrator.ResolveRegistry(svc));
+    }
+
+    [TestMethod]
+    public void ResolveRegistry_NoDockerRegistry_ImageWithPortPrefix_ReturnsPrefix()
+    {
+        var svc = new ServiceConfig { DockerImageName = "localhost:5000/org/app" };
+        Assert.AreEqual("localhost:5000", BuildOrchestrator.ResolveRegistry(svc));
+    }
+
+    [TestMethod]
+    public void ResolveRegistry_NoDockerRegistry_HubStyleImage_ReturnsDockerIo()
+    {
+        var svc = new ServiceConfig { DockerImageName = "nyingi/app" };
+        Assert.AreEqual("docker.io", BuildOrchestrator.ResolveRegistry(svc));
+    }
+
+    [TestMethod]
+    public void ResolveRegistry_NoDockerRegistry_SingleSegmentImage_ReturnsDockerIo()
+    {
+        var svc = new ServiceConfig { DockerImageName = "nginx" };
+        Assert.AreEqual("docker.io", BuildOrchestrator.ResolveRegistry(svc));
+    }
+
+    [TestMethod]
+    public void ResolveRegistry_NoDockerRegistry_EmptyImage_ReturnsDockerIo()
+    {
+        var svc = new ServiceConfig { DockerImageName = "" };
+        Assert.AreEqual("docker.io", BuildOrchestrator.ResolveRegistry(svc));
+    }
+
     [TestMethod]
     public void ExtractImageOwner_GivenDockerHubUserImage_ReturnsOwner()
     {

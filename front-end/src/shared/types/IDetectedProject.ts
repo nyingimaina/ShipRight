@@ -12,6 +12,8 @@ export interface IDetectedService {
 export interface IDetectedGitRepo {
   repoPath: string;
   deployBranch: string;
+  pushArgs?: string;
+  credentialResourceId?: string;
 }
 
 export interface IDetectedProjectConfig {

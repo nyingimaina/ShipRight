@@ -57,6 +57,16 @@ public record GitConfig
 {
     public string RepoPath { get; init; } = string.Empty;
     public string DeployBranch { get; init; } = "master";
+    /// <summary>
+    /// Optional extra arguments to append to every git push command for this repo,
+    /// e.g. "--no-verify" to bypass pre-push hooks. Supports quoted values.
+    /// </summary>
+    public string PushArgs { get; init; } = string.Empty;
+    /// <summary>
+    /// When set, references a CredentialResource whose value (e.g. a PAT) is
+    /// injected via GIT_ASKPASS before every git push for this repo.
+    /// </summary>
+    public Guid? CredentialResourceId { get; init; }
 }
 
 public record WslConfig
@@ -115,4 +125,9 @@ public record ProjectConfig
     public int WatchPollSeconds { get; init; } = 300;
     /// Which pipeline steps to run when a SHA change is detected: "Build", "BuildAndPush", or "BuildPushAndDeploy".
     public string WatchSteps { get; init; } = "Build";
+    /// <summary>
+    /// Maximum time in seconds to wait for a git push to complete. Defaults to 300 (5 minutes).
+    /// Set to 0 for no timeout.
+    /// </summary>
+    public int GitPushTimeoutSeconds { get; init; } = 300;
 }

@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 import { Tab, TabList, TabPanel, Tabs } from 'react-tabs';
 import Link from 'next/link';
 import CreatableSelect from 'react-select/creatable';
+import toast from 'react-hot-toast';
 import ZestButton from 'jattac.libs.web.zest-button';
 import ZestTextbox from 'jattac.libs.web.zest-textbox';
 import { RiAddLine, RiDeleteBinLine } from 'react-icons/ri';
-import { IApiError, IDatabaseConfig, IProjectInput, IServerConfig, DbProviderType, DeployMode, emptyDatabaseConfig, emptyProjectInput, IPipelineResource } from '@/shared/types/IProject';
+import { IApiError, IDatabaseConfig, IProjectInput, IServerConfig, ICredentialResource, DbProviderType, DeployMode, emptyDatabaseConfig, emptyProjectInput, IPipelineResource } from '@/shared/types/IProject';
 import { api } from '@/shared/ApiService';
 import SshKeySection from './SshKeySection';
 import WatchBranchSection from './WatchBranchSection';
@@ -30,6 +31,10 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
 
   const [globalServers, setGlobalServers] = useState<IServerConfig[]>([]);
   const [pipelines, setPipelines] = useState<IPipelineResource[]>([]);
+  const [credentials, setCredentials] = useState<ICredentialResource[]>([]);
+  const [creatingCredentialForRepo, setCreatingCredentialForRepo] = useState<number | null>(null);
+  const [newCredName, setNewCredName] = useState('');
+  const [newCredValue, setNewCredValue] = useState('');
 
   useEffect(() => {
     api.get<IServerConfig[]>('/api/servers')
@@ -37,6 +42,9 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
       .catch(() => {});
     api.get<IPipelineResource[]>('/api/resources/pipelines')
       .then(setPipelines)
+      .catch(() => {});
+    api.get<ICredentialResource[]>('/api/resources/credentials')
+      .then(setCredentials)
       .catch(() => {});
   }, []);
 
@@ -66,7 +74,7 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
     }
   };
 
-  const set = (path: string, value: string) => {
+  const set = (path: string, value: string | undefined) => {
     const parts = path.split('.');
     setForm(prev => {
       const next = structuredClone(prev) as Record<string, unknown>;
@@ -95,7 +103,7 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
     ...prev, services: prev.services.filter((_, idx) => idx !== i),
   }));
 
-  const setGitRepo = (i: number, field: 'repoPath' | 'deployBranch', value: string) => {
+  const setGitRepo = (i: number, field: 'repoPath' | 'deployBranch' | 'pushArgs' | 'credentialResourceId', value: string) => {
     setForm(prev => ({
       ...prev,
       gitRepos: prev.gitRepos.map((r, idx) => idx === i ? { ...r, [field]: value } : r),
@@ -105,7 +113,7 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
 
   const addGitRepo = () => setForm(prev => ({
     ...prev,
-    gitRepos: [...prev.gitRepos, { repoPath: '', deployBranch: 'master' }],
+    gitRepos: [...prev.gitRepos, { repoPath: '', deployBranch: 'master', pushArgs: '', credentialResourceId: '' }],
   }));
 
   const removeGitRepo = (i: number) => setForm(prev => ({
@@ -281,6 +289,92 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
                 <ZestTextbox value={repo.deployBranch} onChange={e => setGitRepo(i, 'deployBranch', e.target.value)}
                   placeholder="master" maxLength={100} zest={{ stretch: true }} />
               </Field>
+              <Field label="Push Args" error={errors[`gitRepos[${i}].pushArgs`]}>
+                <ZestTextbox value={repo.pushArgs ?? ''} onChange={e => setGitRepo(i, 'pushArgs', e.target.value)}
+                  placeholder='--no-verify --push-option="skip ci"' zest={{ stretch: true }} />
+                {repo.pushArgs && /--force(?:-with-lease)?/i.test(repo.pushArgs) && (
+                  <p style={{ margin: '4px 0 0', fontSize: 11, color: '#e8a838' }}>
+                    ⚠  "--force" will overwrite remote history. Use with caution.
+                  </p>
+                )}
+                <p style={{ margin: '4px 0 0', fontSize: 11, color: '#637389' }}>
+                  Optional extra git push arguments. Supports space-separated flags and quoted values.
+                </p>
+              </Field>
+              <Field label="Credential Resource">
+                {creatingCredentialForRepo === i ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <ZestTextbox value={newCredName} onChange={e => setNewCredName(e.target.value)}
+                      placeholder="Descriptive name (e.g. Azure DevOps PAT)" zest={{ stretch: true, zSize: 'sm' }} />
+                    <ZestTextbox value={newCredValue} onChange={e => setNewCredValue(e.target.value)}
+                      placeholder="PAT / token" zest={{ stretch: true, zSize: 'sm' }} />
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <ZestButton onClick={async () => {
+                        if (!newCredName.trim() || !newCredValue.trim()) return;
+                        try {
+                          const created = await api.post<ICredentialResource>('/api/resources/credentials', {
+                            name: newCredName, value: newCredValue,
+                          });
+                          const updated = await api.get<ICredentialResource[]>('/api/resources/credentials');
+                          setCredentials(updated);
+                          setGitRepo(i, 'credentialResourceId', created.id);
+                          setCreatingCredentialForRepo(null);
+                          setNewCredName('');
+                          setNewCredValue('');
+                        } catch { toast.error('Failed to create credential.'); }
+                      }} disabled={!newCredName.trim() || !newCredValue.trim()}
+                        zest={{ visualOptions: { size: 'sm' }, buttonStyle: 'outline' }}>
+                        Save & Select
+                      </ZestButton>
+                      <ZestButton onClick={() => { setCreatingCredentialForRepo(null); setNewCredName(''); setNewCredValue(''); }}
+                        zest={{ visualOptions: { size: 'sm' }, buttonStyle: 'outline' }}>
+                        Cancel
+                      </ZestButton>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <select
+                      value={repo.credentialResourceId ?? ''}
+                      onChange={e => {
+                        if (e.target.value === '__new__') {
+                          setCreatingCredentialForRepo(i);
+                          setNewCredName('');
+                          setNewCredValue('');
+                        } else {
+                          setGitRepo(i, 'credentialResourceId', e.target.value);
+                        }
+                      }}
+                      style={{
+                        width: '100%', background: '#131D30', color: '#F0F2F5',
+                        border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6,
+                        padding: '8px 12px', fontSize: 14,
+                      }}
+                    >
+                      <option value="">None (prompt if needed)</option>
+                      {credentials.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}{c.hostPattern ? ` (${c.hostPattern})` : ''}</option>
+                      ))}
+                      <option value="__new__" style={{ color: '#C9A84C', fontWeight: 600 }}>+ New Credential…</option>
+                    </select>
+                    <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                      {!repo.credentialResourceId && repo.repoPath && (
+                        <button onClick={async () => {
+                          try {
+                            const updated = await api.get<ICredentialResource[]>('/api/resources/credentials');
+                            setCredentials(updated);
+                          } catch { }
+                        }} style={{ background: 'none', border: 'none', color: '#637389', cursor: 'pointer', fontSize: 11, padding: 0 }}>
+                          ↻ Refresh list
+                        </button>
+                      )}
+                    </div>
+                    <p style={{ margin: '4px 0 0', fontSize: 11, color: '#637389' }}>
+                      PAT/token injected via GIT_ASKPASS during git push. Create new or select an existing credential.
+                    </p>
+                  </>
+                )}
+              </Field>
             </div>
           ))}
           {form.gitRepos.length < 10 && (
@@ -305,6 +399,18 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
               watchSteps: f.watchSteps,
             }))}
           />
+          <Field label="Git Push Timeout (seconds)" error={errors['gitPushTimeoutSeconds']}>
+            <ZestTextbox
+              value={form.gitPushTimeoutSeconds != null ? String(form.gitPushTimeoutSeconds) : '600'}
+              onChange={e => {
+                const v = e.target.value;
+                setForm(prev => ({ ...prev, gitPushTimeoutSeconds: v === '' ? 600 : Math.max(0, parseInt(v, 10) || 600) }));
+              }}
+              placeholder="600" maxLength={6} zest={{ stretch: true }} />
+            <p style={{ margin: '4px 0 0', fontSize: 11, color: '#637389' }}>
+              Max time to wait for a git push to complete. Set to 0 for no timeout. Default: 600 (10 min).
+            </p>
+          </Field>
         </TabPanel>
 
         <TabPanel className={styles.panel} selectedClassName={styles.panelActive}>

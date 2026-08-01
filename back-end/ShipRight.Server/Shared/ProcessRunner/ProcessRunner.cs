@@ -11,9 +11,9 @@ public class ProcessRunner : IProcessRunner
         "password", "-----begin", "secret", "token"
     ];
 
-    // On Windows, docker and git run inside WSL — the executables don't exist on the Windows PATH
+    // On Windows, certain executables run inside WSL — the executables don't exist on the Windows PATH
     private static readonly bool _isWindows = OperatingSystem.IsWindows();
-    private static readonly HashSet<string> _wslCommands = ["docker", "git"];
+    private static readonly HashSet<string> _wslCommands = ["docker", "git", "bash", "sh", "python3"];
 
     public static (string Executable, string[] Args) ResolveForPlatform(string executable, string[] args)
     {
@@ -23,6 +23,22 @@ public class ProcessRunner : IProcessRunner
             return ("wsl", wslArgs);
         }
         return (executable, args);
+    }
+
+    /// <summary>
+    /// When running under WSL on Windows, convert the working directory to a WSL-compatible path.
+    /// </summary>
+    public static string? ResolveWorkingDirForPlatform(string? workingDir)
+    {
+        if (workingDir is null || !_isWindows)
+            return workingDir;
+
+        // If the path is already a WSL path, it's valid for WSL execution
+        if (workingDir.StartsWith('/') || workingDir.StartsWith("\\\\wsl$"))
+            return workingDir;
+
+        // Convert Windows path to WSL mount path
+        return ToWslPath(workingDir);
     }
 
     // Converts Windows absolute paths (D:\foo\bar) to WSL mount paths (/mnt/d/foo/bar).
@@ -45,13 +61,20 @@ public class ProcessRunner : IProcessRunner
         Func<string, Task>? onOutput = null,
         Func<string, Task>? onError = null,
         CancellationToken ct = default,
-        IReadOnlyDictionary<string, string>? envOverride = null)
+        IReadOnlyDictionary<string, string>? envOverride = null,
+        TimeSpan? timeout = null,
+        string? stdin = null)
     {
         var sw = Stopwatch.StartNew();
         var stdOutBuf = new StringBuilder();
         var stdErrBuf = new StringBuilder();
 
         var (resolvedExe, resolvedArgs) = ResolveForPlatform(executable, args);
+
+        // When wrapping in WSL, the working directory must also be a WSL path
+        var resolvedWorkingDir = resolvedExe == "wsl"
+            ? ResolveWorkingDirForPlatform(workingDir)
+            : workingDir;
 
         // Inject env vars. For WSL-wrapped commands, prepend `env VAR=val` so the Linux
         // process sees them regardless of WSLENV passthrough settings.
@@ -66,9 +89,10 @@ public class ProcessRunner : IProcessRunner
         var psi = new ProcessStartInfo
         {
             FileName = resolvedExe,
-            WorkingDirectory = workingDir ?? string.Empty,
+            WorkingDirectory = resolvedWorkingDir ?? string.Empty,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            RedirectStandardInput = stdin is not null,
             UseShellExecute = false,
             CreateNoWindow = true,
         };
@@ -82,7 +106,7 @@ public class ProcessRunner : IProcessRunner
         }
 
         Log.Information("→ {Executable} {Args}  (workdir: {WorkingDir})",
-            resolvedExe, string.Join(' ', resolvedArgs), workingDir ?? "(inherit)");
+            resolvedExe, string.Join(' ', resolvedArgs), resolvedWorkingDir ?? "(inherit)");
 
         using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
         var outputDone = new TaskCompletionSource<bool>();
@@ -109,15 +133,38 @@ public class ProcessRunner : IProcessRunner
         };
 
         process.Start();
+        if (stdin is not null)
+        {
+            await process.StandardInput.WriteAsync(stdin);
+            process.StandardInput.Close();
+        }
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
+
+        CancellationToken effectiveCt = ct;
+        var timeoutDuration = timeout.HasValue && timeout.Value > TimeSpan.Zero ? timeout.Value : (TimeSpan?)null;
+        using var timeoutCts = timeoutDuration is not null
+            ? CancellationTokenSource.CreateLinkedTokenSource(ct)
+            : null;
+
+        if (timeoutCts is not null && timeoutDuration is not null)
+        {
+            timeoutCts.CancelAfter(timeoutDuration.Value);
+            effectiveCt = timeoutCts.Token;
+        }
 
         try
         {
             await Task.WhenAll(
-                process.WaitForExitAsync(ct),
+                process.WaitForExitAsync(effectiveCt),
                 outputDone.Task,
                 errorDone.Task);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested && timeoutCts?.IsCancellationRequested == true)
+        {
+            try { process.Kill(entireProcessTree: true); } catch { }
+            try { await Task.WhenAll(outputDone.Task, errorDone.Task).WaitAsync(TimeSpan.FromSeconds(3)); } catch { }
+            throw new TimeoutException($"Process '{resolvedExe}' timed out after {timeoutDuration!.Value.TotalSeconds:F0}s.");
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

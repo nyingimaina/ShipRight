@@ -55,7 +55,7 @@ public class PipelineRouterTests : IDisposable
         {
             Name = "project",
             Scope = PipelineScope.Project,
-            ProjectId = Guid.NewGuid(),
+            ProjectId = "test-project",
             CreatedAt = DateTime.UtcNow,
             ModifiedAt = DateTime.UtcNow,
         });
@@ -69,7 +69,7 @@ public class PipelineRouterTests : IDisposable
     public async Task PipelineStore_GetByProjectAsync_ReturnsOnlyProjectPipelines()
     {
         var store = new SqlitePipelineResourceStore(_tmpDir);
-        var projectId = Guid.NewGuid();
+        var projectId = "test-project";
         await store.SaveAsync(new PipelineResource
         {
             Name = "global",
@@ -148,7 +148,7 @@ public class PipelineRouterTests : IDisposable
             Name = "project script",
             Content = "echo project",
             Scope = PipelineScope.Project,
-            ProjectId = Guid.NewGuid(),
+            ProjectId = "test-project",
             CreatedAt = DateTime.UtcNow,
             ModifiedAt = DateTime.UtcNow,
         });
@@ -162,7 +162,7 @@ public class PipelineRouterTests : IDisposable
     public async Task ScriptStore_GetByProjectAsync_ReturnsOnlyProjectScripts()
     {
         var store = new SqliteScriptResourceStore(_tmpDir);
-        var projectId = Guid.NewGuid();
+        var projectId = "test-project";
         await store.SaveAsync(new ScriptResource
         {
             Name = "global script",

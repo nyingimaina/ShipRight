@@ -13,6 +13,8 @@ export interface IServiceConfig {
 export interface IGitConfig {
   repoPath: string;
   deployBranch: string;
+  pushArgs?: string;
+  credentialResourceId?: string;
 }
 
 export interface IWslConfig {
@@ -64,6 +66,7 @@ export interface IProject {
   watchBranch?: string;
   watchPollSeconds?: number;
   watchSteps?: string;
+  gitPushTimeoutSeconds?: number;
   createdAt: string;
   modifiedAt: string;
 }
@@ -84,6 +87,7 @@ export const emptyProjectInput = (): IProjectInput => ({
   gitRepos: [],
   wsl: { workingDir: '' },
   server: { host: '', username: 'ubuntu', sshKeyPath: '', remoteWorkingDir: '', rebuildScript: 'rebuild.sh', deployMode: 'GitScript' },
+  gitPushTimeoutSeconds: 600,
 });
 
 export interface IApiError {
@@ -110,6 +114,18 @@ export interface IScriptResource {
   target: ExecutionTarget;
   scope: PipelineScope;
   projectId?: string;
+  workingDirectory?: string;
+  variables?: Record<string, string>;
+  createdAt: string;
+  modifiedAt: string;
+}
+
+export interface ICredentialResource {
+  id: string;
+  name: string;
+  value?: string;
+  hostPattern?: string;
+  projectId?: string;
   createdAt: string;
   modifiedAt: string;
 }
@@ -120,6 +136,7 @@ export interface IPipelineStep {
   scriptResourceId?: string;
   deployMode?: DeployMode;
   label?: string;
+  workingDirectory?: string;
   continueOnError?: boolean;
 }
 
@@ -129,6 +146,7 @@ export interface IPipelineResource {
   steps: IPipelineStep[];
   scope: PipelineScope;
   projectId?: string;
+  variables?: Record<string, string>;
   createdAt: string;
   modifiedAt: string;
 }

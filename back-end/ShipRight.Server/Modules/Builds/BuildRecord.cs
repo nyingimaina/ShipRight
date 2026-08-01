@@ -48,6 +48,12 @@ public class BuildRecord
     public bool IsRollback { get; set; } = false;
     public string? RolledBackFromBuildId { get; set; }
 
+    /// <summary>
+    /// Set when a git push fails with an auth prompt (GIT_TERMINAL_PROMPT=0).
+    /// Frontend uses this to show the credential sidepane.
+    /// </summary>
+    public string? CredentialHost { get; set; }
+
     // ── Log storage (O(1) append) ─────────────────────────────────────────────
     // Private backing store — never exposed as a collection so callers
     // cannot mutate it except through AppendLogLine.

@@ -8,7 +8,7 @@ import { RiCheckLine, RiAlertLine, RiLoader2Line } from 'react-icons/ri';
 import FilePicker from '@/modules/FilePicker/FilePicker';
 import { api } from '@/shared/ApiService';
 import { IDetectedProjectConfig } from '@/shared/types/IDetectedProject';
-import { IProject, IProjectInput, IApiError, IServerConfig, IDatabaseConfig, DbProviderType, emptyDatabaseConfig } from '@/shared/types/IProject';
+import { IProject, IProjectInput, IApiError, IServerConfig, IDatabaseConfig, ICredentialResource, DbProviderType, emptyDatabaseConfig } from '@/shared/types/IProject';
 import styles from './Styles/ProjectSetupWizard.module.css';
 
 interface Props {
@@ -41,7 +41,7 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
   const [services, setServices]         = useState<ServiceState[]>(existing
     ? existing.services.map(s => ({ name: s.name, versionFilePath: s.versionFilePath, buildContextPath: s.buildContextPath, dockerImageName: s.dockerImageName, dockerRegistry: s.dockerRegistry ?? '', composeServiceName: s.composeServiceName ?? '', dockerUsername: s.dockerUsername ?? '', dockerPassword: '', version: null }))
     : []);
-  const [gitRepos, setGitRepos]         = useState<{ repoPath: string; deployBranch: string }[]>(existing?.gitRepos ?? []);
+  const [gitRepos, setGitRepos]         = useState<{ repoPath: string; deployBranch: string; pushArgs?: string; credentialResourceId?: string }[]>(existing?.gitRepos ?? []);
   const [wslWorkingDir, setWslWorkingDir] = useState(existing?.wsl.workingDir ?? '');
   const [serverHost, setServerHost]     = useState(existing?.server.host ?? '');
   const [serverUser, setServerUser]     = useState(existing?.server.username ?? 'ubuntu');
@@ -61,6 +61,10 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
   const [dbDatabases, setDbDatabases]   = useState<string[]>([]);
   const [loadingContainers, setLoadingContainers] = useState(false);
   const [loadingDatabases, setLoadingDatabases]   = useState(false);
+  const [credentials, setCredentials] = useState<ICredentialResource[]>([]);
+  const [creatingCredentialForRepo, setCreatingCredentialForRepo] = useState<number | null>(null);
+  const [newCredName, setNewCredName] = useState('');
+  const [newCredValue, setNewCredValue] = useState('');
 
   // Step 1: detect from root path
   const handleDetect = async () => {
@@ -71,7 +75,7 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
       const result = await api.post<IDetectedProjectConfig>('/api/projects/detect', { rootPath: rootPath.trim() });
       setDetected(result);
       if (result.suggestedName && !name) setName(result.suggestedName);
-      setGitRepos(result.gitRepos.map(r => ({ repoPath: r.repoPath, deployBranch: r.deployBranch })));
+      setGitRepos(result.gitRepos.map(r => ({ repoPath: r.repoPath, deployBranch: r.deployBranch, pushArgs: r.pushArgs, credentialResourceId: r.credentialResourceId })));
       if (result.wslWorkingDir) setWslWorkingDir(result.wslWorkingDir);
       setServices(result.services.map(s => ({
         name: s.suggestedName,
@@ -137,10 +141,13 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
     setDb(prev => ({ ...prev, [key]: value }));
 
   // Save
-  // Fetch global servers for selector
+  // Fetch global servers + credentials for selector
   useEffect(() => {
     api.get<IServerConfig[]>('/api/servers')
       .then(setGlobalServers)
+      .catch(() => {});
+    api.get<ICredentialResource[]>('/api/resources/credentials')
+      .then(setCredentials)
       .catch(() => {});
   }, []);
 
@@ -408,6 +415,59 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
                     zest={{ stretch: true, zSize: 'sm' }}
                   />
                   {errors[`gitRepos[${i}].deployBranch`] && <p className={styles.errorText}>{errors[`gitRepos[${i}].deployBranch`]}</p>}
+                </div>
+                <div className={styles.fieldRow}>
+                  <span className={styles.fieldLabel}>Push args</span>
+                  <ZestTextbox
+                    value={repo.pushArgs ?? ''}
+                    onChange={e => setGitRepos(prev => prev.map((r, j) => j === i ? { ...r, pushArgs: e.target.value } : r))}
+                    placeholder='--no-verify'
+                    zest={{ stretch: true, zSize: 'sm' }}
+                  />
+                  {repo.pushArgs && /--force(?:-with-lease)?/i.test(repo.pushArgs) && (
+                    <p style={{ margin: '4px 0 0', fontSize: 11, color: '#e8a838' }}>
+                      ⚠  "--force" will overwrite remote history.
+                    </p>
+                  )}
+                </div>
+                <div className={styles.fieldRow}>
+                  <span className={styles.fieldLabel}>Credential Resource</span>
+                  {creatingCredentialForRepo === i ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%' }}>
+                      <ZestTextbox value={newCredName} onChange={e => setNewCredName(e.target.value)}
+                        placeholder="Credential name (e.g. github-pat)" zest={{ stretch: true, zSize: 'sm' }} />
+                      <ZestTextbox value={newCredValue} onChange={e => setNewCredValue(e.target.value)}
+                        placeholder="PAT / token value" type="password" zest={{ stretch: true, zSize: 'sm' }} />
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <ZestButton onClick={async () => {
+                          if (!newCredName.trim() || !newCredValue.trim()) return;
+                          try {
+                            const created = await api.post<ICredentialResource>('/api/resources/credentials', { name: newCredName.trim(), value: newCredValue.trim() });
+                            setCredentials(prev => [...prev, created]);
+                            setGitRepos(prev => prev.map((r, j) => j === i ? { ...r, credentialResourceId: created.id } : r));
+                            setCreatingCredentialForRepo(null);
+                            setNewCredName('');
+                            setNewCredValue('');
+                          } catch { toast.error('Failed to create credential'); }
+                        }} zest={{ visualOptions: { variant: 'standard', size: 'sm' } }}>Save</ZestButton>
+                        <ZestButton onClick={() => { setCreatingCredentialForRepo(null); setNewCredName(''); setNewCredValue(''); }}
+                          zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}>Cancel</ZestButton>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', gap: 4, width: '100%' }}>
+                      <select value={repo.credentialResourceId ?? ''}
+                        onChange={e => setGitRepos(prev => prev.map((r, j) => j === i ? { ...r, credentialResourceId: e.target.value || undefined } : r))}
+                        style={{ flex: 1, background: '#131D30', color: '#F0F2F5', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, padding: '6px 10px', fontSize: 13 }}>
+                        <option value="">— None —</option>
+                        {credentials.map(c => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                      <ZestButton onClick={() => setCreatingCredentialForRepo(i)}
+                        zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}>+ New</ZestButton>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

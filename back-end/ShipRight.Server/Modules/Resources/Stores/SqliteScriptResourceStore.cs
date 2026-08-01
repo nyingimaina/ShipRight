@@ -30,7 +30,7 @@ public class SqliteScriptResourceStore : IScriptResourceStore
     public Task<List<ScriptResource>> GetGlobalAsync() =>
         Task.FromResult(_cache.Where(s => s.Scope == PipelineScope.Global).ToList());
 
-    public Task<List<ScriptResource>> GetByProjectAsync(Guid projectId) =>
+    public Task<List<ScriptResource>> GetByProjectAsync(string projectId) =>
         Task.FromResult(_cache.Where(s => s.Scope == PipelineScope.Project && s.ProjectId == projectId).ToList());
 
     public Task<ScriptResource?> GetByIdAsync(Guid id) =>

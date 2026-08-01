@@ -252,3 +252,103 @@
   padding: 16px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
+
+.variablesPanel {
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: #0F1724;
+}
+
+.variablesHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #8B95A5;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.variablesList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.variableRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: #1A2540;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.variableName {
+  color: #C9A84C;
+  font-family: monospace;
+  min-width: 120px;
+}
+
+.variableValue {
+  flex: 1;
+  color: #F0F2F5;
+  font-family: monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.addVariableRow {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.variableNameInput {
+  width: 100px;
+  background: #131D30;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  color: #F0F2F5;
+  padding: 4px 8px;
+  font-size: 13px;
+  font-family: monospace;
+}
+
+.variableValueInput {
+  flex: 1;
+  background: #131D30;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  color: #F0F2F5;
+  padding: 4px 8px;
+  font-size: 13px;
+  font-family: monospace;
+}
+
+.variableNameInput::placeholder,
+.variableValueInput::placeholder {
+  color: #637389;
+}
+
+.variablesHint {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #637389;
+}
+
+.variablesHint code {
+  color: #8B95A5;
+  font-family: monospace;
+  margin-left: 4px;
+}
+
+.fieldHint {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #637389;
+}

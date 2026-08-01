@@ -55,6 +55,14 @@ const PLATFORM_OPTIONS: ScriptPlatform[] = ['Bash', 'PowerShell', 'Cmd', 'Python
 const TARGET_OPTIONS: ExecutionTarget[] = ['Local', 'Remote'];
 const DEPLOY_MODE_OPTIONS: DeployMode[] = ['GitScript', 'GitCompose', 'EnvCompose'];
 
+const BUILTIN_VARIABLES = [
+  { name: 'ProjectDir', description: 'Project working directory' },
+  { name: 'ProjectName', description: 'Project name' },
+  { name: 'ProjectId', description: 'Project ID' },
+  { name: 'ScriptDir', description: 'Temp directory where script file is written' },
+  { name: 'TempDir', description: 'OS temp directory' },
+];
+
 export default function PipelineBuilder({ pipeline, onSave, onCancel }: Props) {
   const [name, setName] = useState(pipeline?.name || '');
   const [scope, setScope] = useState<'Global' | 'Project'>(pipeline?.scope || 'Global');
@@ -64,6 +72,10 @@ export default function PipelineBuilder({ pipeline, onSave, onCancel }: Props) {
   const [projects, setProjects] = useState<IProject[]>([]);
   const [scripts, setScripts] = useState<IScriptResource[]>([]);
   const [saving, setSaving] = useState(false);
+  const [variables, setVariables] = useState<Record<string, string>>(pipeline?.variables || {});
+  const [showVariables, setShowVariables] = useState(false);
+  const [newVarName, setNewVarName] = useState('');
+  const [newVarValue, setNewVarValue] = useState('');
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -130,6 +142,26 @@ export default function PipelineBuilder({ pipeline, onSave, onCancel }: Props) {
     setSteps(next);
   };
 
+  const addVariable = () => {
+    const name = newVarName.trim();
+    if (!name) return;
+    if (name in variables) {
+      toast.error(`Variable "${name}" already exists.`);
+      return;
+    }
+    setVariables(prev => ({ ...prev, [name]: newVarValue }));
+    setNewVarName('');
+    setNewVarValue('');
+  };
+
+  const removeVariable = (name: string) => {
+    setVariables(prev => {
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
@@ -175,6 +207,7 @@ export default function PipelineBuilder({ pipeline, onSave, onCancel }: Props) {
         steps,
         scope,
         projectId: scope === 'Project' ? projectId : undefined,
+        variables: Object.keys(variables).length > 0 ? variables : undefined,
         createdAt: pipeline?.createdAt || new Date().toISOString(),
         modifiedAt: new Date().toISOString(),
       };
@@ -226,7 +259,49 @@ export default function PipelineBuilder({ pipeline, onSave, onCancel }: Props) {
             ))}
           </select>
         )}
+        <ZestButton onClick={() => setShowVariables(!showVariables)} zest={{ buttonStyle: 'outline' }}>
+          {showVariables ? 'Hide' : 'Variables'} {Object.keys(variables).length > 0 && `(${Object.keys(variables).length})`}
+        </ZestButton>
       </div>
+
+      {showVariables && (
+        <div className={styles.variablesPanel}>
+          <div className={styles.variablesHeader}>
+            <span>Directory Variables</span>
+          </div>
+          <div className={styles.variablesList}>
+            {Object.entries(variables).map(([name, value]) => (
+              <div key={name} className={styles.variableRow}>
+                <span className={styles.variableName}>{'{' + name + '}'}</span>
+                <span className={styles.variableValue}>{value}</span>
+                <button className={styles.removeBtn} onClick={() => removeVariable(name)}>×</button>
+              </div>
+            ))}
+            <div className={styles.addVariableRow}>
+              <input
+                className={styles.variableNameInput}
+                value={newVarName}
+                onChange={e => setNewVarName(e.target.value)}
+                placeholder="Name"
+              />
+              <input
+                className={styles.variableValueInput}
+                value={newVarValue}
+                onChange={e => setNewVarValue(e.target.value)}
+                placeholder="Value (e.g. {ProjectDir}/deploy)"
+              />
+              <ZestButton onClick={addVariable} disabled={!newVarName.trim()} zest={{ buttonStyle: 'outline' }}>
+                +
+              </ZestButton>
+            </div>
+          </div>
+          <div className={styles.variablesHint}>
+            Built-in: {BUILTIN_VARIABLES.map(v => (
+              <code key={v.name}>{'{' + v.name + '}'}</code>
+            )).reduce((a, b) => <>{a} {b}</>)}
+          </div>
+        </div>
+      )}
 
       <div className={styles.body}>
         <div className={styles.stepsPanel}>
@@ -386,6 +461,16 @@ function StepConfig({ step, scripts, onChange }: {
               <option key={s.id} value={s.id}>{s.name} ({s.platform})</option>
             ))}
           </select>
+        </div>
+        <div className={styles.configField}>
+          <label>Working Directory</label>
+          <input
+            type="text"
+            value={step.workingDirectory || ''}
+            onChange={e => onChange({ workingDirectory: e.target.value || undefined })}
+            placeholder="{ProjectDir}"
+          />
+          <div className={styles.fieldHint}>Default: {'{ProjectDir}'}. Variables: {'{ProjectDir}'} {'{ScriptDir}'} {'{TempDir}'}</div>
         </div>
         <div className={styles.configField}>
           <label>

@@ -8,7 +8,9 @@ public record ScriptResource
     public ScriptPlatform Platform { get; init; } = ScriptPlatform.Bash;
     public ExecutionTarget Target { get; init; } = ExecutionTarget.Local;
     public PipelineScope Scope { get; init; } = PipelineScope.Global;
-    public Guid? ProjectId { get; init; }
+    public string? ProjectId { get; init; }
+    public string? WorkingDirectory { get; init; }
+    public Dictionary<string, string> Variables { get; init; } = [];
     public DateTime CreatedAt { get; init; }
     public DateTime ModifiedAt { get; set; }
 }

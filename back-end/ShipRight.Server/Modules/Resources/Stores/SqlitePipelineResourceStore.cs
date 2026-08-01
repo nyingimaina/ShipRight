@@ -30,7 +30,7 @@ public class SqlitePipelineResourceStore : IPipelineResourceStore
     public Task<List<PipelineResource>> GetGlobalAsync() =>
         Task.FromResult(_cache.Where(p => p.Scope == PipelineScope.Global).ToList());
 
-    public Task<List<PipelineResource>> GetByProjectAsync(Guid projectId) =>
+    public Task<List<PipelineResource>> GetByProjectAsync(string projectId) =>
         Task.FromResult(_cache.Where(p => p.Scope == PipelineScope.Project && p.ProjectId == projectId).ToList());
 
     public Task<PipelineResource?> GetByIdAsync(Guid id) =>

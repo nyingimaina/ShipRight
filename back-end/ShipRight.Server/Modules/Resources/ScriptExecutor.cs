@@ -56,6 +56,7 @@ public class ScriptExecutor
         Dictionary<string, string>? envVars = null,
         ServerConfig? serverConfig = null,
         Func<string, Task>? onOutput = null,
+        string? resolvedContent = null,
         CancellationToken ct = default)
     {
         var scriptDir = GetTargetDirectory(script.Target, serverConfig);
@@ -65,7 +66,7 @@ public class ScriptExecutor
         if (script.Target == ExecutionTarget.Local)
         {
             Directory.CreateDirectory(scriptDir);
-            await File.WriteAllTextAsync(scriptPath, script.Content, ct);
+            await File.WriteAllTextAsync(scriptPath, resolvedContent ?? script.Content, ct);
 
             try
             {

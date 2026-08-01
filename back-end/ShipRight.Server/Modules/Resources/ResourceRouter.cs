@@ -127,6 +127,66 @@ public static class ResourceRouter
             return Results.Ok(new { message = "Script resource deleted." });
         });
 
+        // ── Credential Resources ──────────────────────────────────────────────
+
+        app.MapGet("/api/resources/credentials", async (ICredentialResourceStore store) =>
+        {
+            var resources = await store.GetAllAsync();
+            return Results.Ok(resources);
+        });
+
+        app.MapGet("/api/resources/credentials/{id}", async (Guid id, ICredentialResourceStore store) =>
+        {
+            var resource = await store.GetByIdAsync(id);
+            return resource is not null ? Results.Ok(resource) : Results.NotFound();
+        });
+
+        app.MapPost("/api/resources/credentials", async (CredentialResource resource, ICredentialResourceStore store) =>
+        {
+            if (string.IsNullOrWhiteSpace(resource.Name))
+                return Results.BadRequest(new { isError = true, field = "name", message = "Name is required." });
+            if (string.IsNullOrWhiteSpace(resource.Value))
+                return Results.BadRequest(new { isError = true, field = "value", message = "Credential value is required." });
+
+            var saved = resource with { Id = resource.Id == Guid.Empty ? Guid.NewGuid() : resource.Id };
+            await store.SaveAsync(saved);
+            return Results.Created($"/api/resources/credentials/{saved.Id}", saved);
+        });
+
+        app.MapPut("/api/resources/credentials/{id}", async (Guid id, CredentialResource resource, ICredentialResourceStore store) =>
+        {
+            var existing = await store.GetByIdAsync(id);
+            if (existing is null)
+                return Results.NotFound(new { isError = true, message = $"Credential resource '{id}' not found." });
+
+            var saved = resource with { Id = id, ModifiedAt = DateTime.UtcNow };
+            await store.SaveAsync(saved);
+            return Results.Ok(saved);
+        });
+
+        app.MapDelete("/api/resources/credentials/{id}", async (
+            Guid id, ICredentialResourceStore store, IProjectStore projectStore) =>
+        {
+            var existing = await store.GetByIdAsync(id);
+            if (existing is null)
+                return Results.NotFound(new { isError = true, message = $"Credential resource '{id}' not found." });
+
+            var projects = await projectStore.GetAllAsync();
+            var referencingProjects = projects.Where(p =>
+                p.GitRepos.Any(g => g.CredentialResourceId == id)).ToList();
+
+            if (referencingProjects.Count > 0)
+                return Results.Conflict(new
+                {
+                    isError = true,
+                    message = $"Credential is referenced by {referencingProjects.Count} project(s). Unlink them first.",
+                    projectIds = referencingProjects.Select(p => p.Id).ToList(),
+                });
+
+            await store.DeleteAsync(id);
+            return Results.Ok(new { message = "Credential resource deleted." });
+        });
+
         // ── Reference check (utility) ────────────────────────────────────────
 
         app.MapGet("/api/resources/used-by/{id}", async (

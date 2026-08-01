@@ -1,7 +1,9 @@
 import { useRouter } from 'next/router';
 import SidekickMenu from 'jattac.libs.web.zest-sidekick-menu';
-import { RiStackLine, RiTimeLine, RiTerminalBoxLine, RiDatabase2Line, RiServerLine, RiCalendarCheckLine, RiGitBranchLine, RiHeartPulseLine, RiBox3Line, RiListCheck } from 'react-icons/ri';
+import { RiStackLine, RiTimeLine, RiTerminalBoxLine, RiDatabase2Line, RiServerLine, RiCalendarCheckLine, RiGitBranchLine, RiHeartPulseLine, RiBox3Line, RiListCheck, RiLogoutCircleLine } from 'react-icons/ri';
 import ThemeToggle from '@/shared/theme/ThemeToggle';
+import { useAuthStore } from '@/shared/auth';
+import { setAccessToken } from '@/shared/ApiService';
 import styles from './Styles/AppShell.module.css';
 import packageJson from '../../../package.json';
 
@@ -11,6 +13,13 @@ interface Props {
 
 export default function AppShell({ children }: Props) {
   const router = useRouter();
+  const clearAuth = useAuthStore((s) => s.clearAuth);
+
+  const handleLogout = async () => {
+    clearAuth();
+    setAccessToken(null);
+    router.push('/login');
+  };
 
   const menuItems = [
     { id: 'projects',  label: 'Projects',  icon: <RiStackLine size={18} />,       searchTerms: 'projects',            onClick: () => router.push('/projects') },
@@ -40,6 +49,9 @@ export default function AppShell({ children }: Props) {
         footerContent={
           <div className={styles.footer}>
             <ThemeToggle />
+            <button className={styles.logoutBtn} onClick={handleLogout} title="Sign out">
+              <RiLogoutCircleLine size={16} />
+            </button>
             <div className={styles.footerVersion}>v{packageJson.version}</div>
           </div>
         }

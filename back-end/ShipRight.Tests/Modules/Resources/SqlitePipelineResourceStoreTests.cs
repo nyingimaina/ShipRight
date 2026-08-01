@@ -153,7 +153,7 @@ public class SqlitePipelineResourceStoreTests : IDisposable
     public async Task GetGlobalAsync_ReturnsOnlyGlobalPipelines()
     {
         var store = new SqlitePipelineResourceStore(_tmpDir);
-        var projectId = Guid.NewGuid();
+        var projectId = "test-project";
         await store.SaveAsync(MakePipeline("global1", PipelineScope.Global));
         await store.SaveAsync(MakePipeline("global2", PipelineScope.Global));
         await store.SaveAsync(MakePipeline("project1", PipelineScope.Project) with { ProjectId = projectId });
@@ -168,8 +168,8 @@ public class SqlitePipelineResourceStoreTests : IDisposable
     public async Task GetByProjectAsync_ReturnsOnlyProjectPipelines()
     {
         var store = new SqlitePipelineResourceStore(_tmpDir);
-        var projectId = Guid.NewGuid();
-        var otherProjectId = Guid.NewGuid();
+        var projectId = "test-project";
+        var otherProjectId = "other-project";
         await store.SaveAsync(MakePipeline("global", PipelineScope.Global));
         await store.SaveAsync(MakePipeline("proj1", PipelineScope.Project) with { ProjectId = projectId });
         await store.SaveAsync(MakePipeline("proj2", PipelineScope.Project) with { ProjectId = projectId });

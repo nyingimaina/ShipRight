@@ -32,14 +32,14 @@ public class ScriptResourceScopeTests : IDisposable
         ModifiedAt = DateTime.UtcNow,
     };
 
-    private static ScriptResource MakeProject(string name = "project script", Guid? projectId = null) => new()
+    private static ScriptResource MakeProject(string name = "project script", string? projectId = null) => new()
     {
         Name = name,
         Content = $"echo project {name}",
         Platform = ScriptPlatform.PowerShell,
         Target = ExecutionTarget.Remote,
         Scope = PipelineScope.Project,
-        ProjectId = projectId ?? Guid.NewGuid(),
+        ProjectId = projectId ?? "test-project",
         CreatedAt = DateTime.UtcNow,
         ModifiedAt = DateTime.UtcNow,
     };
@@ -62,7 +62,7 @@ public class ScriptResourceScopeTests : IDisposable
     [TestMethod]
     public async Task Save_ProjectScript_PersistsScopeAndProjectId()
     {
-        var projectId = Guid.NewGuid();
+        var projectId = "test-project";
         var store = new SqliteScriptResourceStore(_tmpDir);
         var resource = MakeProject(projectId: projectId);
         await store.SaveAsync(resource);
@@ -77,7 +77,7 @@ public class ScriptResourceScopeTests : IDisposable
     public async Task GetGlobalAsync_ReturnsOnlyGlobalScripts()
     {
         var store = new SqliteScriptResourceStore(_tmpDir);
-        var projectId = Guid.NewGuid();
+        var projectId = "test-project";
         await store.SaveAsync(MakeGlobal("global1"));
         await store.SaveAsync(MakeGlobal("global2"));
         await store.SaveAsync(MakeProject("proj1", projectId));
@@ -93,8 +93,8 @@ public class ScriptResourceScopeTests : IDisposable
     public async Task GetByProjectAsync_ReturnsOnlyProjectScripts()
     {
         var store = new SqliteScriptResourceStore(_tmpDir);
-        var projectId = Guid.NewGuid();
-        var otherProjectId = Guid.NewGuid();
+        var projectId = "test-project";
+        var otherProjectId = "other-project";
         await store.SaveAsync(MakeGlobal("global1"));
         await store.SaveAsync(MakeProject("proj1", projectId));
         await store.SaveAsync(MakeProject("proj2", projectId));
@@ -110,7 +110,7 @@ public class ScriptResourceScopeTests : IDisposable
     public async Task GetByProjectAsync_ExcludesGlobalScripts()
     {
         var store = new SqliteScriptResourceStore(_tmpDir);
-        var projectId = Guid.NewGuid();
+        var projectId = "test-project";
         await store.SaveAsync(MakeGlobal("global1"));
         await store.SaveAsync(MakeProject("proj1", projectId));
 
@@ -124,7 +124,7 @@ public class ScriptResourceScopeTests : IDisposable
     public async Task GetAllAsync_IncludesBothGlobalAndProject()
     {
         var store = new SqliteScriptResourceStore(_tmpDir);
-        var projectId = Guid.NewGuid();
+        var projectId = "test-project";
         await store.SaveAsync(MakeGlobal("global1"));
         await store.SaveAsync(MakeProject("proj1", projectId));
 
