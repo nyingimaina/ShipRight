@@ -1,6 +1,7 @@
 using Dapper.Contrib.Extensions;
 using Jattac.Libraries.QBuilder;
 using Rocket.Libraries.DatabaseIntegrator;
+using ShipRight.Database;
 
 namespace ShipRight.Modules.Scheduler;
 
@@ -20,7 +21,7 @@ public class MariaDbBackupHistoryStore
 
     public async Task Append(BackupHistoryRecord record)
     {
-        using var qb = new QBuilder(parameterize: true);
+        using var qb = AppQBuilderExtensions.NewQBuilder();
         var built = qb
             .UseTableBoundInsert<Record>()
             .FromObject(new Record
@@ -51,7 +52,7 @@ public class MariaDbBackupHistoryStore
         string? projectId = null, string? status = null,
         int? limit = null)
     {
-        using var qb = new QBuilder(parameterize: true);
+        using var qb = AppQBuilderExtensions.NewQBuilder();
         qb.UseSelector().Select<Record>("*");
         var filter = qb.UseTableBoundFilter<Record>();
 
@@ -79,7 +80,7 @@ public class MariaDbBackupHistoryStore
         since ??= DateTime.UtcNow.AddDays(-30);
         until ??= DateTime.UtcNow;
 
-        using var qb = new QBuilder(parameterize: true);
+        using var qb = AppQBuilderExtensions.NewQBuilder();
         var built = qb
             .UseSelector().Select<Record>("Status, DurationMs, BackupSizeBytes").Then()
             .UseTableBoundFilter<Record>()
@@ -111,7 +112,7 @@ public class MariaDbBackupHistoryStore
         var since = DateTime.UtcNow.Date.AddDays(-days);
         var until = DateTime.UtcNow.Date.AddDays(1);
 
-        using var qb = new QBuilder(parameterize: true);
+        using var qb = AppQBuilderExtensions.NewQBuilder();
         var built = qb
             .UseSelector().Select<Record>("StartedAt, Status, DurationMs, BackupSizeBytes").Then()
             .UseTableBoundFilter<Record>()
@@ -148,7 +149,7 @@ public class MariaDbBackupHistoryStore
 
     public async Task<List<BackupProjectReport>> GetProjectReports()
     {
-        using var qb = new QBuilder(parameterize: true);
+        using var qb = AppQBuilderExtensions.NewQBuilder();
         var built = qb
             .UseSelector().Select<Record>("*").Then()
             .UseTableBoundFilter<Record>()
@@ -178,7 +179,7 @@ public class MariaDbBackupHistoryStore
 
     public async Task Prune(int retainCount = 1000)
     {
-        using var qb = new QBuilder(parameterize: true);
+        using var qb = AppQBuilderExtensions.NewQBuilder();
         var built = qb
             .UseSelector().Select<Record>("Id, StartedAt").Then()
             .UseTableBoundFilter<Record>()
@@ -195,7 +196,7 @@ public class MariaDbBackupHistoryStore
 
         foreach (var record in toDelete)
         {
-            using var qb2 = new QBuilder(parameterize: true);
+            using var qb2 = AppQBuilderExtensions.NewQBuilder();
             var delBuilt = qb2
                 .UseTableBoundDelete<Record>()
                 .WhereEqualTo(r => r.Id, record.Id)

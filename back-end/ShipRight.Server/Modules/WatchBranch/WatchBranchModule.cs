@@ -33,15 +33,15 @@ public static class WatchBranchModule
 
     public static void AddWatchBranchModule(this IServiceCollection services)
     {
-        services.AddSingleton<WatchBranchHistoryStore>(sp =>
-            new WatchBranchHistoryStore(DataDirectory.Resolve()));
+        services.AddSingleton<SqliteWatchBranchHistoryStore>(sp =>
+            new SqliteWatchBranchHistoryStore(DataDirectory.Resolve()));
 
         services.AddSingleton<TempoQueue<TempoScheduledWork<WatchBranchJob>>>(sp =>
         {
             var projectStore      = sp.GetRequiredService<IProjectStore>();
             var buildOrchestrator = sp.GetRequiredService<BuildOrchestrator>();
             var processRunner     = sp.GetRequiredService<IProcessRunner>();
-            var historyStore      = sp.GetRequiredService<WatchBranchHistoryStore>();
+            var historyStore      = sp.GetRequiredService<SqliteWatchBranchHistoryStore>();
             var loggerFactory     = sp.GetService<ILoggerFactory>();
 
             var processor = new WatchBranchJobProcessor(projectStore, buildOrchestrator, processRunner);

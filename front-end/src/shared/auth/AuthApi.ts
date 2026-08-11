@@ -33,8 +33,22 @@ async function authRequest<T>(
     body: body ? JSON.stringify(body) : undefined,
   });
 
-  const data = await res.json();
-  if (!res.ok) throw data as ApiError;
+  const text = await res.text();
+  let data: unknown = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = null;
+    }
+  }
+
+  if (!res.ok) {
+    throw (data as ApiError | null) ?? {
+      message: `Request failed with status ${res.status}`,
+      isError: true,
+    };
+  }
   return data as T;
 }
 

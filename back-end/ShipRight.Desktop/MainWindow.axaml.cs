@@ -52,10 +52,56 @@ public partial class MainWindow : Window
             }
             catch (Exception ex)
             {
-                SetStatus("Failed to connect", showProgress: false);
-                Log.Error(ex, "Server startup failed");
+                ShowStartupFailure(ex);
             }
         };
+    }
+
+    private void ShowStartupFailure(Exception ex)
+    {
+        SetStatus("Failed to connect", showProgress: false);
+        Log.Error(ex, "Server startup failed");
+        try
+        {
+            var dialog = new Window
+            {
+                Title = "ShipRight — Server conflict",
+                Width = 460,
+                Height = 220,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                CanResize = false,
+                WindowDecorations = WindowDecorations.Full
+            };
+            var stack = new StackPanel { Spacing = 10, Margin = new Thickness(20) };
+            stack.Children.Add(new TextBlock
+            {
+                Text = "Another ShipRight instance is occupying this app's port.",
+                FontSize = 14,
+                FontWeight = Avalonia.Media.FontWeight.SemiBold,
+                TextWrapping = Avalonia.Media.TextWrapping.Wrap
+            });
+            stack.Children.Add(new TextBlock
+            {
+                Text = ex.Message,
+                FontSize = 12,
+                Foreground = Avalonia.Media.Brushes.Gray,
+                TextWrapping = Avalonia.Media.TextWrapping.Wrap
+            });
+            var closeBtn = new Button
+            {
+                Content = "Close",
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                Margin = new Thickness(0, 8, 0, 0)
+            };
+            closeBtn.Click += (_, _) => dialog.Close();
+            stack.Children.Add(closeBtn);
+            dialog.Content = stack;
+            dialog.ShowDialog(this);
+        }
+        catch (Exception dialogEx)
+        {
+            Log.Warning(dialogEx, "Failed to show server conflict dialog");
+        }
     }
 
     private void SetStatus(string text, bool showProgress)

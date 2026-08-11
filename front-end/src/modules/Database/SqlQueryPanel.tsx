@@ -209,7 +209,7 @@ export default function SqlQueryPanel({ apiBase }: Props) {
       {/* File input mode */}
       {phase === 'pick' && inputMode === 'file' && (
         <>
-          <FilePicker label="Select a .sql file to execute" onSelect={handleFilePick} />
+          <FilePicker storageKey="sql-query" label="Select a .sql file to execute" onSelect={handleFilePick} />
           {loadingPreview && <p className={styles.hint}>Loading preview…</p>}
           {previewError && <p className={styles.error}>{previewError}</p>}
         </>

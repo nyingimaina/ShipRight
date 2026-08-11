@@ -5,12 +5,14 @@ import { useState, FormEvent } from 'react';
 import toast from 'react-hot-toast';
 import { useAuthStore, authApi } from '@/shared/auth';
 import { setAccessToken } from '@/shared/ApiService';
+import { useServerMode } from '@/shared/serverInfo';
 import styles from './Styles/Auth.module.css';
 
 export default function SignupPage() {
   const router = useRouter();
   const setAuth = useAuthStore((s) => s.setAuth);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const mode = useServerMode();
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -19,7 +21,11 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  if (isAuthenticated) {
+  if (mode === null) {
+    return null;
+  }
+
+  if (mode === 'desktop' || isAuthenticated) {
     router.replace('/projects');
     return null;
   }

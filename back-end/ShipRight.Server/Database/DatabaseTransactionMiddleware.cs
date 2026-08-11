@@ -17,8 +17,19 @@ public class DatabaseTransactionMiddleware
     public async Task InvokeAsync(HttpContext context, IDatabaseHelper<Guid> databaseHelper)
     {
         var path = context.Request.Path.Value ?? "";
+        var method = context.Request.Method;
 
-        if (ExcludedPrefixes.Any(p => path.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
+        // Only mutating API requests need a DB transaction. Static SPA assets and
+        // read-only requests share the singleton DatabaseHelper; a browser fires
+        // them in parallel, and MySql.Data cannot nest transactions on one connection.
+        var isMutating = HttpMethods.IsPost(method)
+            || HttpMethods.IsPut(method)
+            || HttpMethods.IsPatch(method)
+            || HttpMethods.IsDelete(method);
+        var isApi = path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase);
+        var isExcluded = ExcludedPrefixes.Any(p => path.StartsWith(p, StringComparison.OrdinalIgnoreCase));
+
+        if (!isMutating || !isApi || isExcluded)
         {
             await _next(context);
             return;

@@ -3,21 +3,29 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useState, FormEvent } from 'react';
 import toast from 'react-hot-toast';
+import ZestTextbox from 'jattac.libs.web.zest-textbox';
+import ZestButton from 'jattac.libs.web.zest-button';
 import { useAuthStore, authApi } from '@/shared/auth';
 import { setAccessToken } from '@/shared/ApiService';
+import { useServerMode } from '@/shared/serverInfo';
 import styles from './Styles/Auth.module.css';
 
 export default function LoginPage() {
   const router = useRouter();
   const setAuth = useAuthStore((s) => s.setAuth);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const mode = useServerMode();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  if (isAuthenticated) {
+  if (mode === null) {
+    return null;
+  }
+
+  if (mode === 'desktop' || isAuthenticated) {
     router.replace('/projects');
     return null;
   }
@@ -54,35 +62,39 @@ export default function LoginPage() {
 
             <div className={styles.field}>
               <label className={styles.label} htmlFor="email">Email</label>
-              <input
+              <ZestTextbox
                 id="email"
-                className={styles.input}
                 type="email"
                 placeholder="you@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 autoFocus
+                zest={{ stretch: true }}
               />
             </div>
 
             <div className={styles.field}>
               <label className={styles.label} htmlFor="password">Password</label>
-              <input
+              <ZestTextbox
                 id="password"
-                className={styles.input}
                 type="password"
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                zest={{ stretch: true }}
               />
             </div>
 
-            <button className={styles.submitBtn} type="submit" disabled={loading}>
+            <ZestButton
+              type="submit"
+              disabled={loading}
+              zest={{ semanticType: 'submit', visualOptions: { variant: 'standard', size: 'md', stretch: true } }}
+            >
               {loading && <span className={styles.spinner} />}
               {loading ? 'Signing in…' : 'Sign In'}
-            </button>
+            </ZestButton>
           </form>
 
           <div className={styles.links}>

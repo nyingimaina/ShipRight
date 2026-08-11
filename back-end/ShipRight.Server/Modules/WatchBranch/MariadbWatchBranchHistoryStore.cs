@@ -1,6 +1,7 @@
 using Dapper.Contrib.Extensions;
 using Jattac.Libraries.QBuilder;
 using Rocket.Libraries.DatabaseIntegrator;
+using ShipRight.Database;
 
 namespace ShipRight.Modules.WatchBranch;
 
@@ -20,7 +21,7 @@ public class MariaDbWatchBranchHistoryStore
 
     public async Task Append(WatchBranchHistoryRecord record)
     {
-        using var qb = new QBuilder(parameterize: true);
+        using var qb = AppQBuilderExtensions.NewQBuilder();
         var built = qb
             .UseTableBoundInsert<Record>()
             .FromObject(new Record
@@ -46,7 +47,7 @@ public class MariaDbWatchBranchHistoryStore
     public async Task<IReadOnlyList<WatchBranchHistoryRecord>> Query(
         string? projectId = null, string? status = null, int limit = 100)
     {
-        using var qb = new QBuilder(parameterize: true);
+        using var qb = AppQBuilderExtensions.NewQBuilder();
         qb.UseSelector().Select<Record>("*");
         var filter = qb.UseTableBoundFilter<Record>();
 

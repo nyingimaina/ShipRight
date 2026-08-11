@@ -1,6 +1,7 @@
 using Jattac.Libraries.QBuilder;
 using Rocket.Libraries.DatabaseIntegrator;
 using Serilog;
+using ShipRight.Database;
 using ShipRight.Modules.Auth.Models;
 
 namespace ShipRight.Modules.Auth.Services;
@@ -28,7 +29,7 @@ public class SetupService : ISetupService
 
     public async Task EnsureAdminUserAsync(string adminEmail, string adminPassword)
     {
-        using var qBuilder = new QBuilder(parameterize: true);
+        using var qBuilder = AppQBuilderExtensions.NewQBuilder();
         var built = qBuilder
             .UseSelector()
             .Select<User>("*")
@@ -56,7 +57,7 @@ public class SetupService : ISetupService
             Modified = DateTime.UtcNow,
         };
 
-        using var companyInsert = new QBuilder(parameterize: true);
+        using var companyInsert = AppQBuilderExtensions.NewQBuilder();
         var companyBuilt = companyInsert
             .UseTableBoundInsert<Company>()
             .FromObject(company)
@@ -76,7 +77,7 @@ public class SetupService : ISetupService
             Modified = DateTime.UtcNow,
         };
 
-        using var userInsert = new QBuilder(parameterize: true);
+        using var userInsert = AppQBuilderExtensions.NewQBuilder();
         var userBuilt = userInsert
             .UseTableBoundInsert<User>()
             .FromObject(admin)

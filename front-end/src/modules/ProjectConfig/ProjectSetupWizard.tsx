@@ -341,6 +341,7 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
           <FilePicker
             initialPath={rootPath || undefined}
             dirsOnly
+            storageKey="project-root"
             label="Source code root directory"
             onSelect={path => setRootPath(path)}
           />
@@ -585,7 +586,7 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
             <span className={styles.sectionTitle}>Docker Compose directory <span style={{ color: '#C9A84C' }}>*</span></span>
             <p className={styles.stepSub}>Where is the docker-compose.yml for this project? (WSL path)</p>
             {showWslPicker
-              ? <FilePicker dirsOnly onSelect={p => { setWslWorkingDir(uncToLinuxPath(p)); setShowWslPicker(false); }} />
+              ? <FilePicker dirsOnly storageKey="wsl-dir" onSelect={p => { setWslWorkingDir(uncToLinuxPath(p)); setShowWslPicker(false); }} />
               : <div style={{ display: 'flex', gap: 8 }}>
                   <ZestTextbox value={wslWorkingDir} onChange={e => setWslWorkingDir(e.target.value)}
                     placeholder="/home/nyingi/work/jattac/docker/..." zest={{ stretch: true }} />
@@ -667,6 +668,7 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
               <label className={styles.fieldLabel}>SSH key (.pem)</label>
               {showSshPicker
                 ? <FilePicker
+                    storageKey="ssh-key"
                     onSelect={p => { setSshKeyPath(p); setShowSshPicker(false); }}
                     label="Navigate to your .pem key file"
                   />

@@ -3,6 +3,7 @@ using System.Security.Claims;
 using Jattac.Libraries.QBuilder;
 using Rocket.Libraries.DatabaseIntegrator;
 using Serilog;
+using ShipRight.Database;
 using ShipRight.Modules.Auth.Models;
 using ShipRight.Modules.Auth.Services;
 
@@ -82,7 +83,7 @@ public class JwtMiddleware
         var companyId = Guid.Parse(companyIdClaim.Value);
         var tokenVersion = int.Parse(tokenVersionClaim?.Value ?? "0");
 
-        using var qBuilder = new QBuilder(parameterize: true);
+        using var qBuilder = AppQBuilderExtensions.NewQBuilder();
         var built = qBuilder
             .UseSelector()
             .Select<User>("TokenVersion")

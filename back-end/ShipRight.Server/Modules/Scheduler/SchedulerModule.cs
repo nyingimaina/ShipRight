@@ -12,10 +12,10 @@ public static class SchedulerModule
 {
     public static void AddSchedulerModule(this IServiceCollection services)
     {
-        services.AddSingleton<BackupHistoryStore>(sp =>
+        services.AddSingleton<SqliteBackupHistoryStore>(sp =>
         {
             var dataDir = DataDirectory.Resolve();
-            return new BackupHistoryStore(dataDir);
+            return new SqliteBackupHistoryStore(dataDir);
         });
 
         services.AddSingleton<TempoQueue<TempoScheduledWork<BackupJob>>>(sp =>
@@ -40,7 +40,7 @@ public static class SchedulerModule
             var queue = new TempoQueue<TempoScheduledWork<BackupJob>>(
                 processor, queueSettings, loggerFactory);
 
-            var historyStore = sp.GetRequiredService<BackupHistoryStore>();
+            var historyStore = sp.GetRequiredService<SqliteBackupHistoryStore>();
 
             queue.OnProcessed += (correlationId, work) =>
             {
@@ -74,7 +74,7 @@ public static class SchedulerModule
                     ScheduleId = work.ScheduleId,
                 });
 
-                var overflowStore = sp.GetRequiredService<BackupOverflowStore>();
+                var overflowStore = sp.GetRequiredService<SqliteBackupOverflowStore>();
                 overflowStore.Save(job, error);
                 return Task.CompletedTask;
             };
@@ -93,7 +93,7 @@ public static class SchedulerModule
         {
             var queue = sp.GetRequiredService<TempoQueue<TempoScheduledWork<BackupJob>>>();
             var projectStore = sp.GetRequiredService<IProjectStore>();
-            var historyStore = sp.GetRequiredService<BackupHistoryStore>();
+            var historyStore = sp.GetRequiredService<SqliteBackupHistoryStore>();
 
             var schedulerSettings = new TempoSchedulerSettings
             {
@@ -108,11 +108,11 @@ public static class SchedulerModule
             return scheduler;
         });
 
-        services.AddSingleton<BackupOverflowStore>(sp =>
+        services.AddSingleton<SqliteBackupOverflowStore>(sp =>
         {
             var dataDir = DataDirectory.Resolve();
             var scheduler = sp.GetRequiredService<TempoScheduler<BackupJob>>();
-            return new BackupOverflowStore(dataDir, scheduler);
+            return new SqliteBackupOverflowStore(dataDir, scheduler);
         });
 
         services.AddHostedService<SchedulerHostedService>();
@@ -121,7 +121,7 @@ public static class SchedulerModule
     private static async Task RegisterProjectJobs(
         TempoScheduler<BackupJob> scheduler,
         IProjectStore projectStore,
-        BackupHistoryStore historyStore)
+        SqliteBackupHistoryStore historyStore)
     {
         var projects = await projectStore.GetAllAsync();
         var registeredCount = 0;

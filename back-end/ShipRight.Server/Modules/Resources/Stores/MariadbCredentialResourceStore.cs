@@ -2,6 +2,7 @@ using System.Text.Json;
 using Dapper.Contrib.Extensions;
 using Jattac.Libraries.QBuilder;
 using Rocket.Libraries.DatabaseIntegrator;
+using ShipRight.Database;
 using ShipRight.Modules.Resources.Models;
 
 namespace ShipRight.Modules.Resources.Stores;
@@ -23,9 +24,9 @@ public class MariaDbCredentialResourceStore : ICredentialResourceStore
     {
         get
         {
-            using var qb = new QBuilder(parameterize: true);
+            using var qb = AppQBuilderExtensions.NewQBuilder();
             var built = qb
-                .UseSelector().Select<Record>("COUNT(*) AS Count").Then()
+                .SelectCountAs<Record>("Count")
                 .UseTableBoundFilter<Record>().WhereEqualTo(r => r.Deleted, 0)
                 .Then()
                 .BuildWithParameters();
@@ -36,7 +37,7 @@ public class MariaDbCredentialResourceStore : ICredentialResourceStore
 
     public async Task<List<CredentialResource>> GetAllAsync()
     {
-        using var qb = new QBuilder(parameterize: true);
+        using var qb = AppQBuilderExtensions.NewQBuilder();
         var built = qb
             .UseSelector().Select<Record>("*").Then()
             .UseTableBoundFilter<Record>().WhereEqualTo(r => r.Deleted, 0)
@@ -47,7 +48,7 @@ public class MariaDbCredentialResourceStore : ICredentialResourceStore
 
     public async Task<List<CredentialResource>> GetByProjectAsync(string projectId)
     {
-        using var qb = new QBuilder(parameterize: true);
+        using var qb = AppQBuilderExtensions.NewQBuilder();
         var built = qb
             .UseSelector().Select<Record>("*").Then()
             .UseTableBoundFilter<Record>().WhereEqualTo(r => r.Deleted, 0)
@@ -59,7 +60,7 @@ public class MariaDbCredentialResourceStore : ICredentialResourceStore
 
     public async Task<CredentialResource?> GetByIdAsync(Guid id)
     {
-        using var qb = new QBuilder(parameterize: true);
+        using var qb = AppQBuilderExtensions.NewQBuilder();
         var built = qb
             .UseSelector().Select<Record>("*").Then()
             .UseTableBoundFilter<Record>().WhereEqualTo(r => r.Id, id)
@@ -71,7 +72,7 @@ public class MariaDbCredentialResourceStore : ICredentialResourceStore
 
     public async Task<CredentialResource?> GetByNameAsync(string name)
     {
-        using var qb = new QBuilder(parameterize: true);
+        using var qb = AppQBuilderExtensions.NewQBuilder();
         var built = qb
             .UseSelector().Select<Record>("*").Then()
             .UseTableBoundFilter<Record>().WhereEqualTo(r => r.Name, name)
@@ -83,7 +84,7 @@ public class MariaDbCredentialResourceStore : ICredentialResourceStore
 
     public async Task SaveAsync(CredentialResource resource)
     {
-        using var qb = new QBuilder(parameterize: true);
+        using var qb = AppQBuilderExtensions.NewQBuilder();
         var checkBuilt = qb
             .UseSelector().Select<Record>("Id").Then()
             .UseTableBoundFilter<Record>().WhereEqualTo(r => r.Id, resource.Id)
@@ -124,7 +125,7 @@ public class MariaDbCredentialResourceStore : ICredentialResourceStore
 
     public async Task DeleteAsync(Guid id)
     {
-        using var qb = new QBuilder(parameterize: true);
+        using var qb = AppQBuilderExtensions.NewQBuilder();
         var built = qb
             .UseTableBoundUpdate<Record>().Set(r => r.Deleted, true)
             .WhereEqualTo(r => r.Id, id)

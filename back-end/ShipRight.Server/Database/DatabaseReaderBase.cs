@@ -55,7 +55,7 @@ public abstract class DatabaseReaderBase<TModel> : ReaderBase<TModel, Guid>
         var listOfIds = ids.ToList();
         if (listOfIds.Count == 0) return ImmutableList<TModel>.Empty;
 
-        using var qBuilder = new QBuilder(parameterize: true);
+        using var qBuilder = AppQBuilderExtensions.NewQBuilder();
         qBuilder
             .UseSelector()
             .Select<TModel>("*")
@@ -79,7 +79,7 @@ public abstract class DatabaseReaderBase<TModel> : ReaderBase<TModel, Guid>
         Action<QBuilder>? onBeforeQuery = null,
         DeletedFilter deletedFilter = DeletedFilter.ExcludeDeleted)
     {
-        using var qBuilder = new QBuilder(parameterize: true);
+        using var qBuilder = AppQBuilderExtensions.NewQBuilder();
 
         qBuilder
             .UseSelector()

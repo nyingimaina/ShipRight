@@ -4,6 +4,7 @@ using Dapper.Contrib.Extensions;
 using Jattac.Libraries.QBuilder;
 using Rocket.Libraries.DatabaseIntegrator;
 using Serilog;
+using ShipRight.Database;
 
 namespace ShipRight.Modules.Builds;
 
@@ -25,11 +26,9 @@ public class MariaDbBuildStore : IBuildStore
     {
         get
         {
-            using var qb = new QBuilder(parameterize: true);
+            using var qb = AppQBuilderExtensions.NewQBuilder();
             var built = qb
-                .UseSelector()
-                .Select<Record>("COUNT(*) AS Count")
-                .Then()
+                .SelectCountAs<Record>("Count")
                 .UseTableBoundFilter<Record>()
                 .WhereEqualTo(r => r.Deleted, 0)
                 .Then()
@@ -43,7 +42,7 @@ public class MariaDbBuildStore : IBuildStore
     public async Task SaveAsync(BuildRecord record)
     {
         var data = JsonSerializer.Serialize(record, JsonOpts);
-        using var qb = new QBuilder(parameterize: true);
+        using var qb = AppQBuilderExtensions.NewQBuilder();
         var existing = await GetByIdAsync(record.Id);
 
         if (existing != null)
@@ -86,7 +85,7 @@ public class MariaDbBuildStore : IBuildStore
 
     public async Task<BuildRecord?> GetByIdAsync(string id)
     {
-        using var qb = new QBuilder(parameterize: true);
+        using var qb = AppQBuilderExtensions.NewQBuilder();
         var built = qb
             .UseSelector()
             .Select<Record>("Data")
@@ -105,7 +104,7 @@ public class MariaDbBuildStore : IBuildStore
         string? projectId, string? status, DateTime? from, DateTime? to,
         string? gitTag, int page, int pageSize)
     {
-        using var qb = new QBuilder(parameterize: true);
+        using var qb = AppQBuilderExtensions.NewQBuilder();
         qb.UseSelector().Select<Record>("Data");
 
         if (!string.IsNullOrWhiteSpace(projectId))
@@ -146,7 +145,7 @@ public class MariaDbBuildStore : IBuildStore
     {
         var cutoff = DateTime.UtcNow.AddMinutes(-5);
 
-        using var qb = new QBuilder(parameterize: true);
+        using var qb = AppQBuilderExtensions.NewQBuilder();
         var built = qb
             .UseSelector()
             .Select<Record>("Id, Data")

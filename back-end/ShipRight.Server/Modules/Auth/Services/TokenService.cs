@@ -45,7 +45,7 @@ public class TokenService : ITokenService
             Modified = DateTime.UtcNow,
         };
 
-        using var qBuilder = new QBuilder(parameterize: true);
+        using var qBuilder = AppQBuilderExtensions.NewQBuilder();
         var built = qBuilder
             .UseTableBoundInsert<RefreshToken>()
             .FromObject(rt)
@@ -60,7 +60,7 @@ public class TokenService : ITokenService
     {
         var tokenHash = HashToken(refreshToken);
 
-        using var qBuilder = new QBuilder(parameterize: true);
+        using var qBuilder = AppQBuilderExtensions.NewQBuilder();
         var built = qBuilder
             .UseSelector()
             .Select<RefreshToken>("*")
@@ -76,7 +76,7 @@ public class TokenService : ITokenService
         if (stored == null || stored.RevokedAt != null || stored.ExpiresAt < DateTime.UtcNow)
             return null;
 
-        var userQb = new QBuilder(parameterize: true);
+        var userQb = AppQBuilderExtensions.NewQBuilder();
         var userBuilt = userQb
             .UseSelector()
             .Select<User>("*")
@@ -93,7 +93,7 @@ public class TokenService : ITokenService
             return null;
 
         stored.RevokedAt = DateTime.UtcNow;
-        using var updateQb = new QBuilder(parameterize: true);
+        using var updateQb = AppQBuilderExtensions.NewQBuilder();
         var updateBuilt = updateQb
             .UseTableBoundUpdate<RefreshToken>()
             .Set(r => r.RevokedAt, stored.RevokedAt.Value)
@@ -108,7 +108,7 @@ public class TokenService : ITokenService
     {
         var tokenHash = HashToken(refreshToken);
 
-        using var qBuilder = new QBuilder(parameterize: true);
+        using var qBuilder = AppQBuilderExtensions.NewQBuilder();
         var built = qBuilder
             .UseTableBoundUpdate<RefreshToken>()
             .Set(r => r.RevokedAt, DateTime.UtcNow)
@@ -120,7 +120,7 @@ public class TokenService : ITokenService
 
     public async Task RevokeAllUserSessionsAsync(Guid userId)
     {
-        using var qBuilder = new QBuilder(parameterize: true);
+        using var qBuilder = AppQBuilderExtensions.NewQBuilder();
         var built = qBuilder
             .UseTableBoundUpdate<RefreshToken>()
             .Set(r => r.RevokedAt, DateTime.UtcNow)

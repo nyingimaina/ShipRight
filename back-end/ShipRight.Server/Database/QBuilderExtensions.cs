@@ -1,4 +1,6 @@
 using System.Collections.Immutable;
+using System.Reflection;
+using Dapper.Contrib.Extensions;
 using Jattac.Libraries.QBuilder;
 using Rocket.Libraries.DatabaseIntegrator;
 using ShipRight.Database.Models;
@@ -50,8 +52,38 @@ public static class AppQBuilderExtensions
             parameters: builtQuery.Parameters);
     }
 
+    public static string ResolveTableName(Type type)
+    {
+        var attr = type.GetCustomAttribute<TableAttribute>();
+        if (attr?.Name != null) return attr.Name;
+        var name = type.Name;
+        if (name.EndsWith("Record")) return name[..^6];
+        if (name.EndsWith("Dto")) return name[..^3];
+        return name;
+    }
+
+    public static QBuilder NewQBuilder()
+    {
+        return new QBuilder(ResolveTableName, "t", parameterize: true);
+    }
+
+    public static QBuilder SelectCountAs<TModel>(this QBuilder qBuilder, string fieldAlias = "Count")
+    {
+        qBuilder
+            .UseSelector()
+            .SelectExplicit(
+                ResolveTableName(typeof(TModel)),
+                $"COUNT(*) AS {fieldAlias}",
+                string.Empty,
+                string.Empty,
+                preventTableNameAliasing: true,
+                qualifyFieldWithTableName: false)
+            .Then();
+        return qBuilder;
+    }
+
     public static QBuilder GetQBuilder()
     {
-        return new QBuilder(parameterize: true);
+        return NewQBuilder();
     }
 }

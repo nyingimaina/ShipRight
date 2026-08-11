@@ -31,7 +31,7 @@ public static class AuthRouter
         IPasswordHelper passwordHelper,
         ITokenService tokenService)
     {
-        using var checkQb = new QBuilder(parameterize: true);
+        using var checkQb = AppQBuilderExtensions.NewQBuilder();
         var checkBuilt = checkQb
             .UseSelector()
             .Select<User>("*")
@@ -55,7 +55,7 @@ public static class AuthRouter
             Modified = DateTime.UtcNow,
         };
 
-        using var companyInsert = new QBuilder(parameterize: true);
+        using var companyInsert = AppQBuilderExtensions.NewQBuilder();
         var companyBuilt = companyInsert
             .UseTableBoundInsert<Company>()
             .FromObject(company)
@@ -75,7 +75,7 @@ public static class AuthRouter
             Modified = DateTime.UtcNow,
         };
 
-        using var userInsert = new QBuilder(parameterize: true);
+        using var userInsert = AppQBuilderExtensions.NewQBuilder();
         var userBuilt = userInsert
             .UseTableBoundInsert<User>()
             .FromObject(user)
@@ -105,7 +105,7 @@ public static class AuthRouter
         IPasswordHelper passwordHelper,
         ITokenService tokenService)
     {
-        using var qBuilder = new QBuilder(parameterize: true);
+        using var qBuilder = AppQBuilderExtensions.NewQBuilder();
         var built = qBuilder
             .UseSelector()
             .Select<User>("*")
@@ -178,7 +178,7 @@ public static class AuthRouter
         ForgotPasswordRequest request,
         IDatabaseHelper<Guid> db)
     {
-        using var qBuilder = new QBuilder(parameterize: true);
+        using var qBuilder = AppQBuilderExtensions.NewQBuilder();
         var built = qBuilder
             .UseSelector()
             .Select<User>("*")
@@ -210,7 +210,7 @@ public static class AuthRouter
             Modified = DateTime.UtcNow,
         };
 
-        using var insertQb = new QBuilder(parameterize: true);
+        using var insertQb = AppQBuilderExtensions.NewQBuilder();
         var insertBuilt = insertQb
             .UseTableBoundInsert<ResetToken>()
             .FromObject(resetToken)
@@ -228,7 +228,7 @@ public static class AuthRouter
     {
         var tokenHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(request.Token))).ToLowerInvariant();
 
-        using var qBuilder = new QBuilder(parameterize: true);
+        using var qBuilder = AppQBuilderExtensions.NewQBuilder();
         var built = qBuilder
             .UseSelector()
             .Select<ResetToken>("*")
@@ -244,7 +244,7 @@ public static class AuthRouter
         if (stored == null || stored.UsedAt != null || stored.ExpiresAt < DateTime.UtcNow)
             return Results.BadRequest(new { message = "Invalid or expired reset token", isError = true });
 
-        using var userQb = new QBuilder(parameterize: true);
+        using var userQb = AppQBuilderExtensions.NewQBuilder();
         var userBuilt = userQb
             .UseSelector()
             .Select<User>("*")
@@ -260,7 +260,7 @@ public static class AuthRouter
         if (user == null)
             return Results.BadRequest(new { message = "User not found", isError = true });
 
-        using var updateUserQb = new QBuilder(parameterize: true);
+        using var updateUserQb = AppQBuilderExtensions.NewQBuilder();
         var updateUserBuilt = updateUserQb
             .UseTableBoundUpdate<User>()
             .Set(u => u.PasswordHash, passwordHelper.HashPassword(request.NewPassword))
@@ -270,7 +270,7 @@ public static class AuthRouter
             .BuildWithParameters();
         await db.ExecuteAsync(updateUserBuilt.ParameterizedSql, updateUserBuilt.Parameters);
 
-        using var useTokenQb = new QBuilder(parameterize: true);
+        using var useTokenQb = AppQBuilderExtensions.NewQBuilder();
         var useTokenBuilt = useTokenQb
             .UseTableBoundUpdate<ResetToken>()
             .Set(t => t.UsedAt, DateTime.UtcNow)

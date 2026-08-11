@@ -6,6 +6,19 @@ using ShipRight.Shared.Store;
 
 namespace ShipRight.Modules.System;
 
+public enum AppMode { Desktop, Cloud }
+
+public record HealthPayload(
+    string Status,
+    string ServerVersion,
+    string WebVersion,
+    DateTime StartedAt,
+    int Port,
+    string DataDirectory,
+    int ProjectCount,
+    int BuildCount,
+    AppMode Mode);
+
 public static class HealthRouter
 {
     private static readonly DateTime StartedAt = DateTime.UtcNow;
@@ -39,18 +52,36 @@ public static class HealthRouter
     }
 
     public static void MapHealthRoutes(this WebApplication app)
+        => MapHealthRoutes(app, AppMode.Desktop);
+
+    public static void MapHealthRoutes(this WebApplication app, AppMode mode)
     {
         app.MapGet("/api/health", (IProjectStore projectStore, IBuildStore buildStore) =>
-            Results.Ok(new
-            {
-                status = "healthy",
-                serverVersion = ServerVersion ?? "0.0.0",
-                webVersion = WebVersion ?? "0.0.0",
-                startedAt = StartedAt,
-                port = 5200,
-                dataDirectory = DataDirectory.Resolve(),
-                projectCount = projectStore.Count,
-                buildCount = buildStore.Count
-            }));
+            Results.Ok(BuildHealthPayload(
+                mode,
+                ServerVersion ?? "0.0.0",
+                WebVersion ?? "0.0.0",
+                DataDirectory.Resolve(),
+                projectStore.Count,
+                buildStore.Count,
+                StartedAt)));
     }
+
+    public static HealthPayload BuildHealthPayload(
+        AppMode mode,
+        string serverVersion,
+        string webVersion,
+        string dataDirectory,
+        int projectCount,
+        int buildCount,
+        DateTime startedAt) => new(
+        "healthy",
+        serverVersion,
+        webVersion,
+        startedAt,
+        5200,
+        dataDirectory,
+        projectCount,
+        buildCount,
+        mode);
 }

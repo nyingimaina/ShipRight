@@ -4,10 +4,12 @@ import { useRouter } from 'next/router';
 import { useState, FormEvent } from 'react';
 import toast from 'react-hot-toast';
 import { authApi } from '@/shared/auth';
+import { useServerMode } from '@/shared/serverInfo';
 import styles from './Styles/Auth.module.css';
 
 export default function ResetPasswordPage() {
   const router = useRouter();
+  const mode = useServerMode();
   const { token: tokenParam } = router.query;
 
   const [token, setToken] = useState((tokenParam as string) ?? '');
@@ -15,6 +17,15 @@ export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
+
+  if (mode === null) {
+    return null;
+  }
+
+  if (mode === 'desktop') {
+    router.replace('/projects');
+    return null;
+  }
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();

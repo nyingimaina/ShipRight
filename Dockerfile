@@ -14,7 +14,8 @@ COPY --from=frontend /build/frontend/out/ ./ShipRight.Server/wwwroot/
 RUN dotnet publish ShipRight.Server/ShipRight.Server.csproj \
     -c Release \
     -o /publish \
-    --no-restore
+    -r linux-musl-x64 \
+    --self-contained false
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine AS runtime
 RUN apk add --no-cache curl

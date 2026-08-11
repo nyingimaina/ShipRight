@@ -24,7 +24,7 @@ public class MariaDbProjectStore : IProjectStore
 
     public async Task<List<ProjectConfig>> GetAllAsync()
     {
-        using var qb = new QBuilder(parameterize: true);
+        using var qb = AppQBuilderExtensions.NewQBuilder();
         var built = qb
             .UseSelector()
             .Select<ProjectRecord>("*")
@@ -40,7 +40,7 @@ public class MariaDbProjectStore : IProjectStore
 
     public async Task<ProjectConfig?> GetByIdAsync(string id)
     {
-        using var qb = new QBuilder(parameterize: true);
+        using var qb = AppQBuilderExtensions.NewQBuilder();
         var built = qb
             .UseSelector()
             .Select<ProjectRecord>("*")
@@ -57,7 +57,7 @@ public class MariaDbProjectStore : IProjectStore
 
     public async Task<ProjectConfig?> GetByNameAsync(string name)
     {
-        using var qb = new QBuilder(parameterize: true);
+        using var qb = AppQBuilderExtensions.NewQBuilder();
         var built = qb
             .UseSelector()
             .Select<ProjectRecord>("*")
@@ -74,7 +74,7 @@ public class MariaDbProjectStore : IProjectStore
 
     public async Task SaveAsync(ProjectConfig project)
     {
-        using var qb = new QBuilder(parameterize: true);
+        using var qb = AppQBuilderExtensions.NewQBuilder();
         var existing = await GetByIdAsync(project.Id);
         if (existing != null)
         {
@@ -108,7 +108,7 @@ public class MariaDbProjectStore : IProjectStore
 
     public async Task DeleteAsync(string id)
     {
-        using var qb = new QBuilder(parameterize: true);
+        using var qb = AppQBuilderExtensions.NewQBuilder();
         var built = qb
             .UseTableBoundUpdate<ProjectRecord>()
             .Set(r => r.Deleted, true)

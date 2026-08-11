@@ -2,6 +2,7 @@ using System.Text.Json;
 using Dapper.Contrib.Extensions;
 using Jattac.Libraries.QBuilder;
 using Rocket.Libraries.DatabaseIntegrator;
+using ShipRight.Database;
 using ShipRight.Modules.Projects;
 
 namespace ShipRight.Modules.Servers;
@@ -22,7 +23,7 @@ public class MariaDbServerStore : IServerStore
 
     public async Task<List<ServerConfig>> GetAllAsync()
     {
-        using var qb = new QBuilder(parameterize: true);
+        using var qb = AppQBuilderExtensions.NewQBuilder();
         var built = qb
             .UseSelector()
             .Select<ServerRecord>("*")
@@ -38,7 +39,7 @@ public class MariaDbServerStore : IServerStore
 
     public async Task<ServerConfig?> GetByIdAsync(string id)
     {
-        using var qb = new QBuilder(parameterize: true);
+        using var qb = AppQBuilderExtensions.NewQBuilder();
         var built = qb
             .UseSelector()
             .Select<ServerRecord>("*")
@@ -55,7 +56,7 @@ public class MariaDbServerStore : IServerStore
 
     public async Task SaveAsync(ServerConfig server)
     {
-        using var qb = new QBuilder(parameterize: true);
+        using var qb = AppQBuilderExtensions.NewQBuilder();
         var existing = await GetByIdAsync(server.Id);
         if (existing != null)
         {
@@ -89,7 +90,7 @@ public class MariaDbServerStore : IServerStore
 
     public async Task DeleteAsync(string id)
     {
-        using var qb = new QBuilder(parameterize: true);
+        using var qb = AppQBuilderExtensions.NewQBuilder();
         var built = qb
             .UseTableBoundUpdate<ServerRecord>()
             .Set(r => r.Deleted, true)

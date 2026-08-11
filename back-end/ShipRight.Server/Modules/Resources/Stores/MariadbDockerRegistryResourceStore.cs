@@ -2,6 +2,7 @@ using System.Text.Json;
 using Dapper.Contrib.Extensions;
 using Jattac.Libraries.QBuilder;
 using Rocket.Libraries.DatabaseIntegrator;
+using ShipRight.Database;
 using ShipRight.Modules.Resources.Models;
 
 namespace ShipRight.Modules.Resources.Stores;
@@ -23,7 +24,7 @@ public class MariaDbDockerRegistryResourceStore : IDockerRegistryResourceStore
     {
         get
         {
-            using var qb = new QBuilder(parameterize: true);
+            using var qb = AppQBuilderExtensions.NewQBuilder();
             var built = qb
                 .UseSelector()
                 .Select<Record>("COUNT(*) AS Count")
@@ -39,7 +40,7 @@ public class MariaDbDockerRegistryResourceStore : IDockerRegistryResourceStore
 
     public async Task<List<DockerRegistryResource>> GetAllAsync()
     {
-        using var qb = new QBuilder(parameterize: true);
+        using var qb = AppQBuilderExtensions.NewQBuilder();
         var built = qb
             .UseSelector()
             .Select<Record>("*")
@@ -54,7 +55,7 @@ public class MariaDbDockerRegistryResourceStore : IDockerRegistryResourceStore
 
     public async Task<DockerRegistryResource?> GetByIdAsync(Guid id)
     {
-        using var qb = new QBuilder(parameterize: true);
+        using var qb = AppQBuilderExtensions.NewQBuilder();
         var built = qb
             .UseSelector()
             .Select<Record>("*")
@@ -70,7 +71,7 @@ public class MariaDbDockerRegistryResourceStore : IDockerRegistryResourceStore
 
     public async Task<DockerRegistryResource?> GetByNameAsync(string name)
     {
-        using var qb = new QBuilder(parameterize: true);
+        using var qb = AppQBuilderExtensions.NewQBuilder();
         var built = qb
             .UseSelector()
             .Select<Record>("*")
@@ -86,7 +87,7 @@ public class MariaDbDockerRegistryResourceStore : IDockerRegistryResourceStore
 
     public async Task SaveAsync(DockerRegistryResource resource)
     {
-        using var qb = new QBuilder(parameterize: true);
+        using var qb = AppQBuilderExtensions.NewQBuilder();
         var checkBuilt = qb
             .UseSelector().Select<Record>("Id").Then()
             .UseTableBoundFilter<Record>().WhereEqualTo(r => r.Id, resource.Id)
@@ -125,7 +126,7 @@ public class MariaDbDockerRegistryResourceStore : IDockerRegistryResourceStore
 
     public async Task DeleteAsync(Guid id)
     {
-        using var qb = new QBuilder(parameterize: true);
+        using var qb = AppQBuilderExtensions.NewQBuilder();
         var built = qb
             .UseTableBoundUpdate<Record>()
             .Set(r => r.Deleted, true)
