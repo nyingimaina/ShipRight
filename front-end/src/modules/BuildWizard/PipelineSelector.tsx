@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import ZestButton from 'jattac.libs.web.zest-button';
 import { api } from '@/shared/ApiService';
 import type { IPipelineResource, IPipelineStep } from '@/shared/types/IProject';
@@ -56,7 +57,7 @@ export default function PipelineSelector({ projectId, initialPipelineId, onSelec
         <div className={styles.list}>
           <div style={{ padding: '16px', color: '#637389', textAlign: 'center' }}>
             No pipelines configured.{' '}
-            <a href="/pipelines" style={{ color: '#C9A84C' }}>Create one</a> or use custom steps.
+             <Link href="/pipelines" style={{ color: '#C9A84C' }}>Create one</Link> or use custom steps.
           </div>
         </div>
       )}

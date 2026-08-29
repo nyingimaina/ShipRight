@@ -8,6 +8,7 @@ import ZestTextbox from 'jattac.libs.web.zest-textbox';
 import { RiAddLine, RiDeleteBinLine } from 'react-icons/ri';
 import { IApiError, IDatabaseConfig, IProjectInput, IServerConfig, ICredentialResource, DbProviderType, DeployMode, emptyDatabaseConfig, emptyProjectInput, IPipelineResource } from '@/shared/types/IProject';
 import { api } from '@/shared/ApiService';
+import { getBrowserTimeZone } from '@/shared/timeZone';
 import SshKeySection from './SshKeySection';
 import WatchBranchSection from './WatchBranchSection';
 import styles from './Styles/ProjectConfigForm.module.css';
@@ -19,7 +20,9 @@ interface Props {
 }
 
 export default function ProjectConfigForm({ initial, onSave, onCancel, projectId }: Props & { projectId?: string }) {
-  const [form, setForm] = useState<IProjectInput>(initial ?? emptyProjectInput());
+  const [form, setForm] = useState<IProjectInput>(() => initial
+    ? { ...initial, timeZone: initial.timeZone ?? getBrowserTimeZone() }
+    : { ...emptyProjectInput(), timeZone: getBrowserTimeZone() });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [dbEnabled, setDbEnabled] = useState(!!initial?.database);
   const [db, setDb] = useState<IDatabaseConfig>(initial?.database ?? emptyDatabaseConfig());
@@ -294,7 +297,7 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
                   placeholder='--no-verify --push-option="skip ci"' zest={{ stretch: true }} />
                 {repo.pushArgs && /--force(?:-with-lease)?/i.test(repo.pushArgs) && (
                   <p style={{ margin: '4px 0 0', fontSize: 11, color: '#e8a838' }}>
-                    ⚠  "--force" will overwrite remote history. Use with caution.
+                    ⚠  &quot;--force&quot; will overwrite remote history. Use with caution.
                   </p>
                 )}
                 <p style={{ margin: '4px 0 0', fontSize: 11, color: '#637389' }}>
@@ -399,6 +402,13 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
               watchSteps: f.watchSteps,
             }))}
           />
+          <Field label="Time Zone" error={errors['timeZone']}>
+            <ZestTextbox value={form.timeZone ?? 'UTC'} onChange={e => set('timeZone', e.target.value)}
+              placeholder="America/New_York" zest={{ stretch: true }} />
+            <p style={{ margin: '4px 0 0', fontSize: 11, color: '#637389' }}>
+              Defaults to this browser&apos;s timezone. Use an IANA timezone name.
+            </p>
+          </Field>
           <Field label="Git Push Timeout (seconds)" error={errors['gitPushTimeoutSeconds']}>
             <ZestTextbox
               value={form.gitPushTimeoutSeconds != null ? String(form.gitPushTimeoutSeconds) : '600'}

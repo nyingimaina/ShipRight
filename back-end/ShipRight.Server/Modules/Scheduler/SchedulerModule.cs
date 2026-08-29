@@ -94,11 +94,13 @@ public static class SchedulerModule
             var queue = sp.GetRequiredService<TempoQueue<TempoScheduledWork<BackupJob>>>();
             var projectStore = sp.GetRequiredService<IProjectStore>();
             var historyStore = sp.GetRequiredService<SqliteBackupHistoryStore>();
+            var timeZone = TempoTimeZoneResolver.ResolveConfigured();
 
             var schedulerSettings = new TempoSchedulerSettings
             {
                 TickInterval = TimeSpan.FromSeconds(5),
                 MaxCatchUpSlots = 50,
+                DefaultTimeZone = timeZone,
             };
 
             var scheduler = new TempoScheduler<BackupJob>(queue, schedulerSettings);
@@ -162,7 +164,7 @@ public static class SchedulerModule
 
     private static TempoSchedule DetectSchedule(ProjectConfig project)
     {
-        return new TempoSchedule.Cron("0 2 * * *");
+            return new TempoSchedule.Cron("0 2 * * *", TempoTimeZoneResolver.Resolve(project.TimeZone));
     }
 
     private static string DescribeSchedule(TempoSchedule schedule)

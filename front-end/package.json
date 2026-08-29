@@ -2,12 +2,15 @@
   "name": "front-end",
   "version": "3.6.6",
   "private": true,
+  "overrides": {
+    "postcss": "8.5.26"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build && node scripts/write-version.mjs",
     "start": "next start",
     "test": "jest --passWithNoTests",
-    "lint": "next lint",
+    "lint": "next lint --quiet",
     "generate-icon": "node scripts/generate-icon.mjs"
   },
   "dependencies": {
@@ -28,7 +31,7 @@
     "jattac.libs.web.zest-textbox": "^0.5.5",
     "lodash": "^4.18.1",
     "module-state-manager": "^0.2.1",
-    "next": "14.2.35",
+    "next": "15.5.24",
     "react": "^18",
     "react-datepicker": "^9.1.0",
     "react-dom": "^18",
@@ -53,9 +56,12 @@
     "@types/react": "^18",
     "@types/react-datepicker": "^6.2.0",
     "@types/react-dom": "^18",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "15.5.24",
     "jest": "^30.4.2",
     "jest-environment-jsdom": "^30.4.1",
-    "sharp": "^0.34.5",
+    "postcss": "8.5.26",
+    "sharp": "^0.35.4",
     "ts-jest": "^29.4.11",
     "typescript": "^5"
   }

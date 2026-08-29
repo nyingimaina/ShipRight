@@ -12,6 +12,9 @@ describe('CompositeNotificationProvider', () => {
     title: 'Build Complete',
     message: 'done',
   };
+  const setAvailability = (provider: jest.Mocked<INotificationProvider>, value: boolean) => {
+    (provider as { isAvailable: boolean }).isAvailable = value;
+  };
 
   beforeEach(() => {
     mockA = { name: 'a', isAvailable: false, show: jest.fn().mockResolvedValue(false) };
@@ -33,14 +36,14 @@ describe('CompositeNotificationProvider', () => {
     });
 
     it('returns false when no provider is available', () => {
-      mockC.isAvailable = false;
+      setAvailability(mockC, false);
       expect(provider.isAvailable).toBe(false);
     });
   });
 
   describe('show', () => {
     it('tries first available provider and stops', async () => {
-      mockA.isAvailable = true;
+      setAvailability(mockA, true);
       mockA.show.mockResolvedValue(true);
 
       const result = await provider.show(payload);
@@ -52,8 +55,8 @@ describe('CompositeNotificationProvider', () => {
     });
 
     it('skips unavailable providers and falls through', async () => {
-      mockA.isAvailable = false;
-      mockB.isAvailable = true;
+      setAvailability(mockA, false);
+      setAvailability(mockB, true);
       mockB.show.mockResolvedValue(true);
 
       const result = await provider.show(payload);
@@ -65,9 +68,9 @@ describe('CompositeNotificationProvider', () => {
     });
 
     it('skips unavailable providers entirely', async () => {
-      mockA.isAvailable = false;
-      mockB.isAvailable = false;
-      mockC.isAvailable = true;
+      setAvailability(mockA, false);
+      setAvailability(mockB, false);
+      setAvailability(mockC, true);
 
       await provider.show(payload);
 
@@ -77,7 +80,7 @@ describe('CompositeNotificationProvider', () => {
     });
 
     it('returns false when all providers show returns false even if available', async () => {
-      mockA.isAvailable = true;
+      setAvailability(mockA, true);
       mockA.show.mockResolvedValue(false);
 
       await provider.show(payload);
@@ -88,9 +91,9 @@ describe('CompositeNotificationProvider', () => {
     });
 
     it('returns false when no provider handles the notification', async () => {
-      mockA.isAvailable = true;
+      setAvailability(mockA, true);
       mockA.show.mockResolvedValue(false);
-      mockC.isAvailable = false;
+      setAvailability(mockC, false);
 
       const result = await provider.show(payload);
 

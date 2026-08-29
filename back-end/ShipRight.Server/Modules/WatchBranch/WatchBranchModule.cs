@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Serilog;
 using ShipRight.Modules.Builds;
 using ShipRight.Modules.Projects;
+using ShipRight.Modules.Scheduler;
 using ShipRight.Shared.ProcessRunner;
 using ShipRight.Shared.Store;
 
@@ -110,6 +111,7 @@ public static class WatchBranchModule
             {
                 TickInterval    = TimeSpan.FromSeconds(10),
                 MaxCatchUpSlots = 10,
+                DefaultTimeZone = TempoTimeZoneResolver.ResolveConfigured(),
             };
 
             var scheduler = new TempoScheduler<WatchBranchJob>(queue, schedulerSettings);

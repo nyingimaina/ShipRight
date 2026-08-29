@@ -86,7 +86,7 @@ jest.mock('../StepPicker', () => ({
 
 jest.mock('../PipelineSelector', () => ({
   __esModule: true,
-  default: ({ onUseCustom }: any) => {
+  default: function MockPipelineSelector({ onUseCustom }: any) {
     // Auto-advance to step picker so existing tests don't need to change
     React.useEffect(() => { onUseCustom(); }, []);
     return <div data-testid="pipeline-selector" />;
@@ -562,7 +562,10 @@ describe('BuildWizard', () => {
   });
 
   describe('initialPipeline prop', () => {
-    const mockPipeline = { id: 'pipe-1', name: 'My Pipeline', steps: [], scope: 'Global' as const };
+    const mockPipeline = {
+      id: 'pipe-1', name: 'My Pipeline', steps: [], scope: 'Global' as const,
+      createdAt: '2026-01-01T00:00:00.000Z', modifiedAt: '2026-01-01T00:00:00.000Z',
+    };
 
     beforeEach(() => {
       jest.clearAllMocks();

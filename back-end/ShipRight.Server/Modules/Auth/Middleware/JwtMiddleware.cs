@@ -32,7 +32,7 @@ public class JwtMiddleware
     {
         var path = context.Request.Path.Value ?? "";
 
-        if (AnonymousPaths.Any(p => path.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
+        if (IsAnonymousPath(path))
         {
             await _next(context);
             return;
@@ -111,4 +111,7 @@ public class JwtMiddleware
 
         await _next(context);
     }
+
+    internal static bool IsAnonymousPath(string path) =>
+        AnonymousPaths.Contains(path.TrimEnd('/'), StringComparer.OrdinalIgnoreCase);
 }

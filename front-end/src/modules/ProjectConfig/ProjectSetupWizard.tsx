@@ -7,6 +7,7 @@ import CreatableSelect from 'react-select/creatable';
 import { RiCheckLine, RiAlertLine, RiLoader2Line } from 'react-icons/ri';
 import FilePicker from '@/modules/FilePicker/FilePicker';
 import { api } from '@/shared/ApiService';
+import { getBrowserTimeZone } from '@/shared/timeZone';
 import { IDetectedProjectConfig } from '@/shared/types/IDetectedProject';
 import { IProject, IProjectInput, IApiError, IServerConfig, IDatabaseConfig, ICredentialResource, DbProviderType, emptyDatabaseConfig } from '@/shared/types/IProject';
 import styles from './Styles/ProjectSetupWizard.module.css';
@@ -38,6 +39,7 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
   // Editable fields from detection + manual
   type ServiceState = { name: string; versionFilePath: string; buildContextPath: string; dockerImageName: string; dockerRegistry: string; composeServiceName: string; dockerUsername: string; dockerPassword: string; version: string | null };
   const [name, setName]                 = useState(existing?.name ?? '');
+  const [timeZone, setTimeZone]         = useState(existing?.timeZone ?? getBrowserTimeZone());
   const [services, setServices]         = useState<ServiceState[]>(existing
     ? existing.services.map(s => ({ name: s.name, versionFilePath: s.versionFilePath, buildContextPath: s.buildContextPath, dockerImageName: s.dockerImageName, dockerRegistry: s.dockerRegistry ?? '', composeServiceName: s.composeServiceName ?? '', dockerUsername: s.dockerUsername ?? '', dockerPassword: '', version: null }))
     : []);
@@ -175,6 +177,7 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
       wsl: { workingDir: wslWorkingDir },
       server: { host: serverHost, username: serverUser, sshKeyPath, remoteWorkingDir: remoteDir, rebuildScript, deployMode: existing?.server.deployMode ?? 'GitScript' },
       database: dbEnabled ? db : undefined,
+      timeZone,
     };
     try {
       const saved = existing
@@ -309,6 +312,7 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
                     wsl: { workingDir: '' },
                     server: { host: '', username: 'ubuntu', sshKeyPath: '', remoteWorkingDir: '', rebuildScript: '', deployMode: 'GitScript' },
                     database: undefined,
+                    timeZone,
                   };
                   try {
                     const saved = await api.post<IProject>('/api/projects', input);
@@ -376,6 +380,14 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
                 placeholder="e.g. SMS Gateway" zest={{ stretch: true }} />
               {errors['name'] && <p className={styles.errorText}>{errors['name']}</p>}
             </div>
+            <div className={styles.fieldRow}>
+              <label className={styles.fieldLabel}>Time Zone</label>
+              <ZestTextbox value={timeZone} onChange={e => setTimeZone(e.target.value)}
+                placeholder="America/New_York" zest={{ stretch: true }} />
+              <p style={{ margin: '4px 0 0', fontSize: 11, color: '#637389' }}>
+                Defaults to this browser&apos;s timezone. Use an IANA timezone name.
+              </p>
+            </div>
           </div>
 
           {/* Detected git/wsl */}
@@ -427,7 +439,7 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
                   />
                   {repo.pushArgs && /--force(?:-with-lease)?/i.test(repo.pushArgs) && (
                     <p style={{ margin: '4px 0 0', fontSize: 11, color: '#e8a838' }}>
-                      ⚠  "--force" will overwrite remote history.
+                      ⚠  &quot;--force&quot; will overwrite remote history.
                     </p>
                   )}
                 </div>

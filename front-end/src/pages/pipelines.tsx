@@ -9,7 +9,8 @@ import AppShell from '@/modules/AppShell/AppShell';
 import PipelineBuilder from '@/modules/BuildWizard/PipelineBuilder';
 import BuildWizard from '@/modules/BuildWizard/BuildWizard';
 import { api } from '@/shared/ApiService';
-import type { IPipelineResource, IPipelineStep, IProject, IServiceVersion } from '@/shared/types/IProject';
+import type { IPipelineResource, IPipelineStep, IProject } from '@/shared/types/IProject';
+import type { IServiceVersion } from '@/shared/types/IBuildRecord';
 import styles from './Styles/Pipelines.module.css';
 
 const STEP_ICONS: Record<string, string> = {

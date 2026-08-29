@@ -77,10 +77,21 @@ try
     builder.Services.ConfigureHttpJsonOptions(o =>
         o.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
-    var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
-        ?? (cloudMode
-            ? [Environment.GetEnvironmentVariable("SHIPRIGHT__CORS_ORIGINS") ?? "http://localhost:5200"]
-            : ["http://localhost:5200", "http://127.0.0.1:5200"]);
+    var allowedOrigins = cloudMode
+        ? CloudConfiguration.ResolveAllowedOrigins(
+            builder.Configuration,
+            Environment.GetEnvironmentVariable("SHIPRIGHT__CORS_ORIGINS"))
+        : ["http://localhost:5200", "http://127.0.0.1:5200"];
+
+    if (cloudMode)
+    {
+        CloudConfiguration.ValidateProductionSettings(
+            Environment.GetEnvironmentVariable("SHIPRIGHT__DB_CONNECTION"),
+            Environment.GetEnvironmentVariable("SHIPRIGHT__JWT_KEY"),
+            Environment.GetEnvironmentVariable("SHIPRIGHT__ADMIN_EMAIL"),
+            Environment.GetEnvironmentVariable("SHIPRIGHT__ADMIN_PASSWORD"),
+            Environment.GetEnvironmentVariable("SHIPRIGHT__CORS_ORIGINS"));
+    }
 
     builder.Services.AddCors(options =>
         options.AddPolicy("ShipRightPolicy", policy =>
@@ -186,6 +197,7 @@ try
 
     if (cloudMode)
     {
+        _ = app.Services.GetRequiredService<IPasswordResetEmailSender>();
         var adminEmail = Environment.GetEnvironmentVariable("SHIPRIGHT__ADMIN_EMAIL");
         var adminPassword = Environment.GetEnvironmentVariable("SHIPRIGHT__ADMIN_PASSWORD");
         if (!string.IsNullOrEmpty(adminEmail) && !string.IsNullOrEmpty(adminPassword))

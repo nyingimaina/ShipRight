@@ -67,6 +67,7 @@ export interface IProject {
   watchPollSeconds?: number;
   watchSteps?: string;
   gitPushTimeoutSeconds?: number;
+  timeZone?: string;
   createdAt: string;
   modifiedAt: string;
 }
@@ -88,6 +89,7 @@ export const emptyProjectInput = (): IProjectInput => ({
   wsl: { workingDir: '' },
   server: { host: '', username: 'ubuntu', sshKeyPath: '', remoteWorkingDir: '', rebuildScript: 'rebuild.sh', deployMode: 'GitScript' },
   gitPushTimeoutSeconds: 600,
+  timeZone: 'UTC',
 });
 
 export interface IApiError {

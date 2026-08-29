@@ -65,7 +65,7 @@ export const authApi = {
     ),
 
   forgotPassword: (email: string) =>
-    authRequest<{ message: string; resetToken?: string }>(
+    authRequest<{ message: string }>(
       'POST', '/api/auth/forgot-password', { email },
     ),
 

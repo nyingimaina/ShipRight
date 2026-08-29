@@ -43,9 +43,19 @@ public static class CloudDiRegistrar
         services.AddSingleton<IJwtService>(_ => new JwtService(jwtKey));
         services.AddSingleton<ITokenService, TokenService>();
         services.AddSingleton<ISetupService, SetupService>();
+        services.AddSingleton<IPasswordResetEmailSender, SmtpPasswordResetEmailSender>();
 
         services.AddRateLimiter(options =>
         {
+            options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = 100,
+                        Window = TimeSpan.FromMinutes(1),
+                        QueueLimit = 0,
+                    }));
             options.AddFixedWindowLimiter("Api", opt =>
             {
                 opt.PermitLimit = 100;

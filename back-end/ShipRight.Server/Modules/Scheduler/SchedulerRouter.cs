@@ -162,7 +162,9 @@ public static class SchedulerRouter
 
             try
             {
-                var scheduleExpr = new TempoSchedule.Cron(request.CronExpression);
+                var scheduleExpr = new TempoSchedule.Cron(
+                    request.CronExpression,
+                    TempoTimeZoneResolver.Resolve(request.TimeZone ?? project.TimeZone));
 
                 var scheduleId = scheduler.Register(
                     new BackupJob
@@ -202,14 +204,14 @@ public static class SchedulerRouter
 
         app.MapPost("/api/scheduler/replay", async (
             ReplayRequest? request,
-            SqliteBackupOverflowStore overflowStore) =>
+            BackupOverflowStore overflowStore) =>
         {
             await overflowStore.ReplayAsync(request?.ProjectId);
             return Results.Ok(new { message = "Replay initiated." });
         });
 
         app.MapGet("/api/scheduler/overflow", (
-            SqliteBackupOverflowStore overflowStore,
+            BackupOverflowStore overflowStore,
             string? projectId = null) =>
         {
             var records = overflowStore.List(projectId);
@@ -351,7 +353,9 @@ public static class SchedulerRouter
 
             try
             {
-                var scheduleExpr = new TempoSchedule.Cron(request.CronExpression);
+                var scheduleExpr = new TempoSchedule.Cron(
+                    request.CronExpression,
+                    TempoTimeZoneResolver.Resolve(request.TimeZone ?? project.TimeZone));
 
                 var scheduleId = scheduler.Register(
                     new BackupJob
@@ -391,14 +395,14 @@ public static class SchedulerRouter
 
         app.MapPost("/api/scheduler/replay", async (
             ReplayRequest? request,
-            SqliteBackupOverflowStore overflowStore) =>
+            BackupOverflowStore overflowStore) =>
         {
             await overflowStore.ReplayAsync(request?.ProjectId);
             return Results.Ok(new { message = "Replay initiated." });
         });
 
         app.MapGet("/api/scheduler/overflow", (
-            SqliteBackupOverflowStore overflowStore,
+            BackupOverflowStore overflowStore,
             string? projectId = null) =>
         {
             var records = overflowStore.List(projectId);
@@ -433,6 +437,7 @@ public record ScheduleRequest
     public MissedRunPolicy MissedRunPolicy { get; init; } = MissedRunPolicy.RunOnce;
     public OverlapPolicy OverlapPolicy { get; init; } = OverlapPolicy.Skip;
     public TimeSpan? MaxDuration { get; init; } = TimeSpan.FromMinutes(30);
+    public string? TimeZone { get; init; }
 }
 
 public record ReplayRequest

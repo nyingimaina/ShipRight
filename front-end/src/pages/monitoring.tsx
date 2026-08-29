@@ -266,7 +266,7 @@ function ServerCard({ server, metrics }: { server: IServerConfig; metrics?: Serv
             <div className={styles.anomalyBlock}>
               <div className={styles.anomalyTitle}>
                 Stuck processes
-                <span className={styles.anomalyHint}> — processes that have finished but weren't cleaned up by their parent</span>
+                <span className={styles.anomalyHint}> — processes that have finished but weren&apos;t cleaned up by their parent</span>
               </div>
               <table className={styles.table}>
                 <thead>

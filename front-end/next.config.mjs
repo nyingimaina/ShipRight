@@ -4,9 +4,6 @@ const nextConfig = {
   trailingSlash: true,
   reactStrictMode: true,
   images: { unoptimized: true },
-  // Type checking and linting run separately via `npx tsc --noEmit`
-  typescript: { ignoreBuildErrors: true },
-  eslint:     { ignoreDuringBuilds: true },
   transpilePackages: [
     'jattac.libs.web.zest-button',
     'jattac.libs.web.zest-textbox',

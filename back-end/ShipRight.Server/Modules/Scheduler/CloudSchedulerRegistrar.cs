@@ -69,9 +69,15 @@ public static class CloudSchedulerRegistrar
 
         services.AddSingleton<TempoScheduler<BackupJob>>(sp =>
         {
+            var timeZone = TempoTimeZoneResolver.ResolveConfigured();
             var scheduler = new TempoScheduler<BackupJob>(
                 sp.GetRequiredService<TempoQueue<TempoScheduledWork<BackupJob>>>(),
-                new TempoSchedulerSettings { TickInterval = TimeSpan.FromSeconds(5), MaxCatchUpSlots = 50 });
+                new TempoSchedulerSettings
+                {
+                    TickInterval = TimeSpan.FromSeconds(5),
+                    MaxCatchUpSlots = 50,
+                    DefaultTimeZone = timeZone,
+                });
             var projects = sp.GetRequiredService<IProjectStore>().GetAllAsync().GetAwaiter().GetResult();
             var count = 0;
             foreach (var p in projects)
@@ -83,7 +89,9 @@ public static class CloudSchedulerRegistrar
                     {
                         TenantId = BackupJob.TenantIdFromProject(p.Id), ProjectId = p.Id,
                         ProjectName = p.Name, DatabaseName = p.Database.DatabaseName,
-                    }, new TempoSchedule.Cron("0 2 * * *"), MissedRunPolicy.RunOnce, OverlapPolicy.Skip);
+                    }, new TempoSchedule.Cron("0 2 * * *",
+                        TempoTimeZoneResolver.Resolve(p.TimeZone)),
+                    MissedRunPolicy.RunOnce, OverlapPolicy.Skip);
                     count++;
                 }
                 catch (Exception ex) { Log.Error(ex, "Failed to register backup schedule for {Project}", p.Name); }

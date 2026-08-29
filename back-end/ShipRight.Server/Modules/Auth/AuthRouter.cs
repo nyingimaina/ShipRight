@@ -176,7 +176,8 @@ public static class AuthRouter
 
     private static async Task<IResult> ForgotPasswordAsync(
         ForgotPasswordRequest request,
-        IDatabaseHelper<Guid> db)
+        IDatabaseHelper<Guid> db,
+        IPasswordResetEmailSender emailSender)
     {
         using var qBuilder = AppQBuilderExtensions.NewQBuilder();
         var built = qBuilder
@@ -216,8 +217,9 @@ public static class AuthRouter
             .FromObject(resetToken)
             .BuildWithParameters();
         await db.ExecuteAsync(insertBuilt.ParameterizedSql, insertBuilt.Parameters);
+        await emailSender.SendAsync(user.Email, token);
 
-        return Results.Ok(new { message = "If the email exists, a reset link has been generated", resetToken = token });
+        return Results.Ok(BuildForgotPasswordResponse());
     }
 
     private static async Task<IResult> ResetPasswordAsync(
@@ -293,6 +295,9 @@ public static class AuthRouter
         await tokenService.RevokeAllUserSessionsAsync(userId);
         return Results.Ok(new { message = "All sessions revoked" });
     }
+
+    internal static string BuildForgotPasswordResponse() =>
+        "If the email exists, a reset link has been generated";
 }
 
 public record SignUpRequest(string Email, string Password, string Name, string CompanyName);

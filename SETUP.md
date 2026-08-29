@@ -8,7 +8,7 @@ browser at `http://localhost:5200`, complete with a login screen and a database.
 
 - This guide assumes you already have two things installed and working:
   - **WSL** (Windows Subsystem for Linux) with Ubuntu
-  - **Docker** (inside that Ubuntu)
+  - **Docker Engine and Docker Compose v2** (inside that Ubuntu)
 - You do **not** need any programming knowledge. If you can copy and paste, you can do this.
 - The app comes with its **own built-in database** (a small MariaDB). Any database you
   already have on your Windows computer is **not touched** — this is completely separate.
@@ -86,7 +86,9 @@ This file is called `.env`. The dot at the start just makes it a hidden file —
    | `SHIPRIGHT__ADMIN_EMAIL=`      | Your email address (this is your login)                           |
    | `SHIPRIGHT__ADMIN_PASSWORD=`   | A password you choose (at least 8 characters)                     |
    | `MYSQL_ROOT_PASSWORD=`         | Another password you choose — any password                        |
-   | `MYSQL_PASSWORD=`              | Another password you choose — must be different from the one above |
+| `MYSQL_PASSWORD=`              | Another password you choose — must be different from the one above |
+| `SHIPRIGHT__PUBLIC_URL=`       | The HTTPS address where users access ShipRight                    |
+| `SHIPRIGHT__SMTP_*`            | SMTP settings used to send password-reset links                  |
 
    Do **not** change any other line. In particular, leave the line starting with
    `SHIPRIGHT__DB_CONNECTION` exactly as it is.
@@ -226,5 +228,5 @@ then `docker compose up --build -d` and re-check Step 3.
 
 - **Connecting to an existing database on your Windows computer.** This guide uses the
   app's own built-in database, which is also how the app will run in production.
-- **Pushing to Amazon ECR / AWS from inside the app.** That part isn't ready in this
-  version yet — it doesn't affect anything you just did.
+- **Pushing to Amazon ECR / AWS from inside the app.** Configure an AWS credential
+  resource and ECR registry resource after the basic test run.
