@@ -6,7 +6,7 @@ import LogViewer from '@/modules/BuildWizard/LogViewer';
 import { api, sseUrl } from '@/shared/ApiService';
 import { useElapsedTimer, fmtElapsed } from '@/shared/hooks/useElapsedTimer';
 import { IDatabaseConfig } from '@/shared/types/IProject';
-import styles from './DbOperationsPanel.module.css';
+import styles from './Styles/DbOperationsPanel.module.css';
 
 const SqlQueryPanel = dynamic(() => import('./SqlQueryPanel'), { ssr: false });
 
