@@ -33,6 +33,8 @@ import styles from './Styles/PipelineBuilder.module.css';
 
 interface Props {
   pipeline?: IPipelineResource | null;
+  initialProjectId?: string;
+  onCreateProject?: () => void;
   onSave: (pipeline: IPipelineResource) => void;
   onCancel: () => void;
 }
@@ -63,12 +65,12 @@ const BUILTIN_VARIABLES = [
   { name: 'TempDir', description: 'OS temp directory' },
 ];
 
-export default function PipelineBuilder({ pipeline, onSave, onCancel }: Props) {
+export default function PipelineBuilder({ pipeline, initialProjectId, onCreateProject, onSave, onCancel }: Props) {
   const [name, setName] = useState(pipeline?.name || '');
   const [scope, setScope] = useState<'Global' | 'Project'>(pipeline?.scope || 'Global');
   const [steps, setSteps] = useState<IPipelineStep[]>(pipeline?.steps || []);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
-  const [projectId, setProjectId] = useState<string | undefined>(pipeline?.projectId);
+  const [projectId, setProjectId] = useState<string | undefined>(pipeline?.projectId ?? initialProjectId);
   const [projects, setProjects] = useState<IProject[]>([]);
   const [scripts, setScripts] = useState<IScriptResource[]>([]);
   const [saving, setSaving] = useState(false);
@@ -248,16 +250,23 @@ export default function PipelineBuilder({ pipeline, onSave, onCancel }: Props) {
           <option value="Project">Project</option>
         </select>
         {scope === 'Project' && (
-          <select
-            className={styles.scopeSelect}
-            value={projectId || ''}
-            onChange={e => setProjectId(e.target.value || undefined)}
-          >
-            <option value="">Select project…</option>
-            {projects.map(p => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
+          <>
+            <select
+              className={styles.scopeSelect}
+              value={projectId || ''}
+              onChange={e => setProjectId(e.target.value || undefined)}
+            >
+              <option value="">Select project…</option>
+              {projects.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+            {onCreateProject && (
+              <button className={styles.newProjectBtn} onClick={onCreateProject} type="button">
+                + New Project
+              </button>
+            )}
+          </>
         )}
         <ZestButton onClick={() => setShowVariables(!showVariables)} zest={{ buttonStyle: 'outline' }}>
           {showVariables ? 'Hide' : 'Variables'} {Object.keys(variables).length > 0 && `(${Object.keys(variables).length})`}

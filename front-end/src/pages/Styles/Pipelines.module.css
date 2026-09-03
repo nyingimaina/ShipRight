@@ -147,6 +147,23 @@
   background: rgba(201, 168, 76, 0.08);
 }
 
+.pickerNew {
+  background: none;
+  border: 1px dashed rgba(201, 168, 76, 0.5);
+  border-radius: 6px;
+  padding: 10px 12px;
+  color: #C9A84C;
+  font-size: 14px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.pickerNew:hover {
+  border-color: rgba(201, 168, 76, 0.8);
+  background: rgba(201, 168, 76, 0.08);
+}
+
 .pickerEmpty {
   padding: 16px;
   color: #637389;

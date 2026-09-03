@@ -36,6 +36,22 @@
   font-size: 14px;
 }
 
+.newProjectBtn {
+  background: none;
+  border: none;
+  color: #C9A84C;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+
+.newProjectBtn:hover {
+  background: rgba(201, 168, 76, 0.1);
+}
+
 .body {
   flex: 1;
   display: flex;

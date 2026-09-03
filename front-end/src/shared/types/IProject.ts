@@ -23,6 +23,15 @@ export interface IWslConfig {
 
 export type DeployMode = 'GitScript' | 'GitCompose' | 'EnvCompose';
 
+export type ProjectType = 'Pipeline' | 'Freeform';
+
+export interface IFreeformFeatures {
+  docker: boolean;
+  git: boolean;
+  deploy: boolean;
+  database: boolean;
+}
+
 export type ScriptPlatform = 'Bash' | 'PowerShell' | 'Cmd' | 'Python' | 'Sh';
 export type ExecutionTarget = 'Local' | 'Remote';
 export type PipelineScope = 'Global' | 'Project';
@@ -58,6 +67,8 @@ export interface IProject {
   name: string;
   version?: number;
   serverId?: string;
+  type?: ProjectType;
+  features?: IFreeformFeatures;
   services: IServiceConfig[];
   gitRepos: IGitConfig[];
   wsl: IWslConfig;
@@ -84,6 +95,8 @@ export const emptyDatabaseConfig = (): IDatabaseConfig => ({
 
 export const emptyProjectInput = (): IProjectInput => ({
   name: '',
+  type: 'Pipeline',
+  features: { docker: false, git: false, deploy: false, database: false },
   services: [{ name: '', versionFilePath: '', buildContextPath: '', dockerImageName: '', dockerRegistry: '', composeServiceName: '', dockerUsername: '', dockerPassword: '' }],
   gitRepos: [],
   wsl: { workingDir: '' },

@@ -106,12 +106,33 @@ public record ServerConfig
     public Guid? PipelineResourceId { get; init; }
 }
 
+/// <summary>
+/// Pipeline — full guided setup (server + git info always expected).
+/// Freeform — the user picks only the components they need (Docker, Git, Deploy, Database);
+/// server/git info is only required when the corresponding component is selected.
+/// </summary>
+public enum ProjectType { Pipeline, Freeform }
+
+/// <summary>
+/// Which components a Freeform project opts into. Only these determine what
+/// configuration is required at validation time.
+/// </summary>
+public record FreeformFeatures
+{
+    public bool Docker   { get; init; }
+    public bool Git      { get; init; }
+    public bool Deploy   { get; init; }
+    public bool Database { get; init; }
+}
+
 public record ProjectConfig
 {
     public string Id { get; init; } = string.Empty;
     public string Name { get; init; } = string.Empty;
     public int Version { get; init; } = 2;
     public string ServerId { get; init; } = string.Empty;
+    public ProjectType Type { get; init; } = ProjectType.Pipeline;
+    public FreeformFeatures Features { get; init; } = new();
     public List<ServiceConfig> Services { get; init; } = new();
     public List<GitConfig> GitRepos { get; init; } = new();
     public WslConfig Wsl { get; init; } = new();

@@ -204,14 +204,14 @@ public static class SchedulerRouter
 
         app.MapPost("/api/scheduler/replay", async (
             ReplayRequest? request,
-            BackupOverflowStore overflowStore) =>
+            SqliteBackupOverflowStore overflowStore) =>
         {
             await overflowStore.ReplayAsync(request?.ProjectId);
             return Results.Ok(new { message = "Replay initiated." });
         });
 
         app.MapGet("/api/scheduler/overflow", (
-            BackupOverflowStore overflowStore,
+            SqliteBackupOverflowStore overflowStore,
             string? projectId = null) =>
         {
             var records = overflowStore.List(projectId);

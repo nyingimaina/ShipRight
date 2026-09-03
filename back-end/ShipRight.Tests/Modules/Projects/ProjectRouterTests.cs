@@ -258,6 +258,95 @@ public class ProjectRouterTests : IDisposable
         Assert.IsTrue(errors.Any(e => FieldValue<string>(e, "field") == "server.rebuildScript"));
     }
 
+    // ── Freeform ─────────────────────────────────────────────────────────────
+
+    private static ProjectConfig FreeformProject(FreeformFeatures features) => new()
+    {
+        Id = "freeform-proj",
+        Name = "Freeform Project",
+        Type = ProjectType.Freeform,
+        Features = features,
+        CreatedAt = DateTime.UtcNow,
+        ModifiedAt = DateTime.UtcNow,
+    };
+
+    [TestMethod]
+    public async Task Validate_FreeformNameOnly_NoServerOrGitErrors()
+    {
+        var p = FreeformProject(new FreeformFeatures { Docker = false, Git = false, Deploy = false, Database = false });
+        var errors = await ProjectRouter.ValidateAsync(p, _store, isNew: true);
+
+        Assert.AreEqual(0, errors.Count, string.Join("; ", errors.Select(e => FieldValue<string>(e, "message"))));
+    }
+
+    [TestMethod]
+    public async Task Validate_FreeformDockerOnly_DoesNotForceServerOrGit()
+    {
+        var p = FreeformProject(new FreeformFeatures { Docker = true, Git = false, Deploy = false, Database = false })
+            with { Wsl = new WslConfig { WorkingDir = "/home/ubuntu/app" } };
+        var errors = await ProjectRouter.ValidateAsync(p, _store, isNew: true);
+
+        // No server, no git errors (empty server/git allowed)
+        Assert.IsFalse(errors.Any(e => FieldValue<string>(e, "field").StartsWith("server")));
+        Assert.IsFalse(errors.Any(e => FieldValue<string>(e, "field") == "gitRepos"));
+    }
+
+    [TestMethod]
+    public async Task Validate_FreeformDeploySelected_RequiresServer()
+    {
+        var p = FreeformProject(new FreeformFeatures { Deploy = true });
+        var errors = await ProjectRouter.ValidateAsync(p, _store, isNew: true);
+
+        Assert.IsTrue(errors.Any(e => FieldValue<string>(e, "field") == "server.host"));
+        Assert.IsTrue(errors.Any(e => FieldValue<string>(e, "field") == "server.sshKeyPath"));
+    }
+
+    [TestMethod]
+    public async Task Validate_FreeformGitSelected_RequiresGitRepo()
+    {
+        var p = FreeformProject(new FreeformFeatures { Git = true });
+        var errors = await ProjectRouter.ValidateAsync(p, _store, isNew: true);
+
+        Assert.IsTrue(errors.Any(e => FieldValue<string>(e, "field") == "gitRepos"));
+        // Git selected should NOT force server info
+        Assert.IsFalse(errors.Any(e => FieldValue<string>(e, "field").StartsWith("server")));
+    }
+
+    [TestMethod]
+    public async Task Validate_FreeformDatabaseSelected_RequiresServer()
+    {
+        var p = FreeformProject(new FreeformFeatures { Database = true })
+            with { Database = new DatabaseConfig { Provider = DbProviderType.MariaDb, ContainerName = "db", DatabaseName = "app", RootUser = "root" } };
+        var errors = await ProjectRouter.ValidateAsync(p, _store, isNew: true);
+
+        Assert.IsTrue(errors.Any(e => FieldValue<string>(e, "field") == "server.host"));
+        // Database selection should NOT force git
+        Assert.IsFalse(errors.Any(e => FieldValue<string>(e, "field") == "gitRepos"));
+    }
+
+    [TestMethod]
+    public async Task Validate_FreeformGitSelected_WithDockerServices_DoesNotForceServer()
+    {
+        var svc = new ServiceConfig
+        {
+            Name = "api",
+            VersionFilePath = "/tmp/version.txt",
+            BuildContextPath = "/tmp",
+            DockerImageName = "nyingi/api"
+        };
+        var p = FreeformProject(new FreeformFeatures { Docker = true, Git = true, Deploy = false, Database = false })
+            with
+            {
+                Services = [svc],
+                GitRepos = [new GitConfig { RepoPath = "/tmp", DeployBranch = "main" }],
+                Wsl = new WslConfig { WorkingDir = "/home/ubuntu/app" }
+            };
+        var errors = await ProjectRouter.ValidateAsync(p, _store, isNew: true);
+
+        Assert.IsFalse(errors.Any(e => FieldValue<string>(e, "field").StartsWith("server")));
+        Assert.AreEqual(0, errors.Count, string.Join("; ", errors.Select(e => FieldValue<string>(e, "message"))));
+    }
+
     // ── ID generation ────────────────────────────────────────────────────────
 
     [TestMethod]

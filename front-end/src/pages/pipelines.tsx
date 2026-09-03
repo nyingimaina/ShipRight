@@ -8,6 +8,7 @@ import OverflowMenu from 'jattac.libs.web.overflow-menu';
 import AppShell from '@/modules/AppShell/AppShell';
 import PipelineBuilder from '@/modules/BuildWizard/PipelineBuilder';
 import BuildWizard from '@/modules/BuildWizard/BuildWizard';
+import ProjectSetupWizard from '@/modules/ProjectConfig/ProjectSetupWizard';
 import { api } from '@/shared/ApiService';
 import type { IPipelineResource, IPipelineStep, IProject } from '@/shared/types/IProject';
 import type { IServiceVersion } from '@/shared/types/IBuildRecord';
@@ -23,8 +24,9 @@ const STEP_ICONS: Record<string, string> = {
 export default function PipelinesPage() {
   const [pipelines, setPipelines] = useState<IPipelineResource[]>([]);
   const [loading, setLoading] = useState(true);
-  const [paneTarget, setPaneTarget] = useState<'new' | 'edit' | undefined>(undefined);
+  const [paneTarget, setPaneTarget] = useState<'new' | 'edit' | 'new-project' | undefined>(undefined);
   const [editPipeline, setEditPipeline] = useState<IPipelineResource | null>(null);
+  const [newProjectId, setNewProjectId] = useState<string | undefined>(undefined);
   // Build state
   const [buildWizardOpen, setBuildWizardOpen] = useState(false);
   const [buildProject, setBuildProject] = useState<IProject | null>(null);
@@ -36,6 +38,8 @@ export default function PipelinesPage() {
   const [projects, setProjects] = useState<IProject[]>([]);
   const [projectSearch, setProjectSearch] = useState('');
   const [loadingProjects, setLoadingProjects] = useState(false);
+  // + New Project from picker
+  const [pickerWizard, setPickerWizard] = useState(false);
   // Project filter for pipeline list
   const [filterProjectId, setFilterProjectId] = useState<string>('');
   const [allProjects, setAllProjects] = useState<IProject[]>([]);
@@ -58,9 +62,47 @@ export default function PipelinesPage() {
 
   useEffect(() => { load(); }, []);
 
-  const openNew = () => { setPaneTarget('new'); setEditPipeline(null); };
+  const openNew = () => { setPaneTarget('new'); setEditPipeline(null); setNewProjectId(undefined); };
   const openEdit = (p: IPipelineResource) => { setPaneTarget('edit'); setEditPipeline(p); };
-  const closePane = () => { setPaneTarget(undefined); setEditPipeline(null); };
+  const closePane = () => {
+    if (pickerWizard) {
+      // Canceled a picker-launched project wizard — restore the project picker
+      setPickerWizard(false);
+      setShowProjectPicker(true);
+      setPaneTarget(undefined);
+      setEditPipeline(null);
+      setNewProjectId(undefined);
+      return;
+    }
+    if (paneTarget === 'new-project') {
+      // Canceled a project wizard opened from the pipeline builder — return to it
+      setPaneTarget('new');
+      setEditPipeline(null);
+      return;
+    }
+    setPaneTarget(undefined);
+    setEditPipeline(null);
+    setNewProjectId(undefined);
+  };
+
+  const openProjectWizard = () => {
+    setPaneTarget('new-project');
+    setEditPipeline(null);
+  };
+
+  const handleProjectCreated = (project: IProject) => {
+    toast.success(`Project "${project.name}" created.`);
+    if (pickerPipeline) {
+      // We came from the project picker (global pipeline build) — proceed to build
+      setPaneTarget(undefined);
+      setShowProjectPicker(false);
+      handleProjectPick(project);
+      return;
+    }
+    setNewProjectId(project.id);
+    setPaneTarget('new');
+    load();
+  };
 
   const handleSave = (pipeline: IPipelineResource) => {
     closePane();
@@ -113,6 +155,7 @@ export default function PipelinesPage() {
 
   const handleProjectPick = async (project: IProject) => {
     setShowProjectPicker(false);
+    setPickerWizard(false);
     try {
       const versions = await api.get<IServiceVersion[]>(`/api/projects/${project.id}/current-versions`).catch(() => []);
       setBuildProject(project);
@@ -123,6 +166,13 @@ export default function PipelinesPage() {
       toast.error('Failed to load project versions.');
     }
     setPickerPipeline(null);
+  };
+
+  const openPickerWizard = () => {
+    setShowProjectPicker(false);
+    setPickerWizard(true);
+    setPaneTarget('new-project');
+    setEditPipeline(null);
   };
 
   const filteredProjects = projects.filter(p =>
@@ -141,7 +191,8 @@ export default function PipelinesPage() {
   };
 
   const paneOpen = paneTarget !== undefined;
-  const paneTitle = paneTarget === 'new' ? 'New Pipeline'
+  const paneTitle = paneTarget === 'new-project' ? 'New Project'
+    : paneTarget === 'new' ? 'New Pipeline'
     : paneTarget === 'edit' ? `Edit: ${editPipeline?.name || ''}`
     : '';
 
@@ -161,11 +212,20 @@ export default function PipelinesPage() {
             title: paneTitle,
             onClose: closePane,
             content: paneOpen ? (
-              <PipelineBuilder
-                pipeline={paneTarget === 'edit' ? editPipeline : undefined}
-                onSave={handleSave}
-                onCancel={closePane}
-              />
+              paneTarget === 'new-project' ? (
+                <ProjectSetupWizard
+                  onSaved={handleProjectCreated}
+                  onCancel={closePane}
+                />
+              ) : (
+                <PipelineBuilder
+                  pipeline={paneTarget === 'edit' ? editPipeline : undefined}
+                  initialProjectId={newProjectId}
+                  onCreateProject={openProjectWizard}
+                  onSave={handleSave}
+                  onCancel={closePane}
+                />
+              )
             ) : undefined,
           }}
         >
@@ -269,7 +329,12 @@ export default function PipelinesPage() {
                 </button>
               ))}
             </div>
-            <ZestButton onClick={() => { setShowProjectPicker(false); setPickerPipeline(null); }}
+            {!loadingProjects && (
+              <button className={styles.pickerNew} onClick={openPickerWizard}>
+                + New Project
+              </button>
+            )}
+            <ZestButton onClick={() => { setShowProjectPicker(false); setPickerPipeline(null); setPickerWizard(false); }}
               zest={{ buttonStyle: 'outline' }}>
               Cancel
             </ZestButton>
