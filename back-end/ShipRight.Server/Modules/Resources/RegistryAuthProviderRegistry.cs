@@ -1,5 +1,6 @@
 using ShipRight.Modules.Resources.Models;
 using ShipRight.Modules.Resources.Stores;
+using ShipRight.Shared.CommandExecution;
 using ShipRight.Shared.ProcessRunner;
 
 namespace ShipRight.Modules.Resources;
@@ -25,4 +26,15 @@ public sealed class RegistryAuthProviderRegistry
     public static RegistryAuthProviderRegistry CreateDefault(
         IProcessRunner? runner = null, IAwsProfileResourceStore? profileStore = null) =>
         new([new DockerHubAuthProvider(), new AwsEcrAuthProvider(runner, profileStore), new StandardAuthProvider()]);
+
+    /// <summary>
+    /// Production wiring: the supplied executor performs the full command resolution
+    /// chain (WSL tool locator → SSH), so `aws` runs via its located absolute path
+    /// (e.g. /snap/bin/aws) instead of a bare name that snap hides from PATH.
+    /// </summary>
+    public static RegistryAuthProviderRegistry CreateDefault(
+        IProcessRunner? runner, IAwsProfileResourceStore? profileStore, ICommandExecutor? executor) =>
+        new([new DockerHubAuthProvider(),
+             new AwsEcrAuthProvider(runner, profileStore, executor),
+             new StandardAuthProvider()]);
 }

@@ -1,6 +1,7 @@
 using ShipRight.Modules.Projects;
 using ShipRight.Modules.Resources.Models;
 using ShipRight.Modules.Resources.Stores;
+using ShipRight.Shared.CommandExecution;
 using ShipRight.Shared.ProcessRunner;
 
 namespace ShipRight.Modules.Resources;
@@ -13,11 +14,11 @@ public class ResourceResolutionService
 
     public ResourceResolutionService(IDockerRegistryResourceStore registryStore, IScriptResourceStore scriptStore,
         RegistryAuthProviderRegistry? providers = null, IProcessRunner? processRunner = null,
-        IAwsProfileResourceStore? profileStore = null)
+        IAwsProfileResourceStore? profileStore = null, ICommandExecutor? executor = null)
     {
         _registryStore = registryStore;
         _scriptStore = scriptStore;
-        _providers = providers ?? RegistryAuthProviderRegistry.CreateDefault(processRunner, profileStore);
+        _providers = providers ?? RegistryAuthProviderRegistry.CreateDefault(processRunner, profileStore, executor);
     }
 
     public async Task<DockerRegistryResource?> ResolveRegistryResourceAsync(ServiceConfig service)

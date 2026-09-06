@@ -1,6 +1,7 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using ShipRight.Modules.Resources;
 using ShipRight.Modules.Resources.Models;
+using ShipRight.Shared.CommandExecution;
 using ShipRight.Shared.ProcessRunner;
 
 namespace ShipRight.Tests.Modules.Resources;
@@ -8,6 +9,24 @@ namespace ShipRight.Tests.Modules.Resources;
 [TestClass]
 public class AwsEcrAuthProviderTests
 {
+    private sealed class LocatingFakeRunner : IProcessRunner
+    {
+        public string? LastExecutable { get; private set; }
+        public string[]? LastArgs { get; private set; }
+
+        public Task<ProcessResult> RunAsync(
+            string executable, string[] args, string? workingDir,
+            Func<string, Task>? onOutput = null, Func<string, Task>? onError = null,
+            CancellationToken ct = default, IReadOnlyDictionary<string, string>? envOverride = null,
+            TimeSpan? timeout = null, string? stdin = null)
+        {
+            LastExecutable = executable;
+            LastArgs = args;
+            var stdout = args.Contains("-lc") ? "/snap/bin/aws" : "ecr-token";
+            return Task.FromResult(new ProcessResult(0, stdout, "", TimeSpan.Zero));
+        }
+    }
+
     private sealed class FakeProcessRunner : IProcessRunner
     {
         public string? LastExecutable { get; private set; }
@@ -135,5 +154,26 @@ public class AwsEcrAuthProviderTests
 
         await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
             provider.GetLoginCredentialsAsync("123.dkr.ecr.us-east-1.amazonaws.com", null, "", ""));
+    }
+
+    [TestMethod]
+    public async Task GetLoginCredentials_WithFullExecutor_RunsAwsViaLocatedWslPath()
+    {
+        var runner = new LocatingFakeRunner();
+        var registry = CommandResolverRegistry.CreateDefault(new WslToolLocator(runner));
+        var executor = new CommandExecutor(new ExecutionTargetProvider(), registry, runner);
+        var provider = new AwsEcrAuthProvider(runner, profileStore: null, executor);
+
+        var (username, password) = await provider.GetLoginCredentialsAsync(
+            "123.dkr.ecr.us-east-1.amazonaws.com", null, "", "");
+
+        Assert.AreEqual("AWS", username);
+        Assert.AreEqual("ecr-token", password);
+        Assert.AreEqual("wsl", runner.LastExecutable,
+            "The aws CLI must run via WSL with the located absolute path (snap bins are not on the bare WSL PATH).");
+        Assert.AreEqual("/snap/bin/aws", runner.LastArgs![0]);
+        CollectionAssert.AreEqual(
+            new[] { "ecr", "get-login-password", "--region", "us-east-1" },
+            runner.LastArgs!.Skip(1).ToArray());
     }
 }

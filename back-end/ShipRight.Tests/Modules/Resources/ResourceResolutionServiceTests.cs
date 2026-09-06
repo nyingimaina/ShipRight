@@ -3,12 +3,31 @@ using ShipRight.Modules.Projects;
 using ShipRight.Modules.Resources;
 using ShipRight.Modules.Resources.Models;
 using ShipRight.Modules.Resources.Stores;
+using ShipRight.Shared.CommandExecution;
+using ShipRight.Shared.ProcessRunner;
 
 namespace ShipRight.Tests.Modules.Resources;
 
 [TestClass]
 public class ResourceResolutionServiceTests
 {
+    private sealed class RecordingExecutor : ICommandExecutor
+    {
+        public string? LastExecutable { get; private set; }
+        public string[]? LastArgs { get; private set; }
+        public ProcessResult Result { get; private set; } = new(0, "ecr-token", "", TimeSpan.Zero);
+
+        public Task<ProcessResult> RunAsync(
+            string executable, string[] args, string? workingDir,
+            Func<string, Task>? onOutput = null, Func<string, Task>? onError = null,
+            CancellationToken ct = default, IReadOnlyDictionary<string, string>? envOverride = null,
+            TimeSpan? timeout = null, string? stdin = null)
+        {
+            LastExecutable = executable;
+            LastArgs = args;
+            return Task.FromResult(Result);
+        }
+    }
     private class StubDockerRegistryResourceStore : IDockerRegistryResourceStore
     {
         private readonly List<DockerRegistryResource> _resources = [];
@@ -196,5 +215,30 @@ public class ResourceResolutionServiceTests
         var script = await service.ResolveRebuildScriptAsync(server);
 
         Assert.AreEqual("rebuild.sh", script);
+    }
+
+    [TestMethod]
+    public async Task ResolveDockerCredentials_AwsEcr_WithExecutorProvided_ForwardsThroughExecutor()
+    {
+        var executor = new RecordingExecutor();
+        var resourceId = Guid.NewGuid();
+        var store = new StubDockerRegistryResourceStore();
+        await store.SaveAsync(new DockerRegistryResource
+        {
+            Id = resourceId,
+            Name = "ecr",
+            Registry = "123.dkr.ecr.us-east-1.amazonaws.com",
+            AuthType = RegistryAuthType.AwsEcr,
+            AwsRegion = "us-east-1",
+        });
+        var service = new ResourceResolutionService(store, new StubScriptResourceStore(), executor: executor);
+        var svc = new ServiceConfig { Name = "api", DockerRegistryResourceId = resourceId };
+
+        var (username, password) = await service.ResolveDockerCredentialsAsync(svc, "fallback-user", "fallback-pass");
+
+        Assert.AreEqual("AWS", username);
+        Assert.AreEqual("ecr-token", password);
+        Assert.AreEqual("aws", executor.LastExecutable, "The injected executor must be the one used to fetch the ECR token.");
+        CollectionAssert.AreEqual(new[] { "ecr", "get-login-password", "--region", "us-east-1" }, executor.LastArgs);
     }
 }
