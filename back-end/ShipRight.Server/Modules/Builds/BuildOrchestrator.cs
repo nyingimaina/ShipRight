@@ -1325,8 +1325,13 @@ public class BuildOrchestrator
 
             var buildArgs = new List<string> { "build", "--progress=plain" };
             if (useBuildKit && !string.IsNullOrEmpty(sv.PreviousVersion))
-                buildArgs.AddRange(["--cache-from", $"{svc.DockerImageName}:{sv.PreviousVersion}",
-                                    "--build-arg", "BUILDKIT_INLINE_CACHE=1"]);
+            {
+                var cacheFromTag = $"{svc.DockerImageName}:{sv.PreviousVersion}";
+                var previousImageExists = await ImageExistsLocallyAsync(cacheFromTag, ct);
+                AppendBuildKitCacheArgs(buildArgs, cacheFromTag, previousImageExists);
+                if (!previousImageExists)
+                    await ctx.EmitLogAsync($"  → {cacheFromTag} not found locally — skipping cache import", "shipright");
+            }
             buildArgs.AddRange(["-t", $"{svc.DockerImageName}:{sv.NewVersion}", svc.BuildContextPath]);
 
             var buildResult = await _runner.RunAsync("docker",
@@ -1349,6 +1354,20 @@ public class BuildOrchestrator
 
         await ctx.StepCompletedAsync(6, "DockerBuild");
         await save();
+    }
+
+    private async Task<bool> ImageExistsLocallyAsync(string tag, CancellationToken ct)
+    {
+        var inspect = await _runner.RunAsync("docker",
+            ["image", "inspect", "--format", "{{.Id}}", tag],
+            null, null, null, ct);
+        return inspect.Success;
+    }
+
+    internal static void AppendBuildKitCacheArgs(List<string> buildArgs, string cacheFromTag, bool imageExistsLocally)
+    {
+        if (imageExistsLocally)
+            buildArgs.AddRange(["--cache-from", cacheFromTag, "--build-arg", "BUILDKIT_INLINE_CACHE=1"]);
     }
 
     private static string BuildGitTag(List<ServiceVersion> versions)

@@ -41,7 +41,7 @@ echo ""
 # ── Preflight checks ──────────────────────────────────────────────────────────
 log "Checking prerequisites…"
 
-command -v dotnet >/dev/null 2>&1 || fail "dotnet not found. Install .NET 8 SDK."
+command -v dotnet >/dev/null 2>&1 || fail "dotnet not found. Install .NET 10 SDK."
 command -v node   >/dev/null 2>&1 || fail "node not found. Install Node.js 20+."
 command -v npm    >/dev/null 2>&1 || fail "npm not found."
 

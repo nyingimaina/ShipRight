@@ -131,7 +131,7 @@ Server:
         Assert.IsNull(BuildOrchestrator.ParseDockerInfoForUsername(output));
     }
 
-    [TestMethod]
+[TestMethod]
     public void ParseDockerInfoForUsername_WhenNotLoggedIn_ReturnsNull()
     {
         var output = @"Client:
@@ -140,7 +140,42 @@ Server:
 
 Server:
  Containers: 0
-";
+ ";
         Assert.IsNull(BuildOrchestrator.ParseDockerInfoForUsername(output));
+    }
+
+    [TestMethod]
+    public void AppendBuildKitCacheArgs_ImageExistsLocally_AddsCacheFromAndInlineCacheArgs()
+    {
+        var args = new List<string> { "build", "--progress=plain" };
+
+        BuildOrchestrator.AppendBuildKitCacheArgs(args, "shipright/app:4.3.1", imageExistsLocally: true);
+
+        CollectionAssert.Contains(args, "--cache-from");
+        CollectionAssert.Contains(args, "shipright/app:4.3.1");
+        CollectionAssert.Contains(args, "--build-arg");
+        CollectionAssert.Contains(args, "BUILDKIT_INLINE_CACHE=1");
+    }
+
+    [TestMethod]
+    public void AppendBuildKitCacheArgs_ImageNotLocal_AddsNoCacheArgs()
+    {
+        var args = new List<string> { "build", "--progress=plain" };
+
+        BuildOrchestrator.AppendBuildKitCacheArgs(args, "shipright/app:4.3.1", imageExistsLocally: false);
+
+        CollectionAssert.DoesNotContain(args, "--cache-from");
+        CollectionAssert.DoesNotContain(args, "BUILDKIT_INLINE_CACHE=1");
+        CollectionAssert.AreEqual(new[] { "build", "--progress=plain" }, args.ToArray());
+    }
+
+    [TestMethod]
+    public void AppendBuildKitCacheArgs_EmptyBuildArgs_StartsWithCacheFromFlag()
+    {
+        var args = new List<string>();
+
+        BuildOrchestrator.AppendBuildKitCacheArgs(args, "shipright/app:4.3.1", imageExistsLocally: true);
+
+        Assert.AreEqual("--cache-from", args[0]);
     }
 }
