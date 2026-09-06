@@ -1,0 +1,51 @@
+services:
+  db:
+    image: mariadb:11
+    container_name: shipright-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-shipright}
+      MYSQL_USER: ${MYSQL_USER:-shipright}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - shipright-db-data:/var/lib/mysql
+      - ./back-end/ShipRight.Server/Database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: shipright-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SHIPRIGHT__MODE: ${SHIPRIGHT__MODE:-Cloud}
+      SHIPRIGHT__TIME_ZONE: ${SHIPRIGHT__TIME_ZONE:-UTC}
+      SHIPRIGHT__DB_CONNECTION: ${SHIPRIGHT__DB_CONNECTION:?Set SHIPRIGHT__DB_CONNECTION}
+      SHIPRIGHT__JWT_KEY: ${SHIPRIGHT__JWT_KEY:?Set SHIPRIGHT__JWT_KEY}
+      SHIPRIGHT__ADMIN_EMAIL: ${SHIPRIGHT__ADMIN_EMAIL:?Set SHIPRIGHT__ADMIN_EMAIL}
+      SHIPRIGHT__ADMIN_PASSWORD: ${SHIPRIGHT__ADMIN_PASSWORD:?Set SHIPRIGHT__ADMIN_PASSWORD}
+      SHIPRIGHT__CORS_ORIGINS: ${SHIPRIGHT__CORS_ORIGINS:?Set SHIPRIGHT__CORS_ORIGINS}
+      SHIPRIGHT__PUBLIC_URL: ${SHIPRIGHT__PUBLIC_URL:?Set SHIPRIGHT__PUBLIC_URL}
+      SHIPRIGHT__SMTP_HOST: ${SHIPRIGHT__SMTP_HOST:?Set SHIPRIGHT__SMTP_HOST}
+      SHIPRIGHT__SMTP_PORT: ${SHIPRIGHT__SMTP_PORT:-587}
+      SHIPRIGHT__SMTP_USERNAME: ${SHIPRIGHT__SMTP_USERNAME:?Set SHIPRIGHT__SMTP_USERNAME}
+      SHIPRIGHT__SMTP_PASSWORD: ${SHIPRIGHT__SMTP_PASSWORD:?Set SHIPRIGHT__SMTP_PASSWORD}
+      SHIPRIGHT__SMTP_FROM: ${SHIPRIGHT__SMTP_FROM:?Set SHIPRIGHT__SMTP_FROM}
+    ports:
+      - "5200:5200"
+    volumes:
+      - shipright-app-data:/root/.shipright
+
+volumes:
+  shipright-db-data:
+  shipright-app-data:

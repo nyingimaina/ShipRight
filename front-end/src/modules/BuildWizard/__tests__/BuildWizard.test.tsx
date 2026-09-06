@@ -1,11 +1,20 @@
 import { render, screen, act, fireEvent } from '@testing-library/react';
+import React from 'react';
 import BuildWizard from '../BuildWizard';
 import { api } from '@/shared/ApiService';
 import { buildSse } from '@/shared/SseService';
 
 jest.mock('@/shared/ApiService', () => ({
   api: {
-    get: jest.fn().mockResolvedValue([]),
+    get: jest.fn().mockImplementation((url: string) => {
+      if (url.includes('/resources/pipelines')) {
+        return Promise.resolve([{ id: 'pipe-1', name: 'Test Pipeline', steps: [], scope: 'Global' }]);
+      }
+      if (url.includes('/build-stats')) {
+        return Promise.resolve(null);
+      }
+      return Promise.resolve([]);
+    }),
     post: jest.fn(),
     put: jest.fn(),
     getRaw: jest.fn(),
@@ -73,6 +82,20 @@ jest.mock('../StepPicker', () => ({
       <button onClick={onCancel}>Cancel Picker</button>
     </div>
   ),
+}));
+
+jest.mock('../PipelineSelector', () => ({
+  __esModule: true,
+  default: function MockPipelineSelector({ onUseCustom }: any) {
+    // Auto-advance to step picker so existing tests don't need to change
+    React.useEffect(() => { onUseCustom(); }, []);
+    return <div data-testid="pipeline-selector" />;
+  },
+}));
+
+jest.mock('../PipelineBuilder', () => ({
+  __esModule: true,
+  default: () => <div data-testid="pipeline-builder" />,
 }));
 
 jest.mock('canvas-confetti', () => jest.fn());
@@ -162,7 +185,12 @@ describe('BuildWizard', () => {
       jest.clearAllMocks();
       sseHandlers = {};
       (api.post as jest.Mock).mockResolvedValue({ buildId: 'test-123' });
-      (api.get as jest.Mock).mockResolvedValue({ id: 'test-123', status: 'Building' });
+      (api.get as jest.Mock).mockImplementation((url: string) => {
+        if (url.includes('/resources/pipelines')) {
+          return Promise.resolve([{ id: 'pipe-1', name: 'Test Pipeline', steps: [], scope: 'Global' }]);
+        }
+        return Promise.resolve({ id: 'test-123', status: 'Building' });
+      });
     });
 
     it('hides status indicator when idle', () => {
@@ -396,7 +424,12 @@ describe('BuildWizard', () => {
       jest.clearAllMocks();
       sseHandlers = {};
       (api.post as jest.Mock).mockResolvedValue({ buildId: 'test-123' });
-      (api.get as jest.Mock).mockResolvedValue({ id: 'test-123', status: 'Building' });
+      (api.get as jest.Mock).mockImplementation((url: string) => {
+        if (url.includes('/resources/pipelines')) {
+          return Promise.resolve([{ id: 'pipe-1', name: 'Test Pipeline', steps: [], scope: 'Global' }]);
+        }
+        return Promise.resolve({ id: 'test-123', status: 'Building' });
+      });
     });
 
     it('opens step picker when Start Build is clicked', () => {
@@ -481,6 +514,9 @@ describe('BuildWizard', () => {
         if (url.includes('/builds/')) {
           return Promise.resolve({ id: 'build-123', status: 'ImageBuilt', gitTag: 'v1.0' });
         }
+        if (url.includes('/resources/pipelines')) {
+          return Promise.resolve([{ id: 'pipe-1', name: 'Test Pipeline', steps: [], scope: 'Global' }]);
+        }
         return Promise.resolve(null); // build-stats
       });
     });
@@ -522,6 +558,69 @@ describe('BuildWizard', () => {
         render(<BuildWizard {...defaultProps} initialBuildId="build-123" />);
       }).not.toThrow();
       await act(async () => {});
+    });
+  });
+
+  describe('initialPipeline prop', () => {
+    const mockPipeline = {
+      id: 'pipe-1', name: 'My Pipeline', steps: [], scope: 'Global' as const,
+      createdAt: '2026-01-01T00:00:00.000Z', modifiedAt: '2026-01-01T00:00:00.000Z',
+    };
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      sseHandlers = {};
+      (api.post as jest.Mock).mockResolvedValue({ buildId: 'test-123' });
+      (api.get as jest.Mock).mockImplementation((url: string) => {
+        if (url.includes('/resources/pipelines')) {
+          return Promise.resolve([mockPipeline]);
+        }
+        return Promise.resolve({ id: 'test-123', status: 'Building' });
+      });
+    });
+
+    it('skips PipelineSelector and starts build directly when initialPipeline is provided', async () => {
+      render(<BuildWizard {...defaultProps} initialPipeline={mockPipeline} />);
+      act(() => { fireEvent.click(screen.getByText('Start Build')); });
+      await act(async () => {});
+      expect(screen.queryByTestId('pipeline-selector')).not.toBeInTheDocument();
+      expect(api.post).toHaveBeenCalledWith('/api/builds/start', expect.objectContaining({
+        pipelineResourceId: 'pipe-1',
+      }));
+    });
+
+    it('does not fetch pipelines when initialPipeline is provided', async () => {
+      render(<BuildWizard {...defaultProps} initialPipeline={mockPipeline} />);
+      await act(async () => {});
+      const pipelineCalls = (api.get as jest.Mock).mock.calls.filter(
+        ([url]: [string]) => url.includes('/resources/pipelines')
+      );
+      expect(pipelineCalls).toHaveLength(0);
+    });
+  });
+
+  describe('no pipelines for project', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      sseHandlers = {};
+      (api.post as jest.Mock).mockResolvedValue({ buildId: 'test-123' });
+      (api.get as jest.Mock).mockImplementation((url: string) => {
+        if (url.includes('/resources/pipelines')) {
+          return Promise.resolve([]);
+        }
+        return Promise.resolve({ id: 'test-123', status: 'Building' });
+      });
+    });
+
+    it('skips PipelineSelector and starts build directly when project has no pipelines', async () => {
+      render(<BuildWizard {...defaultProps} />);
+      await act(async () => {}); // flush pipeline check effect
+      fireEvent.click(screen.getByText('Start Build'));
+      await act(async () => {});
+      expect(screen.queryByTestId('pipeline-selector')).not.toBeInTheDocument();
+      expect(api.post).toHaveBeenCalledWith('/api/builds/start', expect.objectContaining({
+        pipelineResourceId: undefined,
+      }));
     });
   });
 });

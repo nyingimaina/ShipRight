@@ -83,7 +83,7 @@
 .crumbSep { color: var(--text-muted); font-size: 12px; }
 .crumbCurrent { color: var(--text-secondary); font-size: 12px; font-family: 'JetBrains Mono', monospace; }
 
-.list { max-height: 260px; overflow-y: auto; flex: 1; }
+.list { height: 260px; overflow-y: auto; flex: 1; }
 
 .entry {
   display: flex;

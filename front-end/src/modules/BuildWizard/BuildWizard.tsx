@@ -13,6 +13,8 @@ import { DeployMode } from '@/shared/types/IProject';
 import LogViewer, { LogEntry } from './LogViewer';
 import OptionPicker, { PickerOption } from './OptionPicker';
 import StepPicker, { BuildStep } from './StepPicker';
+import PipelineSelector from './PipelineSelector';
+import type { IPipelineResource, ICredentialResource, IProjectInput, IProject } from '@/shared/types/IProject';
 import styles from './Styles/BuildWizard.module.css';
 
 interface Props {
@@ -23,6 +25,7 @@ interface Props {
   isOpen: boolean;
   onClose: () => void;
   initialBuildId?: string;
+  initialPipeline?: IPipelineResource;
   onVersionCreated?: () => void;
 }
 
@@ -43,6 +46,16 @@ const BUILD_STEP_NAMES = [
   'WriteVersionsAndTag', 'ComposeRepoSync', 'DockerBuild', 'BuildComplete',
 ];
 const PUSH_STEP_NAMES = ['DockerLoginCheck', 'DockerPush', 'PushComplete'];
+
+function deriveCustomPipelineStepNames(pipeline: IPipelineResource): string[] {
+  const names: string[] = [];
+  for (const step of pipeline.steps) {
+    if (step.type === 'Script') names.push(step.label || 'Script');
+    else if (step.type === 'Build') names.push('DockerBuild');
+    // Push/Deploy don't emit individual step events in custom pipelines
+  }
+  return names;
+}
 
 const OPTION_LABELS: Record<string, string> = {
   commit_and_push:          'Commit & Push',
@@ -93,7 +106,7 @@ const fmtExpected = (s: number | null | undefined) => {
   return `~${Math.floor(s / 60)}m${s % 60 > 0 ? `${s % 60}s` : ''}`;
 };
 
-export default function BuildWizard({ projectId, projectName, currentVersions, defaultDeployMode, isOpen, onClose, initialBuildId, onVersionCreated }: Props) {
+export default function BuildWizard({ projectId, projectName, currentVersions, defaultDeployMode, isOpen, onClose, initialBuildId, initialPipeline, onVersionCreated }: Props) {
   const [phase, setPhase] = useState<Phase>('versions');
   const [deployModeOverride, setDeployModeOverride] = useState<DeployMode>(defaultDeployMode);
   const [newVersions, setNewVersions] = useState<Record<string, string>>({});
@@ -128,6 +141,16 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
   const autoChainRef = useRef({ push: false, deploy: false });
   // pendingChain defers the chain call to the next render where handlePush/handleDeploy are fresh
   const [pendingChain, setPendingChain] = useState<'push' | 'deploy' | null>(null);
+  // Pipeline selection state
+  const [showPipelineSelector, setShowPipelineSelector] = useState(false);
+  const [selectedPipeline, setSelectedPipeline] = useState<IPipelineResource | null>(initialPipeline ?? null);
+  const [hasPipelines, setHasPipelines] = useState<boolean | null>(null);
+  // Credential sidepane state
+  const [credentials, setCredentials] = useState<ICredentialResource[]>([]);
+  const [selectedCredentialId, setSelectedCredentialId] = useState('');
+  const [showCredentialPane, setShowCredentialPane] = useState(false);
+  const [credentialNewName, setCredentialNewName] = useState('');
+  const [credentialNewValue, setCredentialNewValue] = useState('');
 
   const updateSelectedSteps = (steps: Set<BuildStep>) => {
     autoChainRef.current = { push: steps.has('push'), deploy: steps.has('deploy') };
@@ -163,6 +186,27 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
       api.get<BuildStats>(`/api/projects/${projectId}/build-stats`).then(setBuildStats).catch(() => {});
     }
   }, [isOpen, projectId]);
+
+  // Load credentials when push fails with CredentialHost
+  useEffect(() => {
+    if (buildRecord?.credentialHost) {
+      api.get<ICredentialResource[]>('/api/resources/credentials').then(setCredentials).catch(() => {});
+      setShowCredentialPane(true);
+    } else {
+      setShowCredentialPane(false);
+    }
+  }, [buildRecord?.credentialHost]);
+
+  // Check if project has any pipelines (for conditional PipelineSelector)
+  useEffect(() => {
+    if (isOpen && projectId && !initialPipeline) {
+      api.get<unknown[]>(`/api/resources/pipelines?projectId=${projectId}`)
+        .then(list => setHasPipelines(list.length > 0))
+        .catch(() => setHasPipelines(false));
+    } else if (isOpen && initialPipeline) {
+      setHasPipelines(true);
+    }
+  }, [isOpen, projectId, initialPipeline]);
 
   // Auto-chain: deferred to next render so handlePush/handleDeploy have current buildId in closure
   useEffect(() => {
@@ -364,7 +408,7 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
         serviceName: v.serviceName,
         newVersion: newVersions[v.serviceName] ?? '',
       }));
-      const result = await api.post<{ buildId: string }>('/api/builds/start', { projectId, serviceVersions });
+      const result = await api.post<{ buildId: string }>('/api/builds/start', { projectId, serviceVersions, pipelineResourceId: selectedPipeline?.id });
       setBuildId(result.buildId);
       const record = await api.get<IBuildRecord>(`/api/builds/${result.buildId}`);
       setBuildRecord(record);
@@ -456,6 +500,9 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
       setShowStepPicker(false);
       setSelectedSteps(new Set<BuildStep>(['build']));
       setPendingChain(null);
+      setShowPipelineSelector(false);
+      setSelectedPipeline(initialPipeline ?? null);
+      setHasPipelines(null);
       autoChainRef.current = { push: false, deploy: false };
     }
   }, [isOpen]);
@@ -475,7 +522,9 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
   const isPushSucceeded = status === 'PushSucceeded' || status === 'BuildSucceeded';
   const isPushFailed    = status === 'PushFailed';
   const isDeployed      = status === 'Deployed' || status === 'DeployFailed';
-  const activeStepNames = activePushPhase ? PUSH_STEP_NAMES : BUILD_STEP_NAMES;
+  const activeStepNames = selectedPipeline && !activePushPhase
+    ? deriveCustomPipelineStepNames(selectedPipeline)
+    : activePushPhase ? PUSH_STEP_NAMES : BUILD_STEP_NAMES;
 
   // Expected duration for current step and overall
   const stepExpected = currentStepName && buildStats ? buildStats.stageExpected[currentStepName] : null;
@@ -567,7 +616,16 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
                   </div>
                 )}
                 <div className={styles.actions}>
-                  <ZestButton onClick={() => setShowStepPicker(true)}
+                  <ZestButton onClick={() => {
+                    if (initialPipeline) {
+                      setSelectedPipeline(initialPipeline);
+                      handleStartBuild();
+                    } else if (hasPipelines === false) {
+                      handleStartBuild();
+                    } else {
+                      setShowPipelineSelector(true);
+                    }
+                  }}
                     zest={{ visualOptions: { variant: 'standard' }, semanticType: 'submit' }}>
                     Start Build
                   </ZestButton>
@@ -696,14 +754,33 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
                 )}
 
                 {isPushFailed && (
-                  <div className={styles.deploySection}>
-                    <span className={styles.deployInfo}>✗ Push to registry failed</span>
-                    <div className={styles.actionRow}>
-                      <ZestButton onClick={handlePush} disabled={activeOp !== 'idle'} zest={{ visualOptions: { variant: 'standard' } }}>
-                        Retry Push
-                      </ZestButton>
-                      <ZestButton onClick={handleClose} zest={{ buttonStyle: 'outline' }}>Close</ZestButton>
+                  <div>
+                    <div className={styles.deploySection}>
+                      <span className={styles.deployInfo}>✗ Push to registry failed</span>
+                      <div className={styles.actionRow}>
+                        <ZestButton onClick={handlePush} disabled={activeOp !== 'idle'} zest={{ visualOptions: { variant: 'standard' } }}>
+                          Retry Push
+                        </ZestButton>
+                        <ZestButton onClick={handleClose} zest={{ buttonStyle: 'outline' }}>Close</ZestButton>
+                      </div>
                     </div>
+                    {buildRecord?.credentialHost && showCredentialPane && (
+                      <CredentialPane
+                        credentialHost={buildRecord.credentialHost}
+                        projectId={projectId}
+                        credentials={credentials}
+                        selectedCredentialId={selectedCredentialId}
+                        onSelectCredential={setSelectedCredentialId}
+                        newName={credentialNewName}
+                        newValue={credentialNewValue}
+                        onNewNameChange={setCredentialNewName}
+                        onNewValueChange={setCredentialNewValue}
+                        onCredentialApplied={() => {
+                          setShowCredentialPane(false);
+                          toast.success('Credential applied. Retry push.');
+                        }}
+                      />
+                    )}
                   </div>
                 )}
 
@@ -774,16 +851,58 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
                 )}
 
                 {(status === 'BuildFailed' || status === 'Aborted' || status === 'Interrupted') && (
-                  <div className={styles.deploySection}>
-                    <span className={styles.deployInfo}>
-                      {status === 'Aborted' ? 'Build aborted' : status === 'Interrupted' ? 'Build interrupted' : '✗ Build failed'}
-                    </span>
-                    <ZestButton onClick={handleClose} zest={{ buttonStyle: 'outline' }}>Close</ZestButton>
+                  <div>
+                    <div className={styles.deploySection}>
+                      <span className={styles.deployInfo}>
+                        {status === 'Aborted' ? 'Build aborted' : status === 'Interrupted' ? 'Build interrupted' : '✗ Build failed'}
+                      </span>
+                      <ZestButton onClick={handleClose} zest={{ buttonStyle: 'outline' }}>Close</ZestButton>
+                    </div>
+                    {buildRecord?.credentialHost && showCredentialPane && (
+                      <CredentialPane
+                        credentialHost={buildRecord.credentialHost}
+                        projectId={projectId}
+                        credentials={credentials}
+                        selectedCredentialId={selectedCredentialId}
+                        onSelectCredential={setSelectedCredentialId}
+                        newName={credentialNewName}
+                        newValue={credentialNewValue}
+                        onNewNameChange={setCredentialNewName}
+                        onNewValueChange={setCredentialNewValue}
+                        onCredentialApplied={() => {
+                          setShowCredentialPane(false);
+                          toast.success('Credential applied. Restart the build.');
+                        }}
+                      />
+                    )}
                   </div>
                 )}
               </>
             )}
           </div>
+
+          {/* Pipeline selector overlay */}
+          {showPipelineSelector && (
+            <div className={styles.pauseOverlay}>
+              <div className={styles.pauseCard}>
+                <PipelineSelector
+                  projectId={projectId}
+                  initialPipelineId={initialPipeline?.id}
+                  onSelectPipeline={(pipeline) => {
+                    setSelectedPipeline(pipeline);
+                    setShowPipelineSelector(false);
+                    handleStartBuild();
+                  }}
+                  onUseCustom={() => {
+                    setSelectedPipeline(null);
+                    setShowPipelineSelector(false);
+                    setShowStepPicker(true);
+                  }}
+                  onCancel={() => setShowPipelineSelector(false)}
+                />
+              </div>
+            </div>
+          )}
 
           {/* Step picker overlay */}
           {showStepPicker && (
@@ -863,5 +982,125 @@ export default function BuildWizard({ projectId, projectName, currentVersions, d
         </Drawer.Content>
       </Drawer.Portal>
     </Drawer.Root>
+  );
+}
+
+function CredentialPane({ credentialHost, projectId, credentials, selectedCredentialId, onSelectCredential, newName, newValue, onNewNameChange, onNewValueChange, onCredentialApplied }: {
+  credentialHost: string;
+  projectId: string;
+  credentials: ICredentialResource[];
+  selectedCredentialId: string;
+  onSelectCredential: (id: string) => void;
+  newName: string;
+  newValue: string;
+  onNewNameChange: (v: string) => void;
+  onNewValueChange: (v: string) => void;
+  onCredentialApplied: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [mode, setMode] = useState<'select' | 'create'>('select');
+
+  const handleApplyExisting = async () => {
+    if (!selectedCredentialId) { toast.error('Select a credential.'); return; }
+    setSaving(true);
+    try {
+      const project = await api.get<IProject>(`/api/projects/${projectId}/config`);
+      const input = { ...project, gitRepos: project.gitRepos.map((r: { credentialResourceId?: string }) => ({
+        ...r,
+        credentialResourceId: r.credentialResourceId || selectedCredentialId,
+      })) };
+      await api.put(`/api/projects/${projectId}`, input);
+      onCredentialApplied();
+    } catch { toast.error('Failed to apply credential.'); }
+    finally { setSaving(false); }
+  };
+
+  const handleCreateAndApply = async () => {
+    if (!newName.trim()) { toast.error('Name is required.'); return; }
+    if (!newValue.trim()) { toast.error('Value is required.'); return; }
+    setSaving(true);
+    try {
+      const created = await api.post<ICredentialResource>('/api/resources/credentials', {
+        name: newName, value: newValue, hostPattern: credentialHost,
+      });
+      const project = await api.get<IProject>(`/api/projects/${projectId}/config`);
+      const input = { ...project, gitRepos: project.gitRepos.map((r: { credentialResourceId?: string }) => ({
+        ...r,
+        credentialResourceId: r.credentialResourceId || created.id,
+      })) };
+      await api.put(`/api/projects/${projectId}`, input);
+      onCredentialApplied();
+    } catch { toast.error('Failed to create and apply credential.'); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div style={{
+      marginTop: 12, padding: 16, background: '#1A2540', borderRadius: 8,
+      border: '1px solid rgba(201,168,76,0.3)',
+    }}>
+      <div style={{ marginBottom: 8, fontSize: 14, color: '#C9A84C', fontWeight: 600 }}>
+        Credential Required for {credentialHost}
+      </div>
+      <div style={{ fontSize: 12, color: '#637389', marginBottom: 12 }}>
+        Git push needs authentication. Select an existing credential or create a new one.
+      </div>
+
+      {mode === 'select' && (
+        <>
+          <select
+            value={selectedCredentialId}
+            onChange={e => onSelectCredential(e.target.value)}
+            style={{
+              width: '100%', background: '#131D30', color: '#F0F2F5',
+              border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6,
+              padding: '8px 12px', fontSize: 14, marginBottom: 8,
+            }}
+          >
+            <option value="">Select credential…</option>
+            {credentials.map(c => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+            <ZestButton onClick={handleApplyExisting} disabled={!selectedCredentialId || saving}
+              zest={{ visualOptions: { size: 'sm' }, buttonStyle: 'outline' }}>
+              {saving ? 'Applying…' : 'Apply & Retry'}
+            </ZestButton>
+            <button
+              onClick={() => setMode('create')}
+              style={{ background: 'none', border: 'none', color: '#C9A84C', cursor: 'pointer', fontSize: 12 }}
+            >
+              Create new
+            </button>
+          </div>
+        </>
+      )}
+
+      {mode === 'create' && (
+        <>
+          <ZestTextbox value={newName} onChange={e => onNewNameChange(e.target.value)}
+            placeholder="Credential name" zest={{ stretch: true, zSize: 'sm' }} />
+          <div style={{ height: 8 }} />
+          <ZestTextbox value={newValue} onChange={e => onNewValueChange(e.target.value)}
+            placeholder="PAT / token / password" zest={{ stretch: true, zSize: 'sm' }} />
+          <div style={{ fontSize: 11, color: '#637389', marginTop: 4, marginBottom: 8 }}>
+            Will be stored encrypted (AES-256-GCM) and bound to repos in this project.
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <ZestButton onClick={handleCreateAndApply} disabled={!newName.trim() || !newValue.trim() || saving}
+              zest={{ visualOptions: { size: 'sm' }, buttonStyle: 'outline' }}>
+              {saving ? 'Creating…' : 'Create & Apply'}
+            </ZestButton>
+            <button
+              onClick={() => setMode('select')}
+              style={{ background: 'none', border: 'none', color: '#C9A84C', cursor: 'pointer', fontSize: 12 }}
+            >
+              Pick existing
+            </button>
+          </div>
+        </>
+      )}
+    </div>
   );
 }

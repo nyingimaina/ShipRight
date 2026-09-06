@@ -41,4 +41,4 @@ publish/
 installer/
 
 # Backend wwwroot (regenerated from front-end/out/ during build)
-back-end/ShipRight/wwwroot/
+back-end/ShipRight.Server/wwwroot/_next/

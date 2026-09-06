@@ -9,7 +9,7 @@
 # What it does:
 #   1. Finds the ShipRight source relative to this script (works from any CWD)
 #   2. Builds the Next.js frontend (SSG export)
-#   3. Copies the frontend output into back-end/ShipRight/wwwroot/
+#   3. Copies the frontend output into back-end/ShipRight.Server/wwwroot/
 #   4. Publishes the .NET backend as linux-x64 self-contained single binary
 #   5. Copies the binary + run.sh to DEPLOY_DIR
 #   6. Makes run.sh + binary executable
@@ -68,7 +68,7 @@ npm run build
 ok "Frontend built → $FRONTEND_DIR/out"
 echo ""
 
-# ── Step 2: Copy frontend output to wwwroot ────────────────────────────────────
+# ── Step 2: Copy frontend output to wwwroot ───────────────────────────────────
 log "Step 2/4 — Copying frontend to wwwroot…"
 WWWROOT="$BACKEND_DIR/wwwroot"
 mkdir -p "$WWWROOT"

@@ -17,6 +17,10 @@ public record InferResult(DatabaseConfig Config, string[] Detected);
 
 public class DatabaseOrchestrator
 {
+    // mysqldump/mariadb-dump output must stay byte-for-byte importable by SQL clients —
+    // Encoding.UTF8 prepends a BOM that breaks the leading "-- ..." comment (SQL Error 1064).
+    private static readonly Encoding DumpFileEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+
     private readonly IDbProviderResolver _resolver;
     private readonly ISshRunner _ssh;
     private readonly KnownHostsStore _knownHosts;
@@ -60,7 +64,7 @@ public class DatabaseOrchestrator
                 await EmitLog(opId, "Running backup command…");
 
                 // Stream stdout directly to disk — avoids holding entire dump in RAM
-                await using var writer = new StreamWriter(localFile, append: false, Encoding.UTF8);
+                await using var writer = new StreamWriter(localFile, append: false, DumpFileEncoding);
                 long lineCount = 0, lastReported = 0;
 
                 var exit = await _ssh.RunAsync(
@@ -553,7 +557,7 @@ public class DatabaseOrchestrator
                 var cmd = provider.BackupCommand(cfg);
                 Log.Information("Scheduled backup for {DB}: {Cmd}", cfg.DatabaseName, cmd);
 
-                await using var writer = new StreamWriter(localFile, append: false, Encoding.UTF8);
+                await using var writer = new StreamWriter(localFile, append: false, DumpFileEncoding);
                 long lineCount = 0;
 
                 var exit = await _ssh.RunAsync(

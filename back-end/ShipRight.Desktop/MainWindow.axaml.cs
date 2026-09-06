@@ -44,7 +44,7 @@ public partial class MainWindow : Window
                 }
 
                 SetStatus("Connecting to dashboard...", showProgress: true);
-                var dashboardUrl = new Uri("http://127.0.0.1:5200");
+                var dashboardUrl = new Uri($"http://127.0.0.1:{_serverManager.Port}");
                 var available = await _probe.ProbeAsync(TimeSpan.FromSeconds(5), dashboardUrl);
                 SetStatus(available ? "Connected" : "Opening in browser...", showProgress: false);
                 if (!available)
@@ -52,10 +52,56 @@ public partial class MainWindow : Window
             }
             catch (Exception ex)
             {
-                SetStatus("Failed to connect", showProgress: false);
-                Log.Error(ex, "Server startup failed");
+                ShowStartupFailure(ex);
             }
         };
+    }
+
+    private void ShowStartupFailure(Exception ex)
+    {
+        SetStatus("Failed to connect", showProgress: false);
+        Log.Error(ex, "Server startup failed");
+        try
+        {
+            var dialog = new Window
+            {
+                Title = "ShipRight — Server conflict",
+                Width = 460,
+                Height = 220,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                CanResize = false,
+                WindowDecorations = WindowDecorations.Full
+            };
+            var stack = new StackPanel { Spacing = 10, Margin = new Thickness(20) };
+            stack.Children.Add(new TextBlock
+            {
+                Text = "Another ShipRight instance is occupying this app's port.",
+                FontSize = 14,
+                FontWeight = Avalonia.Media.FontWeight.SemiBold,
+                TextWrapping = Avalonia.Media.TextWrapping.Wrap
+            });
+            stack.Children.Add(new TextBlock
+            {
+                Text = ex.Message,
+                FontSize = 12,
+                Foreground = Avalonia.Media.Brushes.Gray,
+                TextWrapping = Avalonia.Media.TextWrapping.Wrap
+            });
+            var closeBtn = new Button
+            {
+                Content = "Close",
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                Margin = new Thickness(0, 8, 0, 0)
+            };
+            closeBtn.Click += (_, _) => dialog.Close();
+            stack.Children.Add(closeBtn);
+            dialog.Content = stack;
+            dialog.ShowDialog(this);
+        }
+        catch (Exception dialogEx)
+        {
+            Log.Warning(dialogEx, "Failed to show server conflict dialog");
+        }
     }
 
     private void SetStatus(string text, bool showProgress)
@@ -68,7 +114,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            Browser.Source = new Uri("http://127.0.0.1:5200");
+            Browser.Source = new Uri($"http://127.0.0.1:{_serverManager.Port}");
         }
         catch (Exception ex)
         {
@@ -76,11 +122,11 @@ public partial class MainWindow : Window
         }
     }
 
-    public static void OpenBrowser()
+    private void OpenBrowser()
     {
         try
         {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("http://127.0.0.1:5200") { UseShellExecute = true });
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo($"http://127.0.0.1:{_serverManager.Port}") { UseShellExecute = true });
         }
         catch (Exception ex)
         {
@@ -102,7 +148,7 @@ public partial class MainWindow : Window
         var sv = _serverManager.ServerVersion ?? "unknown";
         var wv = _serverManager.WebVersion ?? "unknown";
         var wv2 = GetWebView2Version();
-        var port = Services.ServerProcessManager.Port;
+        var port = _serverManager.Port;
 
         var dialog = new Window
         {

@@ -46,12 +46,27 @@ public record ServiceConfig
     /// alongside other config. Leave empty to enter credentials at build time.
     /// </summary>
     public string DockerPassword { get; init; } = string.Empty;
+    /// <summary>
+    /// When set, Docker credentials are resolved from the referenced
+    /// DockerRegistryResource at build time instead of using inline values.
+    /// </summary>
+    public Guid? DockerRegistryResourceId { get; init; }
 }
 
 public record GitConfig
 {
     public string RepoPath { get; init; } = string.Empty;
     public string DeployBranch { get; init; } = "master";
+    /// <summary>
+    /// Optional extra arguments to append to every git push command for this repo,
+    /// e.g. "--no-verify" to bypass pre-push hooks. Supports quoted values.
+    /// </summary>
+    public string PushArgs { get; init; } = string.Empty;
+    /// <summary>
+    /// When set, references a CredentialResource whose value (e.g. a PAT) is
+    /// injected via GIT_ASKPASS before every git push for this repo.
+    /// </summary>
+    public Guid? CredentialResourceId { get; init; }
 }
 
 public record WslConfig
@@ -78,6 +93,36 @@ public record ServerConfig
     public DeployMode DeployMode { get; init; } = DeployMode.GitScript;
     /// When true, SshKeyPath points to a key generated and managed by ShipRight (via Managed SSH Key).
     public bool ManagedSshKey { get; init; } = false;
+    /// <summary>
+    /// When set, the rebuild script content is resolved from the referenced
+    /// ScriptResource at deploy time instead of using inline RebuildScript.
+    /// </summary>
+    public Guid? RebuildScriptResourceId { get; init; }
+    /// <summary>
+    /// When set, the build pipeline is driven by the referenced PipelineResource.
+    /// Pipeline steps define script injection points, build, push, and deploy order.
+    /// Takes precedence over RebuildScriptResourceId when both are set.
+    /// </summary>
+    public Guid? PipelineResourceId { get; init; }
+}
+
+/// <summary>
+/// Pipeline — full guided setup (server + git info always expected).
+/// Freeform — the user picks only the components they need (Docker, Git, Deploy, Database);
+/// server/git info is only required when the corresponding component is selected.
+/// </summary>
+public enum ProjectType { Pipeline, Freeform }
+
+/// <summary>
+/// Which components a Freeform project opts into. Only these determine what
+/// configuration is required at validation time.
+/// </summary>
+public record FreeformFeatures
+{
+    public bool Docker   { get; init; }
+    public bool Git      { get; init; }
+    public bool Deploy   { get; init; }
+    public bool Database { get; init; }
 }
 
 public record ProjectConfig
@@ -86,6 +131,8 @@ public record ProjectConfig
     public string Name { get; init; } = string.Empty;
     public int Version { get; init; } = 2;
     public string ServerId { get; init; } = string.Empty;
+    public ProjectType Type { get; init; } = ProjectType.Pipeline;
+    public FreeformFeatures Features { get; init; } = new();
     public List<ServiceConfig> Services { get; init; } = new();
     public List<GitConfig> GitRepos { get; init; } = new();
     public WslConfig Wsl { get; init; } = new();
@@ -93,10 +140,17 @@ public record ProjectConfig
     public DatabaseConfig? Database { get; init; }
     public DateTime CreatedAt { get; init; }
     public DateTime ModifiedAt { get; set; }
+    /// IANA timezone captured from the browser used to configure this project.
+    public string TimeZone { get; init; } = "UTC";
     /// Remote branch to watch for SHA changes. Null means watching is disabled for this project.
     public string? WatchBranch { get; init; }
     /// How often (in seconds) to poll the remote. Defaults to 5 minutes.
     public int WatchPollSeconds { get; init; } = 300;
     /// Which pipeline steps to run when a SHA change is detected: "Build", "BuildAndPush", or "BuildPushAndDeploy".
     public string WatchSteps { get; init; } = "Build";
+    /// <summary>
+    /// Maximum time in seconds to wait for a git push to complete. Defaults to 300 (5 minutes).
+    /// Set to 0 for no timeout.
+    /// </summary>
+    public int GitPushTimeoutSeconds { get; init; } = 300;
 }

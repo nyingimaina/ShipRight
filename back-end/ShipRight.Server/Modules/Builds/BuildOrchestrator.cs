@@ -8,10 +8,15 @@ using ShipRight.Modules.VersionFiles;
 using ShipRight.Shared.Events;
 using ShipRight.Shared.ProcessRunner;
 using ShipRight.Shared.SshRunner;
+using ShipRight.Shared;
+using ShipRight.Modules.Resources;
+using ShipRight.Modules.Resources.Models;
+using ShipRight.Modules.Resources.Stores;
+using ResourcePipelineStep = ShipRight.Modules.Resources.Models.PipelineStep;
 
 namespace ShipRight.Modules.Builds;
 
-public record StartBuildRequest(string ProjectId, List<ServiceVersionInput> ServiceVersions);
+public record StartBuildRequest(string ProjectId, List<ServiceVersionInput> ServiceVersions, string? PipelineResourceId = null);
 public record ServiceVersionInput(string ServiceName, string NewVersion);
 public record RespondRequest(string Reason, string Choice, Dictionary<string, string>? Data);
 public record DeployRequest(string? DeployModeOverride);
@@ -23,6 +28,11 @@ public class BuildOrchestrator
     private readonly BuildEventBus _bus;
     private readonly IProcessRunner _runner;
     private readonly ISshRunner _ssh;
+    private readonly ResourceResolutionService _resourceResolution;
+    private readonly IPipelineResourceStore _pipelineStore;
+    private readonly IScriptResourceStore _scriptStore;
+    private readonly ICredentialResourceStore _credentialStore;
+    private readonly ScriptExecutor _scriptExecutor;
     // BRS #2: ConcurrentDictionary prevents data race between pipeline thread and HTTP handler
     private readonly ConcurrentDictionary<string, TaskCompletionSource<RespondRequest>> _pauseWaiters = new();
     private static readonly ConcurrentDictionary<string, CancellationTokenSource> _cancellations = new();
@@ -39,13 +49,19 @@ public class BuildOrchestrator
     }
 
     public BuildOrchestrator(IBuildStore buildStore, IProjectStore projectStore,
-        BuildEventBus bus, IProcessRunner runner, ISshRunner ssh)
+        BuildEventBus bus, IProcessRunner runner, ISshRunner ssh, ResourceResolutionService resourceResolution,
+        IPipelineResourceStore pipelineStore, IScriptResourceStore scriptStore, ICredentialResourceStore credentialStore, ScriptExecutor scriptExecutor)
     {
         _buildStore = buildStore;
         _projectStore = projectStore;
         _bus = bus;
         _runner = runner;
         _ssh = ssh;
+        _resourceResolution = resourceResolution;
+        _pipelineStore = pipelineStore;
+        _scriptStore = scriptStore;
+        _credentialStore = credentialStore;
+        _scriptExecutor = scriptExecutor;
     }
 
     public async Task<BuildRecord> StartAsync(StartBuildRequest request)
@@ -78,9 +94,20 @@ public class BuildOrchestrator
 
         await _buildStore.SaveAsync(record);
         _bus.Register(record.Id);
+
+        PipelineResource? pipeline = null;
+        if (Guid.TryParse(request.PipelineResourceId, out var pipelineId))
+            pipeline = await _pipelineStore.GetByIdAsync(pipelineId);
+
         _ = Task.Run(async () =>
         {
-            try   { await RunPipelineAsync(record, project); }
+            try
+            {
+                if (pipeline is not null)
+                    await RunCustomPipelineAsync(record, project, pipeline);
+                else
+                    await RunPipelineAsync(record, project);
+            }
             finally { sem.Release(); }
         });
         return record;
@@ -107,12 +134,19 @@ public class BuildOrchestrator
         {
             await ctx.EmitLogAsync($"Connecting to {project.Server.Username}@{project.Server.Host}…", "ssh");
 
-            var cmd = effectiveMode switch
+            string cmd;
+            switch (effectiveMode)
             {
-                DeployMode.GitCompose => BuildGitComposeDeployCmd(project),
-                DeployMode.EnvCompose => BuildEnvComposeDeployCmd(project, record.Versions),
-                _                     => BuildGitScriptDeployCmd(project),  // GitScript (default)
-            };
+                case DeployMode.GitCompose:
+                    cmd = BuildGitComposeDeployCmd(project);
+                    break;
+                case DeployMode.EnvCompose:
+                    cmd = BuildEnvComposeDeployCmd(project, record.Versions);
+                    break;
+                default:
+                    cmd = await BuildGitScriptDeployCmd(project);
+                    break;
+            }
             var modeLabel = deployModeOverride is not null
                 ? $"{effectiveMode} (override; project default: {project.Server.DeployMode})"
                 : effectiveMode.ToString();
@@ -299,9 +333,10 @@ public class BuildOrchestrator
                     if (response.Choice == "commit_and_push")
                     {
                         await ctx.EmitLogAsync($"Pushing {repo.RepoPath} → {repo.DeployBranch}…");
-                        var pushResult = await _runner.RunAsync("git",
-                            ["-C", repo.RepoPath, "push", "origin", repo.DeployBranch], null,
-                            line => ctx.EmitLogAsync(line, "git"));
+                        var pushArgs = ArgumentSplitter.Split(repo.PushArgs);
+                        await EmitDangerousPushArgWarningsAsync(pushArgs, ctx);
+                        var pushResult = await RunGitPushAsync(ctx, repo.RepoPath, repo.DeployBranch,
+                            ["--progress", ..pushArgs], project, ct);
                         if (!pushResult.Success)
                             throw new InvalidOperationException($"git push failed in {repo.RepoPath}:\n{pushResult.StdErr}");
                     }
@@ -433,12 +468,15 @@ public class BuildOrchestrator
                                 throw new InvalidOperationException($"git merge failed in {repoPath}:\n{merge.StdErr}");
                             }
 
-                            await ctx.EmitLogAsync($"Pushing '{deployBranch}' in {repoPath}…");
-                            var pushMerge = await _runner.RunAsync("git",
-                                ["-C", repoPath, "push", "origin", deployBranch], null,
-                                line => ctx.EmitLogAsync(line, "git"));
-                            if (!pushMerge.Success)
-                                throw new InvalidOperationException($"git push after merge failed in {repoPath}:\n{pushMerge.StdErr}");
+                        await ctx.EmitLogAsync($"Pushing '{deployBranch}' in {repoPath}…");
+                        var matchingRepo = project.GitRepos.FirstOrDefault(g => g.RepoPath == repoPath);
+                        var pushArgsMerge = matchingRepo is not null
+                            ? ArgumentSplitter.Split(matchingRepo.PushArgs) : [];
+                        await EmitDangerousPushArgWarningsAsync(pushArgsMerge, ctx);
+                        var pushMerge = await RunGitPushAsync(ctx, repoPath, deployBranch,
+                            ["--progress", ..pushArgsMerge], project, ct);
+                        if (!pushMerge.Success)
+                            throw new InvalidOperationException($"git push after merge failed in {repoPath}:\n{pushMerge.StdErr}");
                         }
                     }
                 }
@@ -513,9 +551,10 @@ public class BuildOrchestrator
                 }
 
                 await ctx.EmitLogAsync($"Pushing tag + branch to origin…");
-                var pushSource = await _runner.RunAsync("git",
-                    ["-C", repo.RepoPath, "push", "origin", repo.DeployBranch, "--follow-tags"],
-                    null, line => ctx.EmitLogAsync(line, "git"), null, ct);
+                var pushArgsTag = ArgumentSplitter.Split(repo.PushArgs);
+                await EmitDangerousPushArgWarningsAsync(pushArgsTag, ctx);
+                var pushSource = await RunGitPushAsync(ctx, repo.RepoPath, repo.DeployBranch,
+                    ["--follow-tags", "--progress", ..pushArgsTag], project, ct);
                 if (!pushSource.Success)
                 {
                     var pushOut = pushSource.StdOut + pushSource.StdErr;
@@ -581,9 +620,8 @@ public class BuildOrchestrator
                 }
 
                 await ctx.EmitLogAsync("Pushing compose repo…");
-                var pushCompose = await _runner.RunAsync("git",
-                    ["-C", project.Wsl.WorkingDir, "push", "origin", composeBranch],
-                    null, line => ctx.EmitLogAsync(line, "git"));
+                var pushCompose = await RunGitPushAsync(ctx, project.Wsl.WorkingDir, composeBranch,
+                    ["--progress"], project, ct);
                 if (!pushCompose.Success)
                     throw new InvalidOperationException($"git push compose repo failed:\n{pushCompose.StdErr}");
             }
@@ -674,7 +712,8 @@ public class BuildOrchestrator
             foreach (var sv in record.Versions)
             {
                 var svc = project.Services.First(s => s.Name == sv.ServiceName);
-                var registry = ResolveRegistry(svc);
+                var resource = await _resourceResolution.ResolveRegistryResourceAsync(svc);
+                var registry = RegistryHostResolver.Resolve(svc, resource);
                 if (!servicesByRegistry.ContainsKey(registry))
                     servicesByRegistry[registry] = new();
                 servicesByRegistry[registry].Add((svc, sv));
@@ -686,29 +725,31 @@ public class BuildOrchestrator
                 await ctx.EmitLogAsync(Ts($"Logging out of {registry}…"), "shipright");
 
                 // Clear any stale cached credentials from a previous project
-                var logoutArgs = new List<string> { "logout" };
-                if (registry != "docker.io" && registry != "index.docker.io")
-                    logoutArgs.Add(registry);
-                await _runner.RunAsync("docker", logoutArgs.ToArray(), null, null, null);
+                var logoutArgs = DockerCommandBuilder.BuildLogoutArgs(registry);
+                await _runner.RunAsync("docker", logoutArgs, null, null, null);
                 await ctx.EmitLogAsync(Ts($"Logged out of {registry}."), "shipright");
 
-                // Check for stored credentials in the project config
-                var creds = services
-                    .Select(g => g.Svc)
-                    .FirstOrDefault(s => !string.IsNullOrEmpty(s.DockerUsername) && !string.IsNullOrEmpty(s.DockerPassword));
+                // Check for stored credentials — resolve via resource first, then inline fallback
+                var firstSvc = services.Select(g => g.Svc).First();
+                var (resolvedUser, resolvedPass) = await _resourceResolution.ResolveDockerCredentialsAsync(
+                    firstSvc,
+                    services.Select(g => g.Svc).FirstOrDefault(s => !string.IsNullOrEmpty(s.DockerUsername))?.DockerUsername ?? "",
+                    services.Select(g => g.Svc).FirstOrDefault(s => !string.IsNullOrEmpty(s.DockerPassword))?.DockerPassword ?? "");
+
+                var hasCreds = !string.IsNullOrEmpty(resolvedUser) && !string.IsNullOrEmpty(resolvedPass);
 
                 await ctx.EmitLogAsync(Ts(
-                    creds is not null
+                    hasCreds
                         ? $"Stored credentials found for {registry}."
                         : $"No stored credentials for {registry}."), "shipright");
 
                 bool loggedIn = false;
-                if (creds is not null)
+                if (hasCreds)
                 {
                     try
                     {
                         loggedIn = await DockerLoginAsync(ctx, record, registry,
-                            creds.DockerUsername, creds.DockerPassword,
+                            resolvedUser, resolvedPass,
                             $"Docker credentials required for {registry}.");
                     }
                     catch
@@ -733,10 +774,8 @@ public class BuildOrchestrator
                             {
                                 await ctx.EmitLogAsync(Ts($"Logged in as '{actualUser}' but image owner(s) '{string.Join(", ", expectedOwners)}' — re-authenticating."), "shipright");
 
-                                var reLogoutArgs = new List<string> { "logout" };
-                                if (registry != "docker.io" && registry != "index.docker.io")
-                                    reLogoutArgs.Add(registry);
-                                await _runner.RunAsync("docker", reLogoutArgs.ToArray(), null, null, null);
+                                var reLogoutArgs = DockerCommandBuilder.BuildLogoutArgs(registry);
+                                await _runner.RunAsync("docker", reLogoutArgs, null, null, null);
                                 loggedIn = false;
                             }
                         }
@@ -769,8 +808,9 @@ public class BuildOrchestrator
             {
                 foreach (var (svc, sv) in services)
                 {
+                    var pushArgs = DockerCommandBuilder.BuildPushArgs(svc.DockerImageName, sv.NewVersion);
                     var pushResult = await _runner.RunAsync("docker",
-                        ["push", $"{svc.DockerImageName}:{sv.NewVersion}"],
+                        pushArgs,
                         null,
                         line => ctx.EmitLogAsync(line, "docker"),
                         line => ctx.EmitLogAsync(line, "docker"),
@@ -792,7 +832,7 @@ public class BuildOrchestrator
                                 return;
                             }
                             var retry = await _runner.RunAsync("docker",
-                                ["push", $"{svc.DockerImageName}:{sv.NewVersion}"],
+                                pushArgs,
                                 null,
                                 line => ctx.EmitLogAsync(line, "docker"),
                                 line => ctx.EmitLogAsync(line, "docker"),
@@ -850,6 +890,378 @@ public class BuildOrchestrator
         {
             _cancellations.TryRemove(buildId, out var _unused);
         }
+    }
+
+    private async Task RunCustomPipelineAsync(BuildRecord record, ProjectConfig project, PipelineResource pipeline)
+    {
+        using var logBuildId = LogContext.PushProperty("BuildId", record.Id);
+        using var logProjectId = LogContext.PushProperty("ProjectId", record.ProjectId);
+
+        var ctx = new PipelineContext(record, _bus);
+        async Task SaveStep() => await _buildStore.SaveAsync(record);
+
+        using var cts = new CancellationTokenSource();
+        _cancellations[record.Id] = cts;
+        var ct = cts.Token;
+
+        try
+        {
+            Log.Information("Build {BuildId} custom pipeline '{PipelineName}' started ({StepCount} steps)",
+                record.Id, pipeline.Name, pipeline.Steps.Count);
+            await ctx.EmitLogAsync($"Custom pipeline: {pipeline.Name} ({pipeline.Steps.Count} steps)", "shipright");
+
+            var stepGroups = PipelineExecutor.GroupStepsByPosition(pipeline.Steps);
+
+            // ── Pre-build script steps ──────────────────────────────────────────
+            foreach (var step in stepGroups.PreBuild)
+                await ExecuteScriptStepAsync(ctx, record, project, step, pipeline.Variables, SaveStep, ct);
+
+            // ── Build step ──────────────────────────────────────────────────────
+            var hasBuild = pipeline.Steps.Any(s => s.Type == PipelineStepType.Build);
+            if (hasBuild)
+                await RunDockerBuildAsync(ctx, record, project, SaveStep, useBuildKit: false, ct);
+
+            // ── Pre-push script steps ───────────────────────────────────────────
+            foreach (var step in stepGroups.PrePush)
+                await ExecuteScriptStepAsync(ctx, record, project, step, pipeline.Variables, SaveStep, ct);
+
+            // ── Push step (inline — avoids _bus.Complete from PushAsync) ────────
+            var hasPush = pipeline.Steps.Any(s => s.Type == PipelineStepType.Push);
+            if (hasPush)
+                await RunCustomPushAsync(record, project, ctx, SaveStep, ct);
+
+            // ── Pre-deploy script steps ─────────────────────────────────────────
+            foreach (var step in stepGroups.PreDeploy)
+                await ExecuteScriptStepAsync(ctx, record, project, step, pipeline.Variables, SaveStep, ct);
+
+            // ── Deploy step (inline — avoids _bus.Complete from DeployAsync) ────
+            var hasDeploy = pipeline.Steps.Any(s => s.Type == PipelineStepType.Deploy);
+            if (hasDeploy)
+            {
+                var deployStep = pipeline.Steps.First(s => s.Type == PipelineStepType.Deploy);
+                var deployMode = deployStep.DeployMode ?? project.Server.DeployMode;
+                await RunCustomDeployAsync(record, project, ctx, deployMode, ct);
+            }
+
+            // ── Post-deploy script steps ────────────────────────────────────────
+            foreach (var step in stepGroups.PostDeploy)
+                await ExecuteScriptStepAsync(ctx, record, project, step, pipeline.Variables, SaveStep, ct);
+
+            // ── Build complete ──────────────────────────────────────────────────
+            var currentStatus = record.Status;
+            if (currentStatus is BuildStatus.Running or BuildStatus.Pending or BuildStatus.ImageBuilt
+                or BuildStatus.PushSucceeded)
+            {
+                record.Status = hasBuild ? record.Status : BuildStatus.ImageBuilt;
+                record.CompletedAt = DateTime.UtcNow;
+                await SaveStep();
+                await ctx.BuildCompletedAsync();
+            }
+
+            Log.Information("Build {BuildId} custom pipeline completed: {Status}", record.Id, record.Status);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            Log.Warning("Build {BuildId} custom pipeline cancelled at step {Step}", record.Id, record.CurrentStepName);
+            record.Status = BuildStatus.Aborted;
+            record.FailedStep = record.CurrentStepName;
+            record.ErrorSummary = "Cancelled by user.";
+            record.CompletedAt = DateTime.UtcNow;
+            try { await _buildStore.SaveAsync(record); await ctx.EmitLogAsync("Build cancelled.", "shipright"); } catch { }
+            await ctx.BuildCompletedAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Build {BuildId} custom pipeline failed at step {Step}", record.Id, record.CurrentStepName);
+            record.Status = BuildStatus.BuildFailed;
+            record.FailedStep = record.CurrentStepName;
+            record.ErrorSummary = ex.Message;
+            record.CompletedAt = DateTime.UtcNow;
+            try
+            {
+                await _buildStore.SaveAsync(record);
+                await ctx.EmitLogAsync($"[ERROR] {ex.Message}", "shipright");
+            }
+            catch (Exception saveEx)
+            {
+                Log.Error(saveEx, "Failed to persist failed-build record {BuildId}", record.Id);
+            }
+            await ctx.BuildCompletedAsync();
+        }
+        finally
+        {
+            _cancellations.TryRemove(record.Id, out _);
+        }
+    }
+
+    private async Task RunCustomPushAsync(BuildRecord record, ProjectConfig project,
+        PipelineContext ctx, Func<Task> save, CancellationToken ct)
+    {
+        record.Status = BuildStatus.Running;
+        await ctx.EmitLogAsync("Push started.", "shipright");
+
+        var servicesByRegistry = await GroupServicesByRegistryAsync(record, project);
+
+        foreach (var (registry, services) in servicesByRegistry)
+        {
+            var loggedIn = await RunDockerLoginPhaseAsync(ctx, record, registry, services, ct);
+            if (!loggedIn)
+            {
+                record.Status = BuildStatus.Aborted;
+                await save();
+                throw new InvalidOperationException($"Docker login for {registry} was aborted.");
+            }
+
+            foreach (var (svc, sv) in services)
+                await PushServiceWithReauthAsync(ctx, record, registry, svc, sv, ct);
+        }
+
+        record.Status = BuildStatus.PushSucceeded;
+        await save();
+        await ctx.EmitLogAsync("Push completed.", "shipright");
+    }
+
+    // Groups services by their resolved registry host (resource-aware),
+    // preserving first-seen order.
+    private async Task<Dictionary<string, List<(ServiceConfig Svc, ServiceVersion Sv)>>> GroupServicesByRegistryAsync(
+        BuildRecord record, ProjectConfig project)
+    {
+        var servicesByRegistry = new Dictionary<string, List<(ServiceConfig Svc, ServiceVersion Sv)>>();
+        foreach (var sv in record.Versions)
+        {
+            var svc = project.Services.FirstOrDefault(s => s.Name == sv.ServiceName);
+            if (svc is null) continue;
+            var resource = await _resourceResolution.ResolveRegistryResourceAsync(svc);
+            var registry = RegistryHostResolver.Resolve(svc, resource);
+            if (!servicesByRegistry.ContainsKey(registry))
+                servicesByRegistry[registry] = new();
+            servicesByRegistry[registry].Add((svc, sv));
+        }
+        return servicesByRegistry;
+    }
+
+    // Per-registry docker login check shared by the default push pipeline and
+    // custom-pipeline push steps: logout, resolve creds (resource → inline),
+    // verify the logged-in owner, and fall back to an interactive prompt.
+    // Returns true when logged in.
+    private async Task<bool> RunDockerLoginPhaseAsync(
+        PipelineContext ctx, BuildRecord record, string registry,
+        List<(ServiceConfig Svc, ServiceVersion Sv)> services, CancellationToken ct)
+    {
+        await ctx.EmitLogAsync(Ts($"Logging out of {registry}…"), "shipright");
+        var logoutArgs = DockerCommandBuilder.BuildLogoutArgs(registry);
+        await _runner.RunAsync("docker", logoutArgs, null, null, null);
+        await ctx.EmitLogAsync(Ts($"Logged out of {registry}."), "shipright");
+
+        var firstSvc = services.Select(g => g.Svc).First();
+        var (resolvedUser, resolvedPass) = await _resourceResolution.ResolveDockerCredentialsAsync(
+            firstSvc,
+            services.Select(g => g.Svc).FirstOrDefault(s => !string.IsNullOrEmpty(s.DockerUsername))?.DockerUsername ?? "",
+            services.Select(g => g.Svc).FirstOrDefault(s => !string.IsNullOrEmpty(s.DockerPassword))?.DockerPassword ?? "");
+
+        var hasCreds = !string.IsNullOrEmpty(resolvedUser) && !string.IsNullOrEmpty(resolvedPass);
+
+        await ctx.EmitLogAsync(Ts(
+            hasCreds
+                ? $"Stored credentials found for {registry}."
+                : $"No stored credentials for {registry}."), "shipright");
+
+        bool loggedIn = false;
+        if (hasCreds)
+        {
+            try
+            {
+                loggedIn = await DockerLoginAsync(ctx, record, registry,
+                    resolvedUser, resolvedPass,
+                    $"Docker credentials required for {registry}.");
+            }
+            catch
+            {
+                await ctx.EmitLogAsync(Ts($"Stored credentials failed for {registry} — falling through to prompt."), "shipright");
+            }
+
+            if (loggedIn)
+            {
+                var actualUser = await GetDockerLoggedInUserAsync();
+                if (actualUser is not null)
+                {
+                    var expectedOwners = services
+                        .Select(g => g.Svc)
+                        .Select(s => ExtractImageOwner(s.DockerImageName, registry))
+                        .Where(o => o is not null)
+                        .Distinct()
+                        .ToList();
+
+                    if (expectedOwners.Count > 0 && !expectedOwners.Any(o => o == actualUser))
+                    {
+                        await ctx.EmitLogAsync(Ts($"Logged in as '{actualUser}' but image owner(s) '{string.Join(", ", expectedOwners)}' — re-authenticating."), "shipright");
+
+                        var reLogoutArgs = DockerCommandBuilder.BuildLogoutArgs(registry);
+                        await _runner.RunAsync("docker", reLogoutArgs, null, null, null);
+                        loggedIn = false;
+                    }
+                }
+            }
+        }
+
+        if (!loggedIn)
+        {
+            await ctx.EmitLogAsync(Ts($"Prompting for {registry} credentials."), "shipright");
+            loggedIn = await DockerLoginAsync(ctx, record, registry,
+                $"Docker credentials required for {registry}.");
+        }
+
+        return loggedIn;
+    }
+
+    // Pushes a single service, re-authenticating and retrying once when the
+    // registry rejects the credentials (denied / unauthorized).
+    private async Task PushServiceWithReauthAsync(
+        PipelineContext ctx, BuildRecord record, string registry,
+        ServiceConfig svc, ServiceVersion sv, CancellationToken ct)
+    {
+        var pushArgs = DockerCommandBuilder.BuildPushArgs(svc.DockerImageName, sv.NewVersion);
+        var pushResult = await _runner.RunAsync("docker",
+            pushArgs,
+            null,
+            line => ctx.EmitLogAsync(line, "docker"),
+            line => ctx.EmitLogAsync(line, "docker"),
+            ct);
+
+        if (!pushResult.Success)
+        {
+            var pushOut = pushResult.StdOut + pushResult.StdErr;
+            if (pushOut.Contains("denied") || pushOut.Contains("unauthorized"))
+            {
+                await ctx.EmitLogAsync(Ts($"Push rejected for {registry} — re-authenticating."), "shipright");
+                bool loggedIn = await DockerLoginAsync(ctx, record, registry,
+                    $"Access denied for {registry}. Re-enter credentials.");
+                if (!loggedIn)
+                    throw new InvalidOperationException($"Access denied for {registry} — re-authentication was aborted.");
+                var retry = await _runner.RunAsync("docker",
+                    pushArgs,
+                    null,
+                    line => ctx.EmitLogAsync(line, "docker"),
+                    line => ctx.EmitLogAsync(line, "docker"),
+                    ct);
+                if (!retry.Success)
+                    throw new InvalidOperationException($"docker push failed for {svc.Name} after re-login (exit {retry.ExitCode}).");
+            }
+            else
+            {
+                throw new InvalidOperationException($"docker push {sv.NewVersion} failed for {svc.Name} (exit {pushResult.ExitCode}).");
+            }
+        }
+
+        await ctx.EmitLogAsync($"Pushed {svc.DockerImageName}:{sv.NewVersion}", "shipright");
+    }
+
+    private async Task RunCustomDeployAsync(BuildRecord record, ProjectConfig project,
+        PipelineContext ctx, DeployMode? deployModeOverride, CancellationToken ct)
+    {
+        var effectiveMode = deployModeOverride ?? project.Server.DeployMode;
+        record.Status = BuildStatus.Deploying;
+        await _buildStore.SaveAsync(record);
+
+        await ctx.EmitLogAsync($"Deploy mode: {effectiveMode}", "shipright");
+        await ctx.EmitLogAsync($"Connecting to {project.Server.Username}@{project.Server.Host}…", "ssh");
+
+        string cmd = effectiveMode switch
+        {
+            DeployMode.GitCompose => BuildGitComposeDeployCmd(project),
+            DeployMode.EnvCompose => BuildEnvComposeDeployCmd(project, record.Versions),
+            _ => await BuildGitScriptDeployCmd(project),
+        };
+
+        var exitCode = await _ssh.RunAsync(
+            project.Server.Host,
+            project.Server.Username,
+            project.Server.SshKeyPath,
+            cmd,
+            line => ctx.EmitLogAsync(line, "ssh"),
+            ct: ct);
+
+        if (exitCode != 0)
+        {
+            record.Status = BuildStatus.DeployFailed;
+            record.ErrorSummary = $"Deploy exited with code {exitCode}.";
+            throw new InvalidOperationException($"Deploy failed with exit code {exitCode}");
+        }
+
+        record.Status = BuildStatus.Deployed;
+        record.DeployedAt = DateTime.UtcNow;
+        await _buildStore.SaveAsync(record);
+        await ctx.EmitLogAsync("Deploy completed.", "shipright");
+    }
+
+    private async Task ExecuteScriptStepAsync(PipelineContext ctx, BuildRecord record,
+        ProjectConfig project, ResourcePipelineStep step, Dictionary<string, string> pipelineVariables, Func<Task> save, CancellationToken ct)
+    {
+        var stepNum = (record.CurrentStepNumber ?? 0) + 1;
+        var stepLabel = step.Label ?? "Script";
+
+        await ctx.StepStartedAsync(stepNum, stepLabel);
+
+        if (step.ScriptResourceId is not Guid scriptId)
+        {
+            await ctx.EmitLogAsync($"Script step '{stepLabel}' has no ScriptResourceId — skipping", "shipright");
+            await ctx.StepCompletedAsync(stepNum, stepLabel);
+            return;
+        }
+
+        var script = await _scriptStore.GetByIdAsync(scriptId);
+        if (script is null)
+        {
+            var msg = $"Script resource '{scriptId}' not found for step '{stepLabel}'";
+            if (step.ContinueOnError)
+            {
+                await ctx.EmitLogAsync($"[WARN] {msg} — skipping (continue on error)", "shipright");
+                await ctx.StepCompletedAsync(stepNum, stepLabel, success: false);
+                return;
+            }
+            throw new InvalidOperationException(msg);
+        }
+
+        await ctx.EmitLogAsync($"Running script: {script.Name} ({script.Platform}, {script.Target})", "shipright");
+
+        var envVars = new Dictionary<string, string>
+        {
+            ["GIT_BRANCH"] = project.GitRepos.FirstOrDefault()?.DeployBranch ?? "",
+            ["PROJECT_ID"] = project.Id,
+            ["PROJECT_NAME"] = project.Name,
+        };
+
+        // Resolve variables in script content and working directory
+        var scriptDir = ScriptExecutor.GetTargetDirectory(script.Target, project.Server);
+        var resolvedContent = VariableResolver.Resolve(script.Content, pipelineVariables, project, scriptDir);
+        var resolvedWorkingDir = VariableResolver.ResolveWorkingDirectory(
+            step.WorkingDirectory, pipelineVariables, project, scriptDir);
+
+        var result = await _scriptExecutor.ExecuteAsync(
+            script,
+            workingDir: resolvedWorkingDir,
+            envVars: envVars,
+            serverConfig: project.Server,
+            onOutput: line => ctx.EmitLogAsync(line, "script"),
+            resolvedContent: resolvedContent,
+            ct: ct);
+
+        if (result.ExitCode != 0)
+        {
+            var msg = $"Script '{script.Name}' failed (exit code {result.ExitCode}): {result.Error}";
+            if (step.ContinueOnError)
+            {
+                await ctx.EmitLogAsync($"[WARN] {msg} — continuing (continue on error)", "shipright");
+                await ctx.StepCompletedAsync(stepNum, stepLabel, success: false);
+                await save();
+                return;
+            }
+            throw new InvalidOperationException(msg);
+        }
+
+        await ctx.EmitLogAsync($"Script '{script.Name}' completed successfully", "shipright");
+        await ctx.StepCompletedAsync(stepNum, stepLabel);
+        await save();
     }
 
     protected virtual async Task RunDockerBuildAsync(PipelineContext ctx, BuildRecord record,
@@ -950,17 +1362,7 @@ public class BuildOrchestrator
     // Extracts the registry host from a ServiceConfig.
     // Uses DockerRegistry field if set, otherwise infers from DockerImageName.
     // Defaults to "docker.io".
-    private static string ResolveRegistry(ServiceConfig svc)
-    {
-        if (!string.IsNullOrEmpty(svc.DockerRegistry))
-            return svc.DockerRegistry;
-        var image = svc.DockerImageName;
-        if (string.IsNullOrEmpty(image)) return "docker.io";
-        var firstSlash = image.IndexOf('/');
-        if (firstSlash < 0) return "docker.io";
-        var prefix = image[..firstSlash];
-        return (prefix.Contains('.') || prefix.Contains(':')) ? prefix : "docker.io";
-    }
+    internal static string ResolveRegistry(ServiceConfig svc) => RegistryHostResolver.Resolve(svc);
 
     internal static string? ExtractImageOwner(string imageName, string registry)
     {
@@ -1021,40 +1423,21 @@ public class BuildOrchestrator
     {
         // Clear any stale cached credentials from a previous project first
         await ctx.EmitLogAsync(Ts($"Logging out of {registry}…"), "shipright");
-        var logoutArgs = new List<string> { "logout" };
-        if (registry != "docker.io" && registry != "index.docker.io")
-            logoutArgs.Add(registry);
-        await _runner.RunAsync("docker", logoutArgs.ToArray(), null, null, null);
+        await _runner.RunAsync("docker", DockerCommandBuilder.BuildLogoutArgs(registry), null, null, null);
         await ctx.EmitLogAsync(Ts($"Logged out of {registry}."), "shipright");
 
         await ctx.EmitLogAsync(Ts($"Logging in as '{username}'…"), "shipright");
 
-        // Only pass registry argument for non-Docker Hub registries
-        var args = new List<string> { "login" };
-        if (registry != "docker.io" && registry != "index.docker.io")
-            args.Add(registry);
-        args.AddRange(["-u", username, "--password-stdin"]);
+        var loginResult = await _runner.RunAsync("docker",
+            DockerCommandBuilder.BuildLoginArgs(registry, username),
+            null,
+            line => ctx.EmitLogAsync(line, "docker"),
+            line => ctx.EmitLogAsync(line, "docker"),
+            stdin: password);
 
-        var (loginExe, loginArgs) = ProcessRunner.ResolveForPlatform("docker", args.ToArray());
-        using var loginProc = new global::System.Diagnostics.Process
-        {
-            StartInfo = new global::System.Diagnostics.ProcessStartInfo
-            {
-                FileName = loginExe,
-                RedirectStandardInput = true, RedirectStandardOutput = true,
-                RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true,
-            }
-        };
-        foreach (var a in loginArgs) loginProc.StartInfo.ArgumentList.Add(a);
-        loginProc.Start();
-        await loginProc.StandardInput.WriteLineAsync(password);
-        loginProc.StandardInput.Close();
-        var loginOut = await loginProc.StandardOutput.ReadToEndAsync();
-        var loginErr = await loginProc.StandardError.ReadToEndAsync();
-        await loginProc.WaitForExitAsync();
-        await ctx.EmitLogAsync($"docker login ({registry}): {(loginOut + loginErr).Trim()}", "docker");
+        await ctx.EmitLogAsync($"docker login ({registry}): {(loginResult.StdOut + loginResult.StdErr).Trim()}", "docker");
 
-        if (loginProc.ExitCode != 0)
+        if (!loginResult.Success)
             throw new InvalidOperationException($"Docker login failed for {registry} — check username and password.");
 
         record.Status = BuildStatus.Running;
@@ -1120,10 +1503,11 @@ public class BuildOrchestrator
     /// GitScript: git pull the compose repo on the server, then run the configured script.
     /// The script is responsible for any docker operations it needs.
     /// </summary>
-    private static string BuildGitScriptDeployCmd(ProjectConfig project)
+    private async Task<string> BuildGitScriptDeployCmd(ProjectConfig project)
     {
         var branch = project.GitRepos.FirstOrDefault()?.DeployBranch ?? "master";
-        return $"cd {project.Server.RemoteWorkingDir} && git pull origin {branch} && bash {project.Server.RebuildScript}";
+        var script = await _resourceResolution.ResolveRebuildScriptAsync(project.Server);
+        return $"cd {project.Server.RemoteWorkingDir} && git pull origin {branch} && bash {script}";
     }
 
     /// <summary>
@@ -1328,9 +1712,8 @@ public class BuildOrchestrator
                     await ctx.EmitLogAsync("Compose already at rollback versions — nothing new to commit.", "shipright");
                 }
 
-                var rbPush = await _runner.RunAsync("git",
-                    ["-C", project.Wsl.WorkingDir, "push", "origin", branch],
-                    null, line => ctx.EmitLogAsync(line, "git"));
+                var rbPush = await RunGitPushAsync(ctx, project.Wsl.WorkingDir, branch,
+                    ["--progress"], project, ct);
                 if (!rbPush.Success)
                     throw new InvalidOperationException($"git push failed during rollback:\n{rbPush.StdErr}");
             }
@@ -1450,5 +1833,141 @@ public class BuildOrchestrator
     {
         try { return File.ReadAllText(path).Trim(); }
         catch { return ""; }
+    }
+
+    private static TimeSpan? GetGitPushTimeout(ProjectConfig project)
+    {
+        if (project.GitPushTimeoutSeconds <= 0) return null;
+        return TimeSpan.FromSeconds(project.GitPushTimeoutSeconds);
+    }
+
+    private static async Task EmitDangerousPushArgWarningsAsync(string[] pushArgs, PipelineContext ctx)
+    {
+        var dangerous = new[] { "--force", "--force-with-lease" };
+        foreach (var arg in pushArgs)
+        {
+            if (dangerous.Contains(arg))
+                await ctx.EmitLogAsync($"⚠  PushArgs contain \"{arg}\" — this can overwrite remote history");
+        }
+    }
+
+    private async Task<ProcessResult> RunGitPushAsync(
+        PipelineContext ctx,
+        string repoPath,
+        string branch,
+        string[] extraArgs,
+        ProjectConfig project,
+        CancellationToken ct)
+    {
+        var args = new[] { "-C", repoPath, "push", "origin", branch }.Concat(extraArgs).ToArray();
+
+        var cmdLine = $"git -C {repoPath} push origin {branch}";
+        if (extraArgs.Length > 0)
+            cmdLine += " " + string.Join(" ", extraArgs);
+        await ctx.EmitLogAsync($"[git] {cmdLine}");
+
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var timeout = GetGitPushTimeout(project);
+
+        // Build env overrides: fail fast instead of hanging on credential prompt
+        var envOverrides = new Dictionary<string, string> { ["GIT_TERMINAL_PROMPT"] = "0" };
+
+        // Check for credential resource binding
+        var gitRepo = project.GitRepos.FirstOrDefault(g => g.RepoPath == repoPath);
+        if (gitRepo?.CredentialResourceId is not null)
+        {
+            var credential = await _credentialStore.GetByIdAsync(gitRepo.CredentialResourceId.Value);
+            if (credential is not null && !string.IsNullOrEmpty(credential.Value))
+            {
+                await ctx.EmitLogAsync($"Using credential '{credential.Name}' for git push");
+
+                var askpassPath = Path.Combine(Path.GetTempPath(), "shipright-askpass.sh");
+                var wslAskpassPath = OperatingSystem.IsWindows()
+                    ? ProcessRunner.ToWslPath(askpassPath)
+                    : askpassPath;
+                if (!File.Exists(askpassPath))
+                {
+                    await File.WriteAllTextAsync(askpassPath,
+                        "#!/bin/sh\ncase \"$1\" in\n  *Username*) echo \"${GIT_USERNAME}\" ;;\n  *Password*) echo \"${GIT_PAT}\" ;;\nesac\n");
+                    if (OperatingSystem.IsWindows())
+                        await _runner.RunAsync("wsl", ["chmod", "+x", wslAskpassPath], null, null, null, linkedCts.Token);
+                    else
+                        await _runner.RunAsync("chmod", ["+x", askpassPath], null, null, null, linkedCts.Token);
+                }
+
+                envOverrides["GIT_ASKPASS"] = wslAskpassPath;
+                envOverrides["GIT_USERNAME"] = credential.HostPattern is not null && credential.HostPattern.Contains("dev.azure.com") ? "nyingi" : "token";
+                envOverrides["GIT_PAT"] = credential.Value;
+            }
+        }
+
+        var pushTask = _runner.RunAsync("git", args, null,
+            line => ctx.EmitLogAsync(line, "git"),
+            null, linkedCts.Token, envOverrides, timeout);
+
+        var heartbeatTask = Task.Run(async () =>
+        {
+            try
+            {
+                while (!linkedCts.Token.IsCancellationRequested)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(30), linkedCts.Token);
+                    await ctx.EmitLogAsync($"[git] git push still running…");
+                }
+            }
+            catch (OperationCanceledException) { }
+        }, CancellationToken.None);
+
+        ProcessResult result;
+        try
+        {
+            result = await pushTask;
+        }
+        finally
+        {
+            linkedCts.Cancel();
+            try { await heartbeatTask; } catch { }
+        }
+
+        ctx.Record.CredentialHost = null;
+
+        var progress = ExtractProgress(result.StdErr);
+        if (progress is not null)
+            await ctx.EmitLogAsync($"[git] {progress}");
+
+        var elapsed = result.Duration.TotalSeconds;
+        if (result.Success)
+        {
+            await ctx.EmitLogAsync($"✓ git push completed in {elapsed:F0}s");
+        }
+        else
+        {
+            await ctx.EmitLogAsync($"✗ git push failed after {elapsed:F0}s");
+
+            // Detect auth failure — extract host URL from git error
+            var authMatch = Regex.Match(result.StdErr + result.StdOut,
+                @"could not read (Username|Password) for '(.+?)'", RegexOptions.IgnoreCase);
+            if (authMatch.Success)
+            {
+                ctx.Record.CredentialHost = authMatch.Groups[2].Value;
+                await ctx.EmitLogAsync($"Authentication required for {ctx.Record.CredentialHost}");
+            }
+        }
+
+        return result;
+    }
+
+    private static string? ExtractProgress(string stderr)
+    {
+        if (string.IsNullOrEmpty(stderr) || !stderr.Contains('\r'))
+            return null;
+        var segments = stderr.Split('\r', StringSplitOptions.RemoveEmptyEntries);
+        foreach (var seg in segments.Reverse())
+        {
+            var trimmed = seg.Trim();
+            if (!string.IsNullOrEmpty(trimmed) && !trimmed.Contains("fatal:"))
+                return trimmed;
+        }
+        return null;
     }
 }

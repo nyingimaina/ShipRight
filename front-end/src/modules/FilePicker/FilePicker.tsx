@@ -15,10 +15,12 @@ interface Props {
   dirsOnly?: boolean;
   label?: string;
   sshConfig?: ISshConfig;
+  storageKey?: string;
 }
 
 const LOCAL_KEY = 'filePicker.lastLocalPath';
 const remoteKey = (host: string) => `filePicker.lastRemotePath:${host}`;
+const localKey = (storageKey?: string) => (storageKey ? `${LOCAL_KEY}:${storageKey}` : LOCAL_KEY);
 
 const COMMON_ICONS: Record<string, React.ReactNode> = {
   Home:      <RiHomeLine />,
@@ -59,7 +61,7 @@ function parseBreadcrumbs(path: string): { label: string; path: string }[] {
   ];
 }
 
-export default function FilePicker({ initialPath, onSelect, dirsOnly = false, label, sshConfig }: Props) {
+export default function FilePicker({ initialPath, onSelect, dirsOnly = false, label, sshConfig, storageKey }: Props) {
   const [listing, setListing] = useState<IFsListing | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,7 +83,7 @@ export default function FilePicker({ initialPath, onSelect, dirsOnly = false, la
         setListing(l);
         if (!selected) setSelected(l.path);
         if (sshConfig) localStorage.setItem(remoteKey(sshConfig.host), l.path);
-        else           localStorage.setItem(LOCAL_KEY, l.path);
+        else           localStorage.setItem(localKey(storageKey), l.path);
       })
       .catch(e => setError(e?.message ?? 'Failed to list directory'))
       .finally(() => setLoading(false));
@@ -90,7 +92,7 @@ export default function FilePicker({ initialPath, onSelect, dirsOnly = false, la
   useEffect(() => {
     const defaultPath = sshConfig
       ? (initialPath || localStorage.getItem(remoteKey(sshConfig.host)) || `/home/${sshConfig.user}`)
-      : (initialPath ?? localStorage.getItem(LOCAL_KEY) ?? '');
+      : (initialPath ?? localStorage.getItem(localKey(storageKey)) ?? '');
     navigate(defaultPath);
 
     if (!sshConfig) {

@@ -2,33 +2,41 @@ using System.Reflection;
 using System.Threading;
 using Avalonia;
 using Serilog;
+using ShipRight.RuntimeConfig;
 
 namespace ShipRight.Desktop;
 
 internal static class Program
 {
-    private const string MutexName = "ShipRight.Desktop";
     private static Mutex? _mutex;
 
     [STAThread]
     private static void Main(string[] args)
     {
-        _mutex = new Mutex(true, MutexName, out var isNew);
+        var profile = AppProfile.Resolve(
+            args,
+            Environment.GetEnvironmentVariable("SHIPRIGHT_PROFILE"),
+            Environment.GetEnvironmentVariable("SHIPRIGHT_PORT"),
+            Environment.GetEnvironmentVariable("SHIPRIGHT_DATA_DIR"),
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
+
+        _mutex = new Mutex(true, profile.MutexName, out var isNew);
         if (!isNew)
         {
             return;
         }
 
-        var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        Directory.CreateDirectory(profile.WebView2Directory);
+        Directory.CreateDirectory(profile.DesktopLogDirectory);
 
-        Environment.SetEnvironmentVariable("WEBVIEW2_USER_DATA_FOLDER",
-            Path.Combine(appData, "ShipRight", "WebView2"));
+        Environment.SetEnvironmentVariable("WEBVIEW2_USER_DATA_FOLDER", profile.WebView2Directory);
 
         Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Information()
             .WriteTo.Console()
             .WriteTo.File(
-                Path.Combine(appData, "ShipRight", "logs", "desktop-.log"),
+                Path.Combine(profile.DesktopLogDirectory, "desktop-.log"),
                 rollingInterval: RollingInterval.Day,
                 retainedFileCountLimit: 7)
             .CreateLogger();
@@ -44,7 +52,7 @@ internal static class Program
 
         try
         {
-            var serverManager = new Services.ServerProcessManager();
+            var serverManager = new Services.ServerProcessManager(profile);
             var notification = new Services.WindowsToastNotification();
             var notificationBridge = new Services.NotificationBridge(notification);
             BuildAvaloniaApp(serverManager, notificationBridge).StartWithClassicDesktopLifetime(args);

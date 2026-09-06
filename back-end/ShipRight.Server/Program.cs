@@ -1,6 +1,22 @@
 using System.Diagnostics;
+using System.IdentityModel.Tokens.Jwt;
+using System.Reflection;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
+using Dapper.Contrib.Extensions;
+using Jattac.Libs.Tempo;
+using Jattac.Libs.Tempo.Scheduling;
+using Microsoft.AspNetCore.Http.Json;
+using Microsoft.Extensions.Logging;
+using Rocket.Libraries.DatabaseIntegrator;
 using Serilog;
 using Serilog.Formatting.Json;
+using ShipRight.Database;
+using ShipRight.Database.Models;
+using ShipRight.Modules.Auth;
+using ShipRight.Modules.Auth.Middleware;
+using ShipRight.Modules.Auth.Models;
+using ShipRight.Modules.Auth.Services;
 using ShipRight.Modules.Builds;
 using ShipRight.Modules.Database;
 using ShipRight.Modules.Database.Providers;
@@ -8,18 +24,34 @@ using ShipRight.Modules.Filesystem;
 using ShipRight.Modules.Projects;
 using ShipRight.Modules.RepoMaintenance;
 using ShipRight.Modules.RemoteHost;
+using ShipRight.Modules.Resources;
+using ShipRight.Modules.Resources.Models;
+using ShipRight.Modules.Resources.Stores;
 using ShipRight.Modules.Scheduler;
 using ShipRight.Modules.WatchBranch;
 using ShipRight.Modules.Services;
 using ShipRight.Modules.Servers;
 using ShipRight.Modules.Ssh;
 using ShipRight.Modules.System;
+using ShipRight.Shared.CommandExecution;
 using ShipRight.Shared.Events;
 using ShipRight.Shared.ProcessRunner;
 using ShipRight.Shared.SshRunner;
 using ShipRight.Shared.Store;
+using ShipRight.Server;
+using ShipRight.RuntimeConfig;
 
-var dataDir = DataDirectory.Resolve();
+var profile = AppProfile.Resolve(
+    args,
+    Environment.GetEnvironmentVariable("SHIPRIGHT_PROFILE"),
+    Environment.GetEnvironmentVariable("SHIPRIGHT_PORT"),
+    Environment.GetEnvironmentVariable("SHIPRIGHT_DATA_DIR"),
+    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
+
+var dataDir = DataDirectory.Resolve(profile);
+var cloudMode = args.Contains("--cloud") || string.Equals(
+    Environment.GetEnvironmentVariable("SHIPRIGHT__MODE"), "cloud", StringComparison.OrdinalIgnoreCase);
 
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
@@ -38,44 +70,71 @@ Log.Logger = new LoggerConfiguration()
 try
 {
     var builder = WebApplication.CreateBuilder(args);
-    builder.WebHost.UseUrls("http://127.0.0.1:5200");
+
+    if (cloudMode)
+    {
+        builder.WebHost.UseUrls($"http://0.0.0.0:{profile.Port}");
+        Log.Information("Starting in CLOUD mode on port {Port}", profile.Port);
+    }
+    else
+    {
+        builder.WebHost.UseUrls($"http://127.0.0.1:{profile.Port}");
+        Log.Information("Starting in DESKTOP mode on port {Port}", profile.Port);
+    }
+
     builder.Host.UseSerilog();
 
     builder.Services.ConfigureHttpJsonOptions(o =>
         o.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
-    var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
-        ?? ["http://localhost:5200", "http://127.0.0.1:5200"];
+    var allowedOrigins = cloudMode
+        ? CloudConfiguration.ResolveAllowedOrigins(
+            builder.Configuration,
+            Environment.GetEnvironmentVariable("SHIPRIGHT__CORS_ORIGINS"))
+        : [$"http://localhost:{profile.Port}", $"http://127.0.0.1:{profile.Port}"];
+
+    if (cloudMode)
+    {
+        CloudConfiguration.ValidateProductionSettings(
+            Environment.GetEnvironmentVariable("SHIPRIGHT__DB_CONNECTION"),
+            Environment.GetEnvironmentVariable("SHIPRIGHT__JWT_KEY"),
+            Environment.GetEnvironmentVariable("SHIPRIGHT__ADMIN_EMAIL"),
+            Environment.GetEnvironmentVariable("SHIPRIGHT__ADMIN_PASSWORD"),
+            Environment.GetEnvironmentVariable("SHIPRIGHT__CORS_ORIGINS"));
+    }
 
     builder.Services.AddCors(options =>
         options.AddPolicy("ShipRightPolicy", policy =>
-            policy.WithOrigins(allowedOrigins)
-                  .AllowAnyHeader()
-                  .AllowAnyMethod()));
+        {
+            if (cloudMode)
+            {
+                policy.WithOrigins(allowedOrigins)
+                      .AllowAnyHeader()
+                      .AllowAnyMethod()
+                      .AllowCredentials();
+            }
+            else
+            {
+                policy.WithOrigins(allowedOrigins)
+                      .AllowAnyHeader()
+                      .AllowAnyMethod();
+            }
+        }));
 
-    builder.Services.AddSingleton<SqliteProjectStore>(_ => new SqliteProjectStore(dataDir));
-    builder.Services.AddSingleton<IProjectStore>(sp =>
-        new DockerCredentialPreservingProjectStore(sp.GetRequiredService<SqliteProjectStore>()));
-    builder.Services.AddSingleton<IBuildStore, JsonBuildStore>();
-    builder.Services.AddSingleton<BuildEventBus>();
-    builder.Services.AddSingleton<IProcessRunner, ProcessRunner>();
-    builder.Services.AddSingleton<KnownHostsStore>();
-    builder.Services.AddSingleton<ISshRunner, SshRunner>();
-    builder.Services.AddSingleton<BuildOrchestrator>();
-    builder.Services.AddSingleton<MariaDbProvider>();
-    builder.Services.AddSingleton<SqlServerProvider>();
-    builder.Services.AddSingleton<IDbProviderResolver>(sp => new DbProviderResolver(
-        sp.GetRequiredService<MariaDbProvider>(),
-        sp.GetRequiredService<SqlServerProvider>()));
-    builder.Services.AddSingleton<DatabaseOrchestrator>();
-    builder.Services.AddSingleton<IServerStore, JsonServerStore>();
-    builder.Services.AddSingleton<SshKeyStore>(_ => new SshKeyStore(dataDir));
-    builder.Services.AddSingleton<IRemoteHostProvider, LinuxSshProvider>();
-    builder.Services.AddSingleton<IMonitoringProvider, LinuxSshMonitoringProvider>();
-    builder.Services.AddSchedulerModule();
-    builder.Services.AddWatchBranchModule();
+    // ─── DI Registration ───────────────────────────────────────────
+
+    if (cloudMode)
+    {
+        CloudDiRegistrar.Register(builder.Services, builder.Configuration);
+    }
+    else
+    {
+        RegisterDesktopServices(builder.Services, dataDir);
+    }
 
     var app = builder.Build();
+
+    // ─── Middleware Pipeline ────────────────────────────────────────
 
     app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
     {
@@ -90,11 +149,25 @@ try
         });
     }));
 
+    if (cloudMode)
+    {
+        app.UseRateLimiter();
+        app.UseMiddleware<DatabaseTransactionMiddleware>();
+        app.UseMiddleware<JwtMiddleware>();
+    }
+
     app.UseCors("ShipRightPolicy");
     app.UseDefaultFiles();
     app.UseStaticFiles();
 
-    app.MapHealthRoutes();
+    // ─── Routes ────────────────────────────────────────────────────
+
+    if (cloudMode)
+    {
+        app.MapAuthRoutes();
+    }
+
+    app.MapHealthRoutes(profile, cloudMode ? AppMode.Cloud : AppMode.Desktop);
     app.MapSystemRoutes();
     app.MapFsRoutes();
     app.MapProjectRoutes();
@@ -105,18 +178,50 @@ try
     app.MapContainerLogRoutes();
     app.MapRepoMaintenanceRoutes();
     app.MapServerRoutes();
-    app.MapSchedulerRoutes();
+    if (cloudMode)
+    {
+        app.MapSchedulerCoreRoutes();
+        app.MapCloudSchedulerHistoryRoutes();
+    }
+    else
+    {
+        app.MapSchedulerRoutes();
+    }
     app.MapSshKeyRoutes();
     app.MapServerSshKeyRoutes();
-    app.MapWatchBranchRoutes();
+    if (cloudMode)
+    {
+        app.MapWatchBranchCoreRoutes();
+        app.MapCloudWatchBranchHistoryRoutes();
+    }
+    else
+    {
+        app.MapWatchBranchRoutes();
+    }
+    app.MapResourceRoutes();
+    app.MapPipelineRoutes();
 
     app.MapFallbackToFile("index.html");
+
+    // ─── Startup ───────────────────────────────────────────────────
+
+    if (cloudMode)
+    {
+        _ = app.Services.GetRequiredService<IPasswordResetEmailSender>();
+        var adminEmail = Environment.GetEnvironmentVariable("SHIPRIGHT__ADMIN_EMAIL");
+        var adminPassword = Environment.GetEnvironmentVariable("SHIPRIGHT__ADMIN_PASSWORD");
+        if (!string.IsNullOrEmpty(adminEmail) && !string.IsNullOrEmpty(adminPassword))
+        {
+            var setupService = app.Services.GetRequiredService<ISetupService>();
+            await setupService.EnsureAdminUserAsync(adminEmail, adminPassword);
+        }
+    }
 
     await app.Services.GetRequiredService<IBuildStore>().MarkInterruptedAsync();
 
     var projectCount = app.Services.GetRequiredService<IProjectStore>().Count;
     var buildCount   = app.Services.GetRequiredService<IBuildStore>().Count;
-    Log.Information("ShipRight {Version} starting on port {Port}", "2.10.0", 5200);
+    Log.Information("ShipRight starting on port {Port}", profile.Port);
     Log.Information("Data directory: {DataDir}", dataDir);
     Log.Information("{ProjectCount} projects, {BuildCount} builds loaded", projectCount, buildCount);
 
@@ -129,7 +234,7 @@ try
             await Task.Delay(1500);
             try
             {
-                Process.Start(new ProcessStartInfo("http://127.0.0.1:5200") { UseShellExecute = true });
+                Process.Start(new ProcessStartInfo($"http://127.0.0.1:{profile.Port}") { UseShellExecute = true });
             }
             catch (Exception ex)
             {
@@ -147,4 +252,53 @@ catch (Exception ex)
 finally
 {
     Log.CloseAndFlush();
+}
+
+// ─── Service Registration Methods ───────────────────────────────────
+
+static void RegisterDesktopServices(IServiceCollection services, string dataDir)
+{
+    services.AddSingleton<SqliteProjectStore>(_ => new SqliteProjectStore(dataDir));
+    services.AddSingleton<IProjectStore>(sp =>
+        new DockerCredentialPreservingProjectStore(sp.GetRequiredService<SqliteProjectStore>()));
+    services.AddSingleton<IBuildStore, SqliteBuildStore>();
+    services.AddSingleton<BuildEventBus>();
+    services.AddSingleton<IProcessRunner, ProcessRunner>();
+    services.AddSingleton<KnownHostsStore>();
+    services.AddSingleton<ISshRunner, SshRunner>();
+
+    // Command resolution layer (native / WSL / SSH)
+    services.AddSingleton<IExecutionTargetProvider, ExecutionTargetProvider>();
+    services.AddSingleton<IWslToolLocator>(sp => new WslToolLocator(sp.GetRequiredService<IProcessRunner>()));
+    services.AddSingleton(sp => CommandResolverRegistry.CreateDefault(sp.GetRequiredService<IWslToolLocator>()));
+    services.AddSingleton<ICommandExecutor>(sp => new CommandExecutor(
+        sp.GetRequiredService<IExecutionTargetProvider>(),
+        sp.GetRequiredService<CommandResolverRegistry>(),
+        sp.GetRequiredService<IProcessRunner>(),
+        sp.GetRequiredService<ISshRunner>()));
+    services.AddSingleton<AwsCliInstaller>();
+
+    services.AddSingleton<BuildOrchestrator>();
+    services.AddSingleton<MariaDbProvider>();
+    services.AddSingleton<SqlServerProvider>();
+    services.AddSingleton<IDbProviderResolver>(sp => new DbProviderResolver(
+        sp.GetRequiredService<MariaDbProvider>(),
+        sp.GetRequiredService<SqlServerProvider>()));
+    services.AddSingleton<DatabaseOrchestrator>();
+    services.AddSingleton<IServerStore, SqliteServerStore>();
+    services.AddSingleton<SshKeyStore>(_ => new SshKeyStore(dataDir));
+    services.AddSingleton<IRemoteHostProvider, LinuxSshProvider>();
+    services.AddSingleton<IMonitoringProvider, LinuxSshMonitoringProvider>();
+    services.AddSchedulerModule();
+    services.AddWatchBranchModule();
+    services.AddSingleton<IDockerRegistryResourceStore, SqliteDockerRegistryResourceStore>();
+    services.AddSingleton<IScriptResourceStore, SqliteScriptResourceStore>();
+    services.AddSingleton<ICredentialResourceStore, SqliteCredentialResourceStore>();
+    services.AddSingleton<IPipelineResourceStore, SqlitePipelineResourceStore>();
+    services.AddSingleton<IAwsProfileResourceStore, SqliteAwsProfileResourceStore>();
+    services.AddSingleton<IAwsCredentialsReader>(sp => new AwsCredentialsReader(
+        sp.GetService<IProcessRunner>()));
+    services.AddSingleton<AwsProfileValidator>();
+    services.AddSingleton<ResourceResolutionService>();
+    services.AddSingleton<ScriptExecutor>();
 }

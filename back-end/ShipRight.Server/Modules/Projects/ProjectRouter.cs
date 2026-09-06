@@ -189,6 +189,15 @@ public static class ProjectRouter
         var errors = new List<object>();
         void Err(string field, string msg) => errors.Add(Error(msg, field));
         bool IsLinux() => RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
+        bool freeform = p.Type == ProjectType.Freeform;
+
+        // For freeform projects, only require what the user opted into.
+        // A deployment server is needed when Deploy is selected or a database is configured.
+        bool needServer = !freeform || p.Features.Deploy || p.Database != null;
+        // Git repos are only forced for freeform when the Git component is selected.
+        bool needGit = (p.Services.Count > 0 && !freeform) || (freeform && p.Features.Git);
+        // WSL compose dir is needed when there are services (pipeline) or Docker is selected.
+        bool needWsl = p.Services.Count > 0 || (freeform && p.Features.Docker);
 
         // Name
         if (string.IsNullOrWhiteSpace(p.Name))
@@ -229,34 +238,31 @@ public static class ProjectRouter
             }
         }
 
-        // GitRepos (required only when services are present)
-        if (p.GitRepos.Count == 0 && p.Services.Count > 0)
+        // GitRepos (required only when the project needs them)
+        if (p.GitRepos.Count == 0 && needGit)
             Err("gitRepos", "At least one git repository is required.");
-        else
+        for (int i = 0; i < p.GitRepos.Count; i++)
         {
-            for (int i = 0; i < p.GitRepos.Count; i++)
+            var g = p.GitRepos[i];
+            string GF(string f) => $"gitRepos[{i}].{f}";
+
+            if (string.IsNullOrWhiteSpace(g.RepoPath))
+                Err(GF("repoPath"), "Git repository path is required.");
+            else
             {
-                var g = p.GitRepos[i];
-                string GF(string f) => $"gitRepos[{i}].{f}";
-
-                if (string.IsNullOrWhiteSpace(g.RepoPath))
-                    Err(GF("repoPath"), "Git repository path is required.");
-                else
-                {
-                    ValidatePath(g.RepoPath, GF("repoPath"), errors);
-                    if (IsLinux() && !Directory.Exists(Path.Combine(g.RepoPath, ".git")))
-                        Err(GF("repoPath"), $"No .git directory found at '{g.RepoPath}'.");
-                }
-
-                if (string.IsNullOrWhiteSpace(g.DeployBranch))
-                    Err(GF("deployBranch"), "Deploy branch is required.");
-                else if (g.DeployBranch.Length > 100)
-                    Err(GF("deployBranch"), "Deploy branch must be 100 characters or fewer.");
+                ValidatePath(g.RepoPath, GF("repoPath"), errors);
+                if (IsLinux() && !Directory.Exists(Path.Combine(g.RepoPath, ".git")))
+                    Err(GF("repoPath"), $"No .git directory found at '{g.RepoPath}'.");
             }
+
+            if (string.IsNullOrWhiteSpace(g.DeployBranch))
+                Err(GF("deployBranch"), "Deploy branch is required.");
+            else if (g.DeployBranch.Length > 100)
+                Err(GF("deployBranch"), "Deploy branch must be 100 characters or fewer.");
         }
 
         // WSL (required only when services are present)
-        if (p.Services.Count > 0)
+        if (needWsl)
         {
             if (string.IsNullOrWhiteSpace(p.Wsl.WorkingDir))
                 Err("wsl.workingDir", "WSL working directory is required.");
@@ -265,42 +271,45 @@ public static class ProjectRouter
         }
 
         // Server
-        if (string.IsNullOrWhiteSpace(p.Server.Host)) Err("server.host", "Host is required.");
-        else if (p.Server.Host.Length > 253) Err("server.host", "Host must be 253 characters or fewer.");
-
-        if (string.IsNullOrWhiteSpace(p.Server.Username)) Err("server.username", "Username is required.");
-        else if (p.Server.Username.Contains(' ')) Err("server.username", "Username must not contain spaces.");
-        else if (p.Server.Username.Length > 100) Err("server.username", "Username must be 100 characters or fewer.");
-
-        if (string.IsNullOrWhiteSpace(p.Server.SshKeyPath))
-            Err("server.sshKeyPath", "SSH key path is required.");
-        else
+        if (needServer)
         {
-            ValidatePath(p.Server.SshKeyPath, "server.sshKeyPath", errors, mustExistAsFile: IsLinux());
-            if (IsLinux() && File.Exists(p.Server.SshKeyPath))
+            if (string.IsNullOrWhiteSpace(p.Server.Host)) Err("server.host", "Host is required.");
+            else if (p.Server.Host.Length > 253) Err("server.host", "Host must be 253 characters or fewer.");
+
+            if (string.IsNullOrWhiteSpace(p.Server.Username)) Err("server.username", "Username is required.");
+            else if (p.Server.Username.Contains(' ')) Err("server.username", "Username must not contain spaces.");
+            else if (p.Server.Username.Length > 100) Err("server.username", "Username must be 100 characters or fewer.");
+
+            if (string.IsNullOrWhiteSpace(p.Server.SshKeyPath))
+                Err("server.sshKeyPath", "SSH key path is required.");
+            else
             {
-                try
+                ValidatePath(p.Server.SshKeyPath, "server.sshKeyPath", errors, mustExistAsFile: IsLinux());
+                if (IsLinux() && File.Exists(p.Server.SshKeyPath))
                 {
-                    var mode = File.GetUnixFileMode(p.Server.SshKeyPath);
-                    if ((mode & (UnixFileMode.GroupRead | UnixFileMode.OtherRead)) != 0)
-                        errors.Add(new { isError = false, field = "server.sshKeyPath",
-                            message = $"SSH key has insecure permissions. Run: chmod 600 {p.Server.SshKeyPath}" });
+                    try
+                    {
+                        var mode = File.GetUnixFileMode(p.Server.SshKeyPath);
+                        if ((mode & (UnixFileMode.GroupRead | UnixFileMode.OtherRead)) != 0)
+                            errors.Add(new { isError = false, field = "server.sshKeyPath",
+                                message = $"SSH key has insecure permissions. Run: chmod 600 {p.Server.SshKeyPath}" });
+                    }
+                    catch { /* Permissions check unavailable */ }
                 }
-                catch { /* Permissions check unavailable */ }
             }
-        }
 
-        if (string.IsNullOrWhiteSpace(p.Server.RemoteWorkingDir))
-            Err("server.remoteWorkingDir", "Remote working directory is required.");
-        else if (!p.Server.RemoteWorkingDir.StartsWith('/'))
-            Err("server.remoteWorkingDir", "Remote working directory must start with '/'.");
+            if (string.IsNullOrWhiteSpace(p.Server.RemoteWorkingDir))
+                Err("server.remoteWorkingDir", "Remote working directory is required.");
+            else if (!p.Server.RemoteWorkingDir.StartsWith('/'))
+                Err("server.remoteWorkingDir", "Remote working directory must start with '/'.");
 
-        if (!string.IsNullOrWhiteSpace(p.Server.RebuildScript))
-        {
-            if (p.Server.RebuildScript.Contains('/') || p.Server.RebuildScript.Contains('\\'))
-                Err("server.rebuildScript", "Rebuild script name must not contain path separators.");
-            else if (p.Server.RebuildScript.Length > 100)
-                Err("server.rebuildScript", "Rebuild script name must be 100 characters or fewer.");
+            if (!string.IsNullOrWhiteSpace(p.Server.RebuildScript))
+            {
+                if (p.Server.RebuildScript.Contains('/') || p.Server.RebuildScript.Contains('\\'))
+                    Err("server.rebuildScript", "Rebuild script name must not contain path separators.");
+                else if (p.Server.RebuildScript.Length > 100)
+                    Err("server.rebuildScript", "Rebuild script name must be 100 characters or fewer.");
+            }
         }
 
         return errors;

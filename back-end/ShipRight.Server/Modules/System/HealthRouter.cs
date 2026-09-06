@@ -2,9 +2,23 @@ using System.Reflection;
 using System.Text.Json;
 using ShipRight.Modules.Builds;
 using ShipRight.Modules.Projects;
+using ShipRight.RuntimeConfig;
 using ShipRight.Shared.Store;
 
 namespace ShipRight.Modules.System;
+
+public enum AppMode { Desktop, Cloud }
+
+public record HealthPayload(
+    string Status,
+    string ServerVersion,
+    string WebVersion,
+    DateTime StartedAt,
+    int Port,
+    string DataDirectory,
+    int ProjectCount,
+    int BuildCount,
+    AppMode Mode);
 
 public static class HealthRouter
 {
@@ -13,6 +27,8 @@ public static class HealthRouter
         .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
         .InformationalVersion);
     private static readonly string? WebVersion = ResolveWebVersion();
+    private static int _port = AppProfile.DefaultPort;
+    private static string? _dataDir;
 
     private static string? ResolveWebVersion()
     {
@@ -38,19 +54,40 @@ public static class HealthRouter
         return plusIdx >= 0 ? version[..plusIdx] : version;
     }
 
-    public static void MapHealthRoutes(this WebApplication app)
+    public static void MapHealthRoutes(this WebApplication app, AppProfile profile, AppMode mode)
     {
+        _port = profile.Port;
+        _dataDir = DataDirectory.Resolve(profile);
+
         app.MapGet("/api/health", (IProjectStore projectStore, IBuildStore buildStore) =>
-            Results.Ok(new
-            {
-                status = "healthy",
-                serverVersion = ServerVersion ?? "0.0.0",
-                webVersion = WebVersion ?? "0.0.0",
-                startedAt = StartedAt,
-                port = 5200,
-                dataDirectory = DataDirectory.Resolve(),
-                projectCount = projectStore.Count,
-                buildCount = buildStore.Count
-            }));
+            Results.Ok(BuildHealthPayload(
+                mode,
+                ServerVersion ?? "0.0.0",
+                WebVersion ?? "0.0.0",
+                _dataDir,
+                projectStore.Count,
+                buildStore.Count,
+                StartedAt)));
     }
+
+    public static void MapHealthRoutes(this WebApplication app, AppProfile profile)
+        => MapHealthRoutes(app, profile, AppMode.Desktop);
+
+    public static HealthPayload BuildHealthPayload(
+        AppMode mode,
+        string serverVersion,
+        string webVersion,
+        string dataDirectory,
+        int projectCount,
+        int buildCount,
+        DateTime startedAt) => new(
+        "healthy",
+        serverVersion,
+        webVersion,
+        startedAt,
+        _port,
+        dataDirectory,
+        projectCount,
+        buildCount,
+        mode);
 }

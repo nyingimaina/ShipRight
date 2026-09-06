@@ -5,6 +5,7 @@ using System.Net.NetworkInformation;
 using System.Reflection;
 using System.Text.Json;
 using Serilog;
+using ShipRight.RuntimeConfig;
 
 namespace ShipRight.Desktop.Services;
 
@@ -12,20 +13,25 @@ public class ServerProcessManager : IDisposable
 {
     public enum VersionDrift { None, Minor, Major, Unknown }
 
+    public enum ServerTrust { Compatible, VersionDrift, ExternalHost }
+
+    private readonly AppProfile _profile;
     private Process? _serverProcess;
     private readonly HttpClient _httpClient;
     private bool _disposed;
 
-    public const int Port = 5200;
+    public int Port => _profile.Port;
 
     public string? ServerVersion { get; private set; }
     public string? WebVersion { get; private set; }
+    public string? DataDirectory { get; private set; }
 
-    public ServerProcessManager()
+    public ServerProcessManager(AppProfile profile)
     {
+        _profile = profile;
         _httpClient = new HttpClient
         {
-            BaseAddress = new Uri($"http://127.0.0.1:{Port}"),
+            BaseAddress = new Uri($"http://127.0.0.1:{_profile.Port}"),
             Timeout = TimeSpan.FromSeconds(3)
         };
     }
@@ -34,9 +40,16 @@ public class ServerProcessManager : IDisposable
     {
         if (await HealthCheckAsync())
         {
-            await FetchHealthAsync();
-            Log.Information("Server already running (v{Version}), connecting", ServerVersion);
-            return;
+            await FetchServerHealthAsync();
+            var trust = EvaluateExistingServer(GetDesktopVersion(), ServerVersion, DataDirectory);
+            if (trust == ServerTrust.Compatible)
+            {
+                Log.Information("Server already running (v{Version}), connecting", ServerVersion);
+                return;
+            }
+
+            throw new InvalidOperationException(
+                BuildConflictMessage(trust, GetDesktopVersion(), ServerVersion, WebVersion, DataDirectory, Port));
         }
 
         if (IsPortInUse(Port))
@@ -58,6 +71,8 @@ public class ServerProcessManager : IDisposable
             UseShellExecute = false,
             WorkingDirectory = Path.GetDirectoryName(serverPath)
         };
+        startInfo.ArgumentList.Add($"--port={_profile.Port}");
+        startInfo.ArgumentList.Add($"--data-dir={_profile.DataDirectory}");
 
         _serverProcess = new Process
         {
@@ -79,7 +94,7 @@ public class ServerProcessManager : IDisposable
             throw new TimeoutException("Server failed to become ready within the expected time.");
         }
 
-        await FetchHealthAsync();
+        await FetchServerHealthAsync();
         Log.Information("Server ready (v{Version}, PID: {Pid})", ServerVersion, _serverProcess.Id);
     }
 
@@ -192,6 +207,29 @@ public class ServerProcessManager : IDisposable
         }
     }
 
+    private async Task FetchServerHealthAsync()
+    {
+        try
+        {
+            var response = await _httpClient.GetAsync("/api/health");
+            if (!response.IsSuccessStatusCode) return;
+
+            var json = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("serverVersion", out var sv))
+                ServerVersion = sv.GetString() ?? "unknown";
+            if (root.TryGetProperty("webVersion", out var wv))
+                WebVersion = wv.GetString();
+            if (root.TryGetProperty("dataDirectory", out var dd))
+                DataDirectory = dd.GetString();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to fetch health info from server");
+        }
+    }
+
     public string GetDesktopVersion()
     {
         var version = Assembly.GetEntryAssembly()?
@@ -211,6 +249,53 @@ public class ServerProcessManager : IDisposable
         if (dv.Major != sv.Major) return VersionDrift.Major;
         if (dv.Minor != sv.Minor) return VersionDrift.Minor;
         return VersionDrift.None;
+    }
+
+    internal static ServerTrust EvaluateExistingServer(string? desktopVersion, string? serverVersion, string? dataDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(serverVersion) || string.IsNullOrWhiteSpace(dataDirectory))
+            return ServerTrust.ExternalHost;
+
+        if (!IsWindowsDataDirectory(dataDirectory))
+            return ServerTrust.ExternalHost;
+
+        return CheckVersionDrift(desktopVersion, serverVersion) switch
+        {
+            VersionDrift.None => ServerTrust.Compatible,
+            VersionDrift.Unknown => ServerTrust.ExternalHost,
+            _ => ServerTrust.VersionDrift,
+        };
+    }
+
+    private static bool IsWindowsDataDirectory(string dataDirectory)
+    {
+        if (dataDirectory.StartsWith("/", StringComparison.Ordinal))
+            return false;
+
+        if (dataDirectory.IndexOf("wsl.localhost", StringComparison.OrdinalIgnoreCase) >= 0)
+            return false;
+
+        if (dataDirectory.Length >= 2 && dataDirectory[1] == ':' && char.IsLetter(dataDirectory[0]))
+            return true;
+
+        return dataDirectory.StartsWith(@"\\", StringComparison.Ordinal);
+    }
+
+    internal static string BuildConflictMessage(
+        ServerTrust trust, string? desktopVersion, string? serverVersion, string? webVersion, string? dataDirectory,
+        int port = AppProfile.DefaultPort)
+    {
+        return trust switch
+        {
+            ServerTrust.ExternalHost =>
+                $"Port {port} is occupied by another ShipRight instance (server v{serverVersion}, " +
+                $"front-end v{webVersion}, data at {dataDirectory}) that is not this installation. " +
+                "Stop that instance (e.g. a stale server inside WSL/Docker) and retry.",
+            ServerTrust.VersionDrift =>
+                $"Port {port} is occupied by an older ShipRight server (v{serverVersion}) but this app is " +
+                $"v{desktopVersion}. Stop the old server and retry.",
+            _ => $"Port {port} is occupied by another process. Free it and retry.",
+        };
     }
 
     private static string? LocateServerBinary()
