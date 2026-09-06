@@ -1,4 +1,5 @@
 using ShipRight.Modules.Resources.Models;
+using ShipRight.Modules.Resources.Stores;
 using ShipRight.Shared.ProcessRunner;
 
 namespace ShipRight.Modules.Resources;
@@ -21,6 +22,7 @@ public sealed class RegistryAuthProviderRegistry
     public IRegistryAuthProvider GetFor(string registryHost, DockerRegistryResource? resource) =>
         _providers.FirstOrDefault(p => p.Supports(registryHost, resource)) ?? _providers[0];
 
-    public static RegistryAuthProviderRegistry CreateDefault(IProcessRunner? runner = null) =>
-        new([new DockerHubAuthProvider(), new AwsEcrAuthProvider(runner), new StandardAuthProvider()]);
+    public static RegistryAuthProviderRegistry CreateDefault(
+        IProcessRunner? runner = null, IAwsProfileResourceStore? profileStore = null) =>
+        new([new DockerHubAuthProvider(), new AwsEcrAuthProvider(runner, profileStore), new StandardAuthProvider()]);
 }

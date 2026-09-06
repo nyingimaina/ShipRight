@@ -19,6 +19,7 @@ using ShipRight.Modules.Servers;
 using ShipRight.Modules.Services;
 using ShipRight.Modules.Ssh;
 using ShipRight.Modules.WatchBranch;
+using ShipRight.Shared.CommandExecution;
 using ShipRight.Shared.Events;
 using ShipRight.Shared.ProcessRunner;
 using ShipRight.Shared.SshRunner;
@@ -74,6 +75,7 @@ public static class CloudDiRegistrar
         services.AddSingleton<IScriptResourceStore, MariaDbScriptResourceStore>();
         services.AddSingleton<ICredentialResourceStore, MariaDbCredentialResourceStore>();
         services.AddSingleton<IPipelineResourceStore, MariaDbPipelineResourceStore>();
+        services.AddSingleton<IAwsProfileResourceStore, MariaDbAwsProfileResourceStore>();
         services.AddSingleton<MariaDbBackupHistoryStore>();
         services.AddSingleton<MariaDbWatchBranchHistoryStore>();
 
@@ -82,6 +84,18 @@ public static class CloudDiRegistrar
         services.AddSingleton<IProcessRunner, ProcessRunner>();
         services.AddSingleton<KnownHostsStore>();
         services.AddSingleton<ISshRunner, SshRunner>();
+
+        // Command resolution layer (native / WSL / SSH)
+        services.AddSingleton<IExecutionTargetProvider, ExecutionTargetProvider>();
+        services.AddSingleton<IWslToolLocator>(sp => new WslToolLocator(sp.GetRequiredService<IProcessRunner>()));
+        services.AddSingleton(sp => CommandResolverRegistry.CreateDefault(sp.GetRequiredService<IWslToolLocator>()));
+        services.AddSingleton<ICommandExecutor>(sp => new CommandExecutor(
+            sp.GetRequiredService<IExecutionTargetProvider>(),
+            sp.GetRequiredService<CommandResolverRegistry>(),
+            sp.GetRequiredService<IProcessRunner>(),
+            sp.GetRequiredService<ISshRunner>()));
+        services.AddSingleton<AwsCliInstaller>();
+
         services.AddSingleton<BuildOrchestrator>();
         services.AddSingleton<MariaDbProvider>();
         services.AddSingleton<SqlServerProvider>();
@@ -92,6 +106,9 @@ public static class CloudDiRegistrar
         services.AddSingleton<IRemoteHostProvider, LinuxSshProvider>();
         services.AddSingleton<IMonitoringProvider, LinuxSshMonitoringProvider>();
         services.AddSingleton<SshKeyStore>(_ => new SshKeyStore(DataDirectory.Resolve()));
+        services.AddSingleton<IAwsCredentialsReader>(sp => new AwsCredentialsReader(
+            sp.GetService<IProcessRunner>()));
+        services.AddSingleton<AwsProfileValidator>();
         services.AddSingleton<ResourceResolutionService>();
         services.AddSingleton<ScriptExecutor>();
 

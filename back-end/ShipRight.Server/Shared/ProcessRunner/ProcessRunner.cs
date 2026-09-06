@@ -13,7 +13,7 @@ public class ProcessRunner : IProcessRunner
 
     // On Windows, certain executables run inside WSL — the executables don't exist on the Windows PATH
     private static readonly bool _isWindows = OperatingSystem.IsWindows();
-    private static readonly HashSet<string> _wslCommands = ["docker", "git", "bash", "sh", "python3"];
+    private static readonly HashSet<string> _wslCommands = ["docker", "git", "bash", "sh", "python3", "aws"];
 
     public static (string Executable, string[] Args) ResolveForPlatform(string executable, string[] args)
     {

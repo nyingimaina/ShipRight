@@ -12,11 +12,12 @@ public class ResourceResolutionService
     private readonly RegistryAuthProviderRegistry _providers;
 
     public ResourceResolutionService(IDockerRegistryResourceStore registryStore, IScriptResourceStore scriptStore,
-        RegistryAuthProviderRegistry? providers = null, IProcessRunner? processRunner = null)
+        RegistryAuthProviderRegistry? providers = null, IProcessRunner? processRunner = null,
+        IAwsProfileResourceStore? profileStore = null)
     {
         _registryStore = registryStore;
         _scriptStore = scriptStore;
-        _providers = providers ?? RegistryAuthProviderRegistry.CreateDefault(processRunner);
+        _providers = providers ?? RegistryAuthProviderRegistry.CreateDefault(processRunner, profileStore);
     }
 
     public async Task<DockerRegistryResource?> ResolveRegistryResourceAsync(ServiceConfig service)

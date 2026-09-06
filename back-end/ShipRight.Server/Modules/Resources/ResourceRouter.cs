@@ -187,6 +187,90 @@ public static class ResourceRouter
             return Results.Ok(new { message = "Credential resource deleted." });
         });
 
+        // ── AWS Profile Resources ────────────────────────────────────────────
+
+        app.MapGet("/api/resources/aws-profiles", async (IAwsProfileResourceStore store) =>
+        {
+            var resources = await store.GetAllAsync();
+            return Results.Ok(resources);
+        });
+
+        app.MapGet("/api/resources/aws-profiles/available", async (IAwsCredentialsReader reader) =>
+        {
+            var source = await reader.ReadAsync();
+            return Results.Ok(source);
+        });
+
+        app.MapPost("/api/resources/aws-profiles/validate", async (
+            AwsProfileValidateRequest request, AwsProfileValidator validator) =>
+        {
+            var result = await validator.ValidateAsync(request.ProfileId, request.Profile);
+            return Results.Ok(result);
+        });
+
+        app.MapPost("/api/resources/aws-profiles/install-cli", async (
+            AwsCliInstallRequest? request, AwsCliInstaller installer) =>
+        {
+            var result = await installer.RunAsync(request);
+            return Results.Ok(result);
+        });
+
+        app.MapGet("/api/resources/aws-profiles/{id}", async (Guid id, IAwsProfileResourceStore store) =>
+        {
+            var resource = await store.GetByIdAsync(id);
+            return resource is not null ? Results.Ok(resource) : Results.NotFound();
+        });
+
+        app.MapPost("/api/resources/aws-profiles", async (AwsProfileResource resource, IAwsProfileResourceStore store) =>
+        {
+            if (string.IsNullOrWhiteSpace(resource.Name))
+                return Results.BadRequest(new { isError = true, field = "name", message = "Name is required." });
+            if (string.IsNullOrWhiteSpace(resource.ProfileName) && !resource.UsesExplicitKeys)
+                return Results.BadRequest(new
+                {
+                    isError = true,
+                    field = "profile",
+                    message = "Provide a named AWS profile or explicit access keys.",
+                });
+
+            var saved = resource with { Id = resource.Id == Guid.Empty ? Guid.NewGuid() : resource.Id };
+            await store.SaveAsync(saved);
+            return Results.Created($"/api/resources/aws-profiles/{saved.Id}", saved);
+        });
+
+        app.MapPut("/api/resources/aws-profiles/{id}", async (Guid id, AwsProfileResource resource, IAwsProfileResourceStore store) =>
+        {
+            var existing = await store.GetByIdAsync(id);
+            if (existing is null)
+                return Results.NotFound(new { isError = true, message = $"AWS profile resource '{id}' not found." });
+
+            var saved = resource with { Id = id, ModifiedAt = DateTime.UtcNow };
+            await store.SaveAsync(saved);
+            return Results.Ok(saved);
+        });
+
+        app.MapDelete("/api/resources/aws-profiles/{id}", async (
+            Guid id, IAwsProfileResourceStore store, IDockerRegistryResourceStore registryStore) =>
+        {
+            var existing = await store.GetByIdAsync(id);
+            if (existing is null)
+                return Results.NotFound(new { isError = true, message = $"AWS profile resource '{id}' not found." });
+
+            var registries = await registryStore.GetAllAsync();
+            var referencingRegistries = registries.Where(r => r.AwsProfileResourceId == id).ToList();
+
+            if (referencingRegistries.Count > 0)
+                return Results.Conflict(new
+                {
+                    isError = true,
+                    message = $"AWS profile is referenced by {referencingRegistries.Count} registry resource(s). Unlink them first.",
+                    registryIds = referencingRegistries.Select(r => r.Id).ToList(),
+                });
+
+            await store.DeleteAsync(id);
+            return Results.Ok(new { message = "AWS profile resource deleted." });
+        });
+
         // ── Reference check (utility) ────────────────────────────────────────
 
         app.MapGet("/api/resources/used-by/{id}", async (

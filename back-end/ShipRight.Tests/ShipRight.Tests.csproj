@@ -20,6 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\ShipRight.RuntimeConfig\ShipRight.RuntimeConfig.csproj" />
     <ProjectReference Include="..\ShipRight.Server\ShipRight.Server.csproj" />
     <ProjectReference Include="..\ShipRight.Desktop\ShipRight.Desktop.csproj" />
   </ItemGroup>

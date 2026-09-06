@@ -44,7 +44,7 @@ public partial class MainWindow : Window
                 }
 
                 SetStatus("Connecting to dashboard...", showProgress: true);
-                var dashboardUrl = new Uri("http://127.0.0.1:5200");
+                var dashboardUrl = new Uri($"http://127.0.0.1:{_serverManager.Port}");
                 var available = await _probe.ProbeAsync(TimeSpan.FromSeconds(5), dashboardUrl);
                 SetStatus(available ? "Connected" : "Opening in browser...", showProgress: false);
                 if (!available)
@@ -114,7 +114,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            Browser.Source = new Uri("http://127.0.0.1:5200");
+            Browser.Source = new Uri($"http://127.0.0.1:{_serverManager.Port}");
         }
         catch (Exception ex)
         {
@@ -122,11 +122,11 @@ public partial class MainWindow : Window
         }
     }
 
-    public static void OpenBrowser()
+    private void OpenBrowser()
     {
         try
         {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("http://127.0.0.1:5200") { UseShellExecute = true });
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo($"http://127.0.0.1:{_serverManager.Port}") { UseShellExecute = true });
         }
         catch (Exception ex)
         {
@@ -148,7 +148,7 @@ public partial class MainWindow : Window
         var sv = _serverManager.ServerVersion ?? "unknown";
         var wv = _serverManager.WebVersion ?? "unknown";
         var wv2 = GetWebView2Version();
-        var port = Services.ServerProcessManager.Port;
+        var port = _serverManager.Port;
 
         var dialog = new Window
         {

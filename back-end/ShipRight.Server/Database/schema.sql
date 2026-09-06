@@ -168,6 +168,18 @@ CREATE TABLE PipelineResource (
     CONSTRAINT fk_pipeline_company FOREIGN KEY (CompanyId) REFERENCES Company(Id)
 ) ENGINE=InnoDB;
 
+CREATE TABLE AwsProfileResource (
+    Id          CHAR(36)     NOT NULL PRIMARY KEY,
+    CompanyId   CHAR(36)     NOT NULL,
+    Name        VARCHAR(255) NOT NULL,
+    Data        LONGTEXT     NOT NULL,
+    Created     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    Modified    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    Deleted     BOOLEAN      NOT NULL DEFAULT FALSE,
+    KEY idx_aws_profile_company (CompanyId),
+    CONSTRAINT fk_aws_profile_company FOREIGN KEY (CompanyId) REFERENCES Company(Id)
+) ENGINE=InnoDB;
+
 -- ============================================================================
 -- Scheduler / Watch Branch / SSH Tables (structured columns)
 -- ============================================================================

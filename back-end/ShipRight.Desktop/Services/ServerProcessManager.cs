@@ -5,6 +5,7 @@ using System.Net.NetworkInformation;
 using System.Reflection;
 using System.Text.Json;
 using Serilog;
+using ShipRight.RuntimeConfig;
 
 namespace ShipRight.Desktop.Services;
 
@@ -14,21 +15,23 @@ public class ServerProcessManager : IDisposable
 
     public enum ServerTrust { Compatible, VersionDrift, ExternalHost }
 
+    private readonly AppProfile _profile;
     private Process? _serverProcess;
     private readonly HttpClient _httpClient;
     private bool _disposed;
 
-    public const int Port = 5200;
+    public int Port => _profile.Port;
 
     public string? ServerVersion { get; private set; }
     public string? WebVersion { get; private set; }
     public string? DataDirectory { get; private set; }
 
-    public ServerProcessManager()
+    public ServerProcessManager(AppProfile profile)
     {
+        _profile = profile;
         _httpClient = new HttpClient
         {
-            BaseAddress = new Uri($"http://127.0.0.1:{Port}"),
+            BaseAddress = new Uri($"http://127.0.0.1:{_profile.Port}"),
             Timeout = TimeSpan.FromSeconds(3)
         };
     }
@@ -46,7 +49,7 @@ public class ServerProcessManager : IDisposable
             }
 
             throw new InvalidOperationException(
-                BuildConflictMessage(trust, GetDesktopVersion(), ServerVersion, WebVersion, DataDirectory));
+                BuildConflictMessage(trust, GetDesktopVersion(), ServerVersion, WebVersion, DataDirectory, Port));
         }
 
         if (IsPortInUse(Port))
@@ -68,6 +71,8 @@ public class ServerProcessManager : IDisposable
             UseShellExecute = false,
             WorkingDirectory = Path.GetDirectoryName(serverPath)
         };
+        startInfo.ArgumentList.Add($"--port={_profile.Port}");
+        startInfo.ArgumentList.Add($"--data-dir={_profile.DataDirectory}");
 
         _serverProcess = new Process
         {
@@ -277,18 +282,19 @@ public class ServerProcessManager : IDisposable
     }
 
     internal static string BuildConflictMessage(
-        ServerTrust trust, string? desktopVersion, string? serverVersion, string? webVersion, string? dataDirectory)
+        ServerTrust trust, string? desktopVersion, string? serverVersion, string? webVersion, string? dataDirectory,
+        int port = AppProfile.DefaultPort)
     {
         return trust switch
         {
             ServerTrust.ExternalHost =>
-                $"Port {Port} is occupied by another ShipRight instance (server v{serverVersion}, " +
+                $"Port {port} is occupied by another ShipRight instance (server v{serverVersion}, " +
                 $"front-end v{webVersion}, data at {dataDirectory}) that is not this installation. " +
                 "Stop that instance (e.g. a stale server inside WSL/Docker) and retry.",
             ServerTrust.VersionDrift =>
-                $"Port {Port} is occupied by an older ShipRight server (v{serverVersion}) but this app is " +
+                $"Port {port} is occupied by an older ShipRight server (v{serverVersion}) but this app is " +
                 $"v{desktopVersion}. Stop the old server and retry.",
-            _ => $"Port {Port} is occupied by another process. Free it and retry.",
+            _ => $"Port {port} is occupied by another process. Free it and retry.",
         };
     }
 

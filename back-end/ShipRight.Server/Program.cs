@@ -33,13 +33,23 @@ using ShipRight.Modules.Services;
 using ShipRight.Modules.Servers;
 using ShipRight.Modules.Ssh;
 using ShipRight.Modules.System;
+using ShipRight.Shared.CommandExecution;
 using ShipRight.Shared.Events;
 using ShipRight.Shared.ProcessRunner;
 using ShipRight.Shared.SshRunner;
 using ShipRight.Shared.Store;
 using ShipRight.Server;
+using ShipRight.RuntimeConfig;
 
-var dataDir = DataDirectory.Resolve();
+var profile = AppProfile.Resolve(
+    args,
+    Environment.GetEnvironmentVariable("SHIPRIGHT_PROFILE"),
+    Environment.GetEnvironmentVariable("SHIPRIGHT_PORT"),
+    Environment.GetEnvironmentVariable("SHIPRIGHT_DATA_DIR"),
+    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
+
+var dataDir = DataDirectory.Resolve(profile);
 var cloudMode = args.Contains("--cloud") || string.Equals(
     Environment.GetEnvironmentVariable("SHIPRIGHT__MODE"), "cloud", StringComparison.OrdinalIgnoreCase);
 
@@ -63,13 +73,13 @@ try
 
     if (cloudMode)
     {
-        builder.WebHost.UseUrls("http://0.0.0.0:5200");
-        Log.Information("Starting in CLOUD mode");
+        builder.WebHost.UseUrls($"http://0.0.0.0:{profile.Port}");
+        Log.Information("Starting in CLOUD mode on port {Port}", profile.Port);
     }
     else
     {
-        builder.WebHost.UseUrls("http://127.0.0.1:5200");
-        Log.Information("Starting in DESKTOP mode");
+        builder.WebHost.UseUrls($"http://127.0.0.1:{profile.Port}");
+        Log.Information("Starting in DESKTOP mode on port {Port}", profile.Port);
     }
 
     builder.Host.UseSerilog();
@@ -81,7 +91,7 @@ try
         ? CloudConfiguration.ResolveAllowedOrigins(
             builder.Configuration,
             Environment.GetEnvironmentVariable("SHIPRIGHT__CORS_ORIGINS"))
-        : ["http://localhost:5200", "http://127.0.0.1:5200"];
+        : [$"http://localhost:{profile.Port}", $"http://127.0.0.1:{profile.Port}"];
 
     if (cloudMode)
     {
@@ -157,7 +167,7 @@ try
         app.MapAuthRoutes();
     }
 
-    app.MapHealthRoutes(cloudMode ? AppMode.Cloud : AppMode.Desktop);
+    app.MapHealthRoutes(profile, cloudMode ? AppMode.Cloud : AppMode.Desktop);
     app.MapSystemRoutes();
     app.MapFsRoutes();
     app.MapProjectRoutes();
@@ -211,7 +221,7 @@ try
 
     var projectCount = app.Services.GetRequiredService<IProjectStore>().Count;
     var buildCount   = app.Services.GetRequiredService<IBuildStore>().Count;
-    Log.Information("ShipRight starting on port {Port}", 5200);
+    Log.Information("ShipRight starting on port {Port}", profile.Port);
     Log.Information("Data directory: {DataDir}", dataDir);
     Log.Information("{ProjectCount} projects, {BuildCount} builds loaded", projectCount, buildCount);
 
@@ -224,7 +234,7 @@ try
             await Task.Delay(1500);
             try
             {
-                Process.Start(new ProcessStartInfo("http://127.0.0.1:5200") { UseShellExecute = true });
+                Process.Start(new ProcessStartInfo($"http://127.0.0.1:{profile.Port}") { UseShellExecute = true });
             }
             catch (Exception ex)
             {
@@ -256,6 +266,18 @@ static void RegisterDesktopServices(IServiceCollection services, string dataDir)
     services.AddSingleton<IProcessRunner, ProcessRunner>();
     services.AddSingleton<KnownHostsStore>();
     services.AddSingleton<ISshRunner, SshRunner>();
+
+    // Command resolution layer (native / WSL / SSH)
+    services.AddSingleton<IExecutionTargetProvider, ExecutionTargetProvider>();
+    services.AddSingleton<IWslToolLocator>(sp => new WslToolLocator(sp.GetRequiredService<IProcessRunner>()));
+    services.AddSingleton(sp => CommandResolverRegistry.CreateDefault(sp.GetRequiredService<IWslToolLocator>()));
+    services.AddSingleton<ICommandExecutor>(sp => new CommandExecutor(
+        sp.GetRequiredService<IExecutionTargetProvider>(),
+        sp.GetRequiredService<CommandResolverRegistry>(),
+        sp.GetRequiredService<IProcessRunner>(),
+        sp.GetRequiredService<ISshRunner>()));
+    services.AddSingleton<AwsCliInstaller>();
+
     services.AddSingleton<BuildOrchestrator>();
     services.AddSingleton<MariaDbProvider>();
     services.AddSingleton<SqlServerProvider>();
@@ -273,6 +295,10 @@ static void RegisterDesktopServices(IServiceCollection services, string dataDir)
     services.AddSingleton<IScriptResourceStore, SqliteScriptResourceStore>();
     services.AddSingleton<ICredentialResourceStore, SqliteCredentialResourceStore>();
     services.AddSingleton<IPipelineResourceStore, SqlitePipelineResourceStore>();
+    services.AddSingleton<IAwsProfileResourceStore, SqliteAwsProfileResourceStore>();
+    services.AddSingleton<IAwsCredentialsReader>(sp => new AwsCredentialsReader(
+        sp.GetService<IProcessRunner>()));
+    services.AddSingleton<AwsProfileValidator>();
     services.AddSingleton<ResourceResolutionService>();
     services.AddSingleton<ScriptExecutor>();
 }

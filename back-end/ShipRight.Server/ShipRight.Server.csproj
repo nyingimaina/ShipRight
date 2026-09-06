@@ -13,6 +13,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\ShipRight.RuntimeConfig\ShipRight.RuntimeConfig.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Dapper.Contrib" Version="2.0.78" />
     <PackageReference Include="Jattac.Libs.Tempo" Version="1.3.0" />
     <PackageReference Include="Jattac.Libraries.QBuilder" Version="9.2.3" />

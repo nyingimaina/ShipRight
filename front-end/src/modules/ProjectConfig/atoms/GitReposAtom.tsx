@@ -18,6 +18,7 @@ export default function GitReposAtom({ repos, credentials, errors, onReposChange
   const [creatingFor, setCreatingFor] = useState<number | null>(null);
   const [newName, setNewName] = useState('');
   const [newValue, setNewValue] = useState('');
+  const [filterTag, setFilterTag] = useState<string>('');
 
   const addRepo = () => {
     if (repos.length < 10) onReposChange([...repos, emptyGitRepoDraft()]);
@@ -38,6 +39,11 @@ export default function GitReposAtom({ repos, credentials, errors, onReposChange
       toast.error('Failed to create credential');
     }
   };
+
+  const allTags = Array.from(new Set(credentials.flatMap(c => c.tags ?? []))).sort();
+  const visibleCredentials = filterTag
+    ? credentials.filter(c => (c.tags ?? []).includes(filterTag))
+    : credentials;
 
   return (
     <div className={styles.section}>
@@ -102,17 +108,26 @@ export default function GitReposAtom({ repos, credentials, errors, onReposChange
                 </div>
               </div>
             ) : (
-              <div style={{ display: 'flex', gap: 4, width: '100%' }}>
-                <select value={repo.credentialResourceId ?? ''}
-                  onChange={e => updateRepo(i, { credentialResourceId: e.target.value || undefined })}
-                  style={{ flex: 1, background: '#131D30', color: '#F0F2F5', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, padding: '6px 10px', fontSize: 13 }}>
-                  <option value="">— None —</option>
-                  {credentials.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-                <ZestButton onClick={() => setCreatingFor(i)}
-                  zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}>+ New</ZestButton>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, width: '100%' }}>
+                <div style={{ display: 'flex', gap: 4, width: '100%' }}>
+                  <select value={repo.credentialResourceId ?? ''}
+                    onChange={e => updateRepo(i, { credentialResourceId: e.target.value || undefined })}
+                    style={{ flex: 1, background: '#131D30', color: '#F0F2F5', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, padding: '6px 10px', fontSize: 13 }}>
+                    <option value="">— None —</option>
+                    {visibleCredentials.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                  <ZestButton onClick={() => setCreatingFor(i)}
+                    zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}>+ New</ZestButton>
+                </div>
+                {allTags.length > 0 && (
+                  <select value={filterTag} onChange={e => setFilterTag(e.target.value)}
+                    style={{ background: '#131D30', color: '#A8B8CC', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, padding: '3px 8px', fontSize: 12 }}>
+                    <option value="">All credentials</option>
+                    {allTags.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                )}
               </div>
             )}
           </div>

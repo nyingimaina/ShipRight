@@ -1,4 +1,6 @@
 using ShipRight.Modules.Resources.Models;
+using ShipRight.Modules.Resources.Stores;
+using ShipRight.Shared.CommandExecution;
 using ShipRight.Shared.ProcessRunner;
 
 namespace ShipRight.Modules.Resources;
@@ -12,11 +14,14 @@ namespace ShipRight.Modules.Resources;
 public sealed class AwsEcrAuthProvider : IRegistryAuthProvider
 {
     private static readonly TimeSpan EcrLoginTimeout = TimeSpan.FromSeconds(60);
-    private readonly IProcessRunner? _runner;
+    private readonly ICommandExecutor? _executor;
+    private readonly IAwsProfileResourceStore? _profileStore;
 
-    public AwsEcrAuthProvider(IProcessRunner? runner)
+    public AwsEcrAuthProvider(
+        IProcessRunner? runner, IAwsProfileResourceStore? profileStore = null, ICommandExecutor? executor = null)
     {
-        _runner = runner;
+        _profileStore = profileStore;
+        _executor = executor ?? (runner is null ? null : CommandExecutor.PassthroughLocal(runner));
     }
 
     public bool IsDockerHub => false;
@@ -29,7 +34,7 @@ public sealed class AwsEcrAuthProvider : IRegistryAuthProvider
         string registryHost, DockerRegistryResource? resource,
         string fallbackUsername, string fallbackPassword)
     {
-        if (_runner is null)
+        if (_executor is null)
             throw new InvalidOperationException("No process runner is available for ECR token retrieval.");
 
         var region = !string.IsNullOrEmpty(resource?.AwsRegion)
@@ -40,10 +45,13 @@ public sealed class AwsEcrAuthProvider : IRegistryAuthProvider
             throw new InvalidOperationException(
                 $"Unable to determine the AWS region for ECR registry '{registryHost}'. Set AwsRegion on the registry resource.");
 
-        var result = await _runner.RunAsync("aws",
+        var envOverride = await ResolveProfileEnvironmentAsync(resource);
+
+        var result = await _executor.RunAsync("aws",
             ["ecr", "get-login-password", "--region", region],
             null,
-            timeout: EcrLoginTimeout);
+            timeout: EcrLoginTimeout,
+            envOverride: envOverride);
 
         if (!result.Success)
         {
@@ -69,5 +77,35 @@ public sealed class AwsEcrAuthProvider : IRegistryAuthProvider
         if (parts.Length >= 4 && parts[1] == "dkr" && parts[2] == "ecr")
             return parts[3];
         return string.Empty;
+    }
+
+    private async Task<IReadOnlyDictionary<string, string>?> ResolveProfileEnvironmentAsync(
+        DockerRegistryResource? resource)
+    {
+        if (resource?.AwsProfileResourceId is not Guid profileId || _profileStore is null)
+            return null;
+
+        var profile = await _profileStore.GetByIdAsync(profileId);
+        if (profile is null)
+            throw new InvalidOperationException(
+                $"AWS profile resource '{profileId}' referenced by registry '{resource.Name}' no longer exists.");
+
+        var env = new Dictionary<string, string>();
+        if (!string.IsNullOrEmpty(profile.DefaultRegion))
+            env["AWS_DEFAULT_REGION"] = profile.DefaultRegion;
+
+        if (profile.UsesExplicitKeys)
+        {
+            env["AWS_ACCESS_KEY_ID"] = profile.AccessKeyId;
+            env["AWS_SECRET_ACCESS_KEY"] = profile.SecretAccessKey;
+            if (!string.IsNullOrEmpty(profile.SessionToken))
+                env["AWS_SESSION_TOKEN"] = profile.SessionToken;
+        }
+        else if (!string.IsNullOrEmpty(profile.ProfileName))
+        {
+            env["AWS_PROFILE"] = profile.ProfileName;
+        }
+
+        return env;
     }
 }

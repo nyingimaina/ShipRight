@@ -26,4 +26,8 @@
     <InternalsVisibleTo Include="ShipRight.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\ShipRight.RuntimeConfig\ShipRight.RuntimeConfig.csproj" />
+  </ItemGroup>
+
 </Project>

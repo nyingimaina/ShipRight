@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text.Json;
 using ShipRight.Modules.Builds;
 using ShipRight.Modules.Projects;
+using ShipRight.RuntimeConfig;
 using ShipRight.Shared.Store;
 
 namespace ShipRight.Modules.System;
@@ -26,6 +27,8 @@ public static class HealthRouter
         .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
         .InformationalVersion);
     private static readonly string? WebVersion = ResolveWebVersion();
+    private static int _port = AppProfile.DefaultPort;
+    private static string? _dataDir;
 
     private static string? ResolveWebVersion()
     {
@@ -51,21 +54,24 @@ public static class HealthRouter
         return plusIdx >= 0 ? version[..plusIdx] : version;
     }
 
-    public static void MapHealthRoutes(this WebApplication app)
-        => MapHealthRoutes(app, AppMode.Desktop);
-
-    public static void MapHealthRoutes(this WebApplication app, AppMode mode)
+    public static void MapHealthRoutes(this WebApplication app, AppProfile profile, AppMode mode)
     {
+        _port = profile.Port;
+        _dataDir = DataDirectory.Resolve(profile);
+
         app.MapGet("/api/health", (IProjectStore projectStore, IBuildStore buildStore) =>
             Results.Ok(BuildHealthPayload(
                 mode,
                 ServerVersion ?? "0.0.0",
                 WebVersion ?? "0.0.0",
-                DataDirectory.Resolve(),
+                _dataDir,
                 projectStore.Count,
                 buildStore.Count,
                 StartedAt)));
     }
+
+    public static void MapHealthRoutes(this WebApplication app, AppProfile profile)
+        => MapHealthRoutes(app, profile, AppMode.Desktop);
 
     public static HealthPayload BuildHealthPayload(
         AppMode mode,
@@ -79,7 +85,7 @@ public static class HealthRouter
         serverVersion,
         webVersion,
         startedAt,
-        5200,
+        _port,
         dataDirectory,
         projectCount,
         buildCount,

@@ -6,7 +6,7 @@ import FilePicker from '@/modules/FilePicker/FilePicker';
 import { api } from '@/shared/ApiService';
 import { getBrowserTimeZone } from '@/shared/timeZone';
 import { IDetectedProjectConfig } from '@/shared/types/IDetectedProject';
-import { IProject, IProjectInput, IApiError, IServerConfig, ICredentialResource } from '@/shared/types/IProject';
+import { IProject, IProjectInput, IApiError, IServerConfig, ICredentialResource, IDockerRegistryResource } from '@/shared/types/IProject';
 import ProjectIdentityAtom, { IdentityState } from './atoms/ProjectIdentityAtom';
 import GitReposAtom from './atoms/GitReposAtom';
 import ServicesAtom from './atoms/ServicesAtom';
@@ -93,6 +93,7 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [globalServers, setGlobalServers] = useState<IServerConfig[]>([]);
   const [credentials, setCredentials] = useState<ICredentialResource[]>([]);
+  const [registries, setRegistries] = useState<IDockerRegistryResource[]>([]);
   const [dbRefreshToken, setDbRefreshToken] = useState(0);
 
   const patch = (p: Partial<ProjectDraft>) => setDraft(prev => ({ ...prev, ...p }));
@@ -130,10 +131,11 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
     }
   };
 
-  // Fetch global servers + credentials for selectors
+  // Fetch global servers + credentials + registries for selectors
   useEffect(() => {
     api.get<IServerConfig[]>('/api/servers').then(setGlobalServers).catch(() => {});
     api.get<ICredentialResource[]>('/api/resources/credentials').then(setCredentials).catch(() => {});
+    api.get<IDockerRegistryResource[]>('/api/resources/registries').then(setRegistries).catch(() => {});
   }, []);
 
   const mapApiErrors = (errs: unknown): Record<string, string> => {
@@ -158,6 +160,7 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
     services: draft.services.map(({ version, ...s }) => ({
       ...s,
       dockerRegistry: s.dockerRegistry || undefined,
+      dockerRegistryResourceId: s.dockerRegistryResourceId || undefined,
       dockerUsername: s.dockerUsername || undefined,
       dockerPassword: s.dockerPassword || undefined,
     })),
@@ -361,8 +364,10 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
           <ServicesAtom
             services={draft.services}
             composeNames={detected ? Array.from(new Set(detected.services.map(s => s.composeServiceName).filter(Boolean) as string[])) : []}
+            registries={registries}
             errors={errors}
             onServicesChange={services => patch({ services })}
+            onRegistriesChange={setRegistries}
           />
 
           <WslAtom

@@ -111,12 +111,31 @@ export interface IApiError {
   message: string;
 }
 
+export type RegistryAuthType = 'Password' | 'AwsEcr';
+
 export interface IDockerRegistryResource {
   id: string;
   name: string;
   registry: string;
   username: string;
   password?: string;
+  authType?: RegistryAuthType;
+  awsRegion?: string;
+  awsProfileResourceId?: string;
+  tags?: string[];
+  createdAt: string;
+  modifiedAt: string;
+}
+
+export interface IAwsProfileResource {
+  id: string;
+  name: string;
+  profileName?: string;
+  accessKeyId?: string;
+  secretAccessKey?: string;
+  sessionToken?: string;
+  defaultRegion?: string;
+  tags?: string[];
   createdAt: string;
   modifiedAt: string;
 }
@@ -141,6 +160,7 @@ export interface ICredentialResource {
   value?: string;
   hostPattern?: string;
   projectId?: string;
+  tags?: string[];
   createdAt: string;
   modifiedAt: string;
 }
@@ -164,4 +184,62 @@ export interface IPipelineResource {
   variables?: Record<string, string>;
   createdAt: string;
   modifiedAt: string;
+}
+
+export type AwsCredentialsSourceKind = 'None' | 'Wsl' | 'Native';
+
+export interface IAwsCredentialProfile {
+  name: string;
+  region: string | null;
+  hasKeys: boolean;
+  unsupportedReason: string | null;
+}
+
+export interface IAwsCredentialsSource {
+  kind: AwsCredentialsSourceKind;
+  fileExists: boolean;
+  profiles: IAwsCredentialProfile[];
+}
+
+export type AwsValidationErrorCode =
+  | 'aws-cli-missing'
+  | 'profile-not-found'
+  | 'invalid-credentials'
+  | 'expired-token'
+  | 'denied'
+  | 'network'
+  | 'no-region'
+  | 'empty-output';
+
+export interface IAwsCliInstallRequest {
+  strategy?: 'auto' | 'pip';
+}
+
+export interface IAwsCliInstallResult {
+  success: boolean;
+  message: string;
+  requiresManualInstall?: boolean;
+  command?: string | null;
+  outputTail?: string | null;
+}
+
+export interface IAwsProfileValidationResult {
+  ok: boolean;
+  accountId?: string | null;
+  arn?: string | null;
+  errorCode?: AwsValidationErrorCode | null;
+  message?: string | null;
+  hint?: string | null;
+}
+
+export interface IAwsProfileValidateRequest {
+  profileId?: string | null;
+  profile?: {
+    name?: string;
+    profileName?: string;
+    accessKeyId?: string;
+    secretAccessKey?: string;
+    sessionToken?: string;
+    defaultRegion?: string;
+  } | null;
 }

@@ -6,6 +6,7 @@ export interface ServiceDraft {
   buildContextPath: string;
   dockerImageName: string;
   dockerRegistry: string;
+  dockerRegistryResourceId?: string;
   composeServiceName: string;
   dockerUsername: string;
   dockerPassword: string;
