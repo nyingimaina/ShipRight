@@ -229,6 +229,8 @@ public class BuildOrchestrator
                     throw new InvalidOperationException($"Git repo not found: {repo.RepoPath}");
             }
 
+            await ValidateComposeRepoAsync(ctx, record, project);
+
             await ctx.EmitLogAsync("Checking Docker daemon…");
             var dockerInfo = await _runner.RunAsync("docker", ["info"], null);
             if (!dockerInfo.Success)
@@ -1557,6 +1559,94 @@ public class BuildOrchestrator
                 $"wslpath -w failed for '{linuxPath}': {r.StdErr}. " +
                 "Ensure WSL is installed and the path is valid.");
         return r.StdOut.Trim();
+    }
+
+    /// <summary>
+    /// Fail-fast guard for the WSL compose dir (Step 5 needs a git clone of the
+    /// compose repo there). A genuinely empty dir on a first build is an invitation
+    /// to clone: pause and offer `git clone` (origin derived from GitRepos[0])
+    /// instead of failing the build after the version commit/tag/push already ran.
+    /// </summary>
+    private async Task ValidateComposeRepoAsync(PipelineContext ctx, BuildRecord record, ProjectConfig project)
+    {
+        // EnvCompose injects tags at deploy time — no compose-repo git round-trip.
+        if (project.Server.DeployMode == DeployMode.EnvCompose) return;
+
+        var wslDir = project.Wsl.WorkingDir;
+        if (string.IsNullOrWhiteSpace(wslDir))
+            throw new InvalidOperationException(
+                "Compose repo check failed: no WSL working directory is configured. " +
+                "Set WSL WorkingDir to the folder that holds docker-compose.yml (or should hold its git clone).");
+
+        await ctx.EmitLogAsync($"Checking compose repo: {wslDir}…", "shipright");
+        var probe = await _runner.RunAsync("git",
+            ["-C", wslDir, "rev-parse", "--is-inside-work-tree"], null,
+            line => ctx.EmitLogAsync(line, "git"));
+        if (probe.Success) return;
+
+        // Not (yet) a git repo. If the dir is empty/missing it's likely a first build — offer to clone.
+        var localDir = await ResolveWslPathAsync(wslDir);
+        var isEmptyOrMissing = !Directory.Exists(localDir) || Directory.GetFileSystemEntries(localDir).Length == 0;
+
+        if (isEmptyOrMissing)
+        {
+            var origin = await TryGetComposeOriginAsync(ctx, project);
+            if (origin is null)
+                throw new InvalidOperationException(
+                    $"Compose repo check failed: '{wslDir}' is empty on first run but no compose-repo origin could " +
+                    "be derived (the project has no Git Repos, or none has an 'origin' remote).\n" +
+                    "Fix it by cloning the compose repo there yourself, e.g.: git clone <compose-repo-url> " + wslDir);
+
+            await ctx.PauseAsync("compose_clone_missing",
+                $"WSL compose directory '{wslDir}' is empty — looks like a first build for this project.\n" +
+                $"Clone the compose repo from '{origin}' into it?",
+                ["clone", "abort"]);
+            await _buildStore.SaveAsync(record);
+
+            var tcs = new TaskCompletionSource<RespondRequest>();
+            _pauseWaiters[record.Id] = tcs;
+            var response = await tcs.Task;
+
+            if (response.Choice != "clone")
+                throw new InvalidOperationException(
+                    "Compose repo unavailable: the clone was declined. " +
+                    "Fix it by cloning the compose repo into the WSL working directory, e.g.: " +
+                    $"git clone {origin} {wslDir}");
+
+            await ctx.EmitLogAsync($"Cloning compose repo into {wslDir}…", "git");
+            var clone = await _runner.RunAsync("git",
+                ["clone", origin, wslDir], null,
+                line => ctx.EmitLogAsync(line, "git"));
+            if (!clone.Success)
+                throw new InvalidOperationException($"git clone compose repo failed:\n{clone.StdErr}");
+
+            await ctx.EmitLogAsync("Compose repo cloned.", "shipright");
+            record.Status = BuildStatus.Running;
+            return;
+        }
+
+        // Non-empty directory that is not a git work tree → fail fast instead of mutating anything.
+        throw new InvalidOperationException(
+            $"Compose repo check failed: '{wslDir}' is not a git repository:\n{probe.StdErr.Trim()}\n" +
+            "GitScript/GitCompose deploys pull docker-compose.yml from this repo before building. " +
+            "Fix it by cloning the compose repo there, e.g.: git clone <compose-repo-url> " + wslDir);
+    }
+
+    /// <summary>
+    /// Returns the git origin URL of the first project Git Repo, or null when unusable.
+    /// </summary>
+    private async Task<string?> TryGetComposeOriginAsync(PipelineContext ctx, ProjectConfig project)
+    {
+        var repo = project.GitRepos.FirstOrDefault();
+        if (repo is null || string.IsNullOrWhiteSpace(repo.RepoPath)) return null;
+
+        await ctx.EmitLogAsync($"Reading origin of {repo.RepoPath}…", "git");
+        var r = await _runner.RunAsync("git",
+            ["-C", repo.RepoPath, "remote", "get-url", "origin"], null,
+            line => ctx.EmitLogAsync(line, "git"));
+        if (!r.Success) return null;
+        var url = r.StdOut.Trim();
+        return string.IsNullOrWhiteSpace(url) ? null : url;
     }
 
     /// <summary>

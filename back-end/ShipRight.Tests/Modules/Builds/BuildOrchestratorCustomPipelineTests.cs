@@ -866,6 +866,212 @@ public class BuildOrchestratorCustomPipelineTests
         Assert.Fail("Build never reached the paused state.");
     }
 
+    private async Task RespondToPauseAsync(string buildId, string reason, string choice, Dictionary<string, string>? data)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (DateTime.UtcNow < deadline)
+        {
+            var record = await _buildStore.GetByIdAsync(buildId);
+            if (record is not null && record.Status == BuildStatus.Paused)
+            {
+                var handled = await _orchestrator.RespondAsync(buildId, new RespondRequest(reason, choice, data));
+                Assert.IsTrue(handled, "RespondAsync should find the pending pause.");
+                return;
+            }
+            await Task.Delay(50);
+        }
+        Assert.Fail("Build never reached the paused state.");
+    }
+
+    // ── Compose-repo guard (default pipeline) ────────────────────────────────
+    // PreconditionCheck must fail fast BEFORE any git mutation when the WSL compose
+    // dir is unusable — unless it's a first run (empty dir + known origin), where the
+    // pipeline pauses and offers to `git clone` the compose repo into the WSL dir.
+
+    [TestMethod]
+    public async Task DefaultPipeline_EmptyComposeDir_WithOrigin_CloneOnConfirm()
+    {
+        var id = "proj-comp-clone";
+        var gitRepoPath = Path.Combine(Path.GetTempPath(), $"{id}_gitrepo");
+        var wslDir = Path.Combine(Path.GetTempPath(), $"{id}_wsl");
+        Directory.CreateDirectory(gitRepoPath);
+        Directory.CreateDirectory(wslDir);
+
+        var project = new ProjectConfig
+        {
+            Id = id,
+            Name = $"Project {id}",
+            Services =
+            [
+                new()
+                {
+                    Name = "api",
+                    VersionFilePath = Path.Combine(Path.GetTempPath(), $"{id}_version.txt"),
+                    BuildContextPath = Path.Combine(Path.GetTempPath(), $"{id}_build"),
+                    DockerImageName = $"{id}/api",
+                },
+            ],
+            GitRepos = [new() { RepoPath = gitRepoPath, DeployBranch = "master" }],
+            Wsl = new() { WorkingDir = wslDir },
+            Server = new() { Host = "localhost", Username = "test", SshKeyPath = "", RemoteWorkingDir = "/app", DeployMode = DeployMode.GitScript },
+        };
+        File.WriteAllText(project.Services[0].VersionFilePath, "1.0.0");
+        Directory.CreateDirectory(project.Services[0].BuildContextPath);
+        _projectStore.Add(project);
+
+        // WSL dir is a fresh, empty path; the app repo has a known origin; docker/buildkit fine.
+        const string origin = "https://github.com/nyingimaina/ShipRight.git";
+        _runner.SetResultFactory((exe, args) =>
+        {
+            if (Array.Exists(args, a => a == "--is-inside-work-tree"))
+                return new ProcessResult(1, "", "fatal: not a git repository (or any of the parent directories): .git", TimeSpan.Zero);
+            if (Array.Exists(args, a => a == "--abbrev-ref"))
+                return new ProcessResult(0, "master\n", "", TimeSpan.Zero);
+            if (Array.Exists(args, a => a == "get-url"))
+                return new ProcessResult(0, origin + "\n", "", TimeSpan.Zero);
+            return new ProcessResult(0, "", "", TimeSpan.Zero);
+        });
+
+        var record = await _orchestrator.StartAsync(new StartBuildRequest(id, [new("api", "1.1.0")]));
+        await RespondToPauseAsync(record.Id, "compose_clone_missing", "clone", null);
+        await WaitForStatusAsync(record.Id, BuildStatus.BuildFailed);
+
+        var saved = await _buildStore.GetByIdAsync(record.Id);
+        Assert.IsNotNull(saved);
+        Assert.AreEqual("ComposeRepoSync", saved.FailedStep,
+            $"After the user confirms the clone, the guard passes and the pipeline proceeds past PreconditionCheck. Status={saved.Status}, Error={saved.ErrorSummary}, Steps={string.Join(",", saved.SucceededSteps)}, Current={saved.CurrentStepName}");
+        StringAssert.Contains(saved.ErrorSummary ?? "", "docker-compose.yml not found");
+
+        var cloneCall = _runner.Calls.FirstOrDefault(c =>
+            c.Executable == "git" && Array.Exists(c.Args, a => a == "clone"));
+        Assert.IsNotNull(cloneCall, "A `git clone` must run when the user confirms the offer.");
+        CollectionAssert.AreEqual(new[] { "clone", origin, wslDir }, cloneCall!.Args);
+    }
+
+    [TestMethod]
+    public async Task DefaultPipeline_EmptyComposeDir_WithOrigin_AbortFailsInPreconditionCheck()
+    {
+        var id = "proj-comp-clone-abort";
+        var gitRepoPath = Path.Combine(Path.GetTempPath(), $"{id}_gitrepo");
+        var wslDir = Path.Combine(Path.GetTempPath(), $"{id}_wsl");
+        Directory.CreateDirectory(gitRepoPath);
+        Directory.CreateDirectory(wslDir);
+
+        var project = new ProjectConfig
+        {
+            Id = id,
+            Name = $"Project {id}",
+            Services =
+            [
+                new()
+                {
+                    Name = "api",
+                    VersionFilePath = Path.Combine(Path.GetTempPath(), $"{id}_version.txt"),
+                    BuildContextPath = Path.Combine(Path.GetTempPath(), $"{id}_build"),
+                    DockerImageName = $"{id}/api",
+                },
+            ],
+            GitRepos = [new() { RepoPath = gitRepoPath, DeployBranch = "master" }],
+            Wsl = new() { WorkingDir = wslDir },
+            Server = new() { Host = "localhost", Username = "test", SshKeyPath = "", RemoteWorkingDir = "/app", DeployMode = DeployMode.GitScript },
+        };
+        File.WriteAllText(project.Services[0].VersionFilePath, "1.0.0");
+        Directory.CreateDirectory(project.Services[0].BuildContextPath);
+        _projectStore.Add(project);
+
+        _runner.SetResultFactory((exe, args) =>
+        {
+            if (Array.Exists(args, a => a == "--is-inside-work-tree"))
+                return new ProcessResult(1, "", "fatal: not a git repository (or any of the parent directories): .git", TimeSpan.Zero);
+            return new ProcessResult(0, "https://github.com/nyingimaina/ShipRight.git\n", "", TimeSpan.Zero);
+        });
+
+        var record = await _orchestrator.StartAsync(new StartBuildRequest(id, [new("api", "1.1.0")]));
+        await RespondToPauseAsync(record.Id, "compose_clone_missing", "abort", null);
+        await WaitForStatusAsync(record.Id, BuildStatus.BuildFailed);
+
+        var saved = await _buildStore.GetByIdAsync(record.Id);
+        Assert.IsNotNull(saved);
+        Assert.AreEqual(BuildStatus.BuildFailed, saved.Status);
+        Assert.AreEqual("PreconditionCheck", saved.FailedStep,
+            "Declining the clone must abort the build in Step 1, before any commits/merges/tags are made.");
+        StringAssert.Contains(saved.ErrorSummary ?? "", "Compose repo");
+        Assert.IsFalse(_runner.Calls.Any(c =>
+            c.Executable == "git" && Array.Exists(c.Args, a => a == "clone")),
+            "No `git clone` may run when the user declines.");
+    }
+
+    [TestMethod]
+    public async Task DefaultPipeline_EmptyComposeDir_NoOrigin_FailsInPreconditionCheck()
+    {
+        var id = "proj-comp-guard-fail";
+        var project = CreateProject(id);
+        _projectStore.Add(project);
+
+        // WSL compose dir is empty (first run) but the project has no GitRepos → cannot derive an origin.
+        _runner.SetResultFactory((exe, args) =>
+            Array.Exists(args, a => a == "--is-inside-work-tree")
+                ? new ProcessResult(1, "", "fatal: not a git repository (or any of the parent directories): .git", TimeSpan.Zero)
+                : new ProcessResult(0, "ok", "", TimeSpan.Zero));
+
+        var record = await _orchestrator.StartAsync(new StartBuildRequest(id, [new("api", "1.1.0")]));
+        await WaitForBuildCompletion(record.Id);
+
+        var saved = await _buildStore.GetByIdAsync(record.Id);
+        Assert.IsNotNull(saved);
+        Assert.AreEqual(BuildStatus.BuildFailed, saved.Status);
+        Assert.AreEqual("PreconditionCheck", saved.FailedStep,
+            "An unusable compose repo must abort in Step 1, before any commits/merges/tags are made.");
+        StringAssert.Contains(saved.ErrorSummary ?? "", "Compose repo");
+        StringAssert.Contains(saved.ErrorSummary ?? "", "git clone");
+    }
+
+    [TestMethod]
+    public async Task DefaultPipeline_EnvCompose_SkipsComposeRepoGuard()
+    {
+        var id = "proj-comp-guard-env";
+        var project = CreateProject(id) with
+        {
+            Server = new()
+            {
+                Host = "localhost", Username = "test", SshKeyPath = "",
+                RemoteWorkingDir = "/app", DeployMode = DeployMode.EnvCompose,
+            },
+        };
+        _projectStore.Add(project);
+        _runner.SetDefaultResult(new ProcessResult(0, "ok", "", TimeSpan.Zero));
+
+        var record = await _orchestrator.StartAsync(new StartBuildRequest(id, [new("api", "1.1.0")]));
+        await WaitForBuildCompletion(record.Id);
+
+        var saved = await _buildStore.GetByIdAsync(record.Id);
+        Assert.IsNotNull(saved);
+        Assert.AreEqual(BuildStatus.ImageBuilt, saved.Status,
+            "EnvCompose injects tags at deploy time — the compose-repo guard must not fire.");
+    }
+
+    [TestMethod]
+    public async Task DefaultPipeline_ComposeDirIsGitRepo_PassesGuardAndFailsLaterAtComposeFile()
+    {
+        var id = "proj-comp-guard-pass";
+        var project = CreateProject(id);
+        _projectStore.Add(project);
+
+        // Everything succeeds — including git rev-parse — so the guard passes.
+        _runner.SetDefaultResult(new ProcessResult(0, "ok", "", TimeSpan.Zero));
+
+        var record = await _orchestrator.StartAsync(new StartBuildRequest(id, [new("api", "1.1.0")]));
+        await WaitForBuildCompletion(record.Id);
+
+        var saved = await _buildStore.GetByIdAsync(record.Id);
+        Assert.IsNotNull(saved);
+        Assert.AreNotEqual("PreconditionCheck", saved.FailedStep,
+            "Guard must not fire when the compose dir is a git repo.");
+        Assert.AreEqual("ComposeRepoSync", saved.FailedStep,
+            "Without a docker-compose.yml in the WSL dir, the failure surfaces at Step 5 with a clear message.");
+        StringAssert.Contains(saved.ErrorSummary ?? "", "docker-compose.yml not found");
+    }
+
     private static ProjectConfig CreateProject(string id)
     {
         var versionFile = Path.Combine(Path.GetTempPath(), $"{id}_version.txt");

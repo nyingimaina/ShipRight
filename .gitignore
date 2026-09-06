@@ -40,5 +40,15 @@ coverage/
 publish/
 installer/
 
-# Backend wwwroot (regenerated from front-end/out/ during build)
-back-end/ShipRight.Server/wwwroot/_next/
+# AI-tooling local state / per-machine overrides (never ship these)
+.claude/
+.opencode/settings.local.json
+
+# Ad-hoc API-compat scratch project (back-end/temp-apicheck/)
+back-end/temp-apicheck/
+
+# Backend wwwroot (regenerated from front-end/out/ by build.sh — keep only the
+# static fallback placeholders, per BRS note 11)
+back-end/ShipRight.Server/wwwroot/*
+!back-end/ShipRight.Server/wwwroot/index.html
+!back-end/ShipRight.Server/wwwroot/404.html
