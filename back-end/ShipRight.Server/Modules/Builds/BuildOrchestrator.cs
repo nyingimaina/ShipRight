@@ -33,6 +33,8 @@ public class BuildOrchestrator
     private readonly IScriptResourceStore _scriptStore;
     private readonly ICredentialResourceStore _credentialStore;
     private readonly ScriptExecutor _scriptExecutor;
+    private readonly RegistryRotationCoordinator? _registryRotation;
+    private readonly BuildMachineImagePruner? _localImagePruner;
     // BRS #2: ConcurrentDictionary prevents data race between pipeline thread and HTTP handler
     private readonly ConcurrentDictionary<string, TaskCompletionSource<RespondRequest>> _pauseWaiters = new();
     private static readonly ConcurrentDictionary<string, CancellationTokenSource> _cancellations = new();
@@ -50,7 +52,8 @@ public class BuildOrchestrator
 
     public BuildOrchestrator(IBuildStore buildStore, IProjectStore projectStore,
         BuildEventBus bus, IProcessRunner runner, ISshRunner ssh, ResourceResolutionService resourceResolution,
-        IPipelineResourceStore pipelineStore, IScriptResourceStore scriptStore, ICredentialResourceStore credentialStore, ScriptExecutor scriptExecutor)
+        IPipelineResourceStore pipelineStore, IScriptResourceStore scriptStore, ICredentialResourceStore credentialStore, ScriptExecutor scriptExecutor,
+        RegistryRotationCoordinator? registryRotation = null, BuildMachineImagePruner? localImagePruner = null)
     {
         _buildStore = buildStore;
         _projectStore = projectStore;
@@ -62,6 +65,8 @@ public class BuildOrchestrator
         _scriptStore = scriptStore;
         _credentialStore = credentialStore;
         _scriptExecutor = scriptExecutor;
+        _registryRotation = registryRotation;
+        _localImagePruner = localImagePruner;
     }
 
     public async Task<BuildRecord> StartAsync(StartBuildRequest request)
@@ -644,6 +649,8 @@ public class BuildOrchestrator
             await ctx.StepStartedAsync(7, "BuildComplete");
             record.Status = BuildStatus.ImageBuilt;
             record.CompletedAt = DateTime.UtcNow;
+            // Local image cleanup for build-only runs (non-fatal)
+            await RunLocalPruneAsync(ctx, project, record, ct);
             await ctx.StepCompletedAsync(7, "BuildComplete");
             await SaveStep();
             await ctx.BuildCompletedAsync();
@@ -849,6 +856,9 @@ public class BuildOrchestrator
                     }
 
                     await ctx.EmitLogAsync($"Pushed {svc.DockerImageName}:{sv.NewVersion}", "shipright");
+
+                    // Registry retention + local image cleanup after each push (non-fatal)
+                    await RunRegistryRetentionAndLocalPruneAsync(ctx, project, record, svc, sv, ct);
                 }
             }
 
@@ -894,11 +904,53 @@ public class BuildOrchestrator
         }
     }
 
+    // Retention helpers — non-fatal, additive. Failures become log lines only.
+    private async Task RunLocalPruneAsync(PipelineContext ctx, ProjectConfig project, BuildRecord record, CancellationToken ct)
+    {
+        if (_localImagePruner is null) return;
+        foreach (var sv in record.Versions)
+        {
+            var svc = project.Services.FirstOrDefault(s => s.Name == sv.ServiceName);
+            if (svc is null) continue;
+            try
+            {
+                await _localImagePruner.PruneLocalImagesAsync(project, svc, sv,
+                    line => ctx.EmitLogAsync(line, "shipright"), ct);
+            }
+            catch (Exception ex)
+            {
+                await ctx.EmitLogAsync($"[ShipRight] Local prune failed for {svc.Name}: {ex.Message}", "shipright");
+            }
+        }
+    }
+
+    private async Task RunRegistryRetentionAndLocalPruneAsync(
+        PipelineContext ctx, ProjectConfig project, BuildRecord record,
+        ServiceConfig svc, ServiceVersion sv, CancellationToken ct)
+    {
+        if (_registryRotation is not null || _localImagePruner is not null)
+        {
+            var resource = await _resourceResolution.ResolveRegistryResourceAsync(svc);
+            if (_registryRotation is not null)
+            {
+                try
+                {
+                    await _registryRotation.PruneAfterPushAsync(record.ProjectId, svc, sv, resource,
+                        line => ctx.EmitLogAsync(line, "shipright"), ct);
+                }
+                catch (Exception ex)
+                {
+                    await ctx.EmitLogAsync($"[ShipRight] Registry retention failed for {svc.Name}: {ex.Message}", "shipright");
+                }
+            }
+        }
+        await RunLocalPruneAsync(ctx, project, record, ct);
+    }
+
     private async Task RunCustomPipelineAsync(BuildRecord record, ProjectConfig project, PipelineResource pipeline)
     {
         using var logBuildId = LogContext.PushProperty("BuildId", record.Id);
         using var logProjectId = LogContext.PushProperty("ProjectId", record.ProjectId);
-
         var ctx = new PipelineContext(record, _bus);
         async Task SaveStep() => await _buildStore.SaveAsync(record);
 
@@ -956,6 +1008,9 @@ public class BuildOrchestrator
             {
                 record.Status = hasBuild ? record.Status : BuildStatus.ImageBuilt;
                 record.CompletedAt = DateTime.UtcNow;
+                // Build-only custom runs: prune local images here (push runs prune themselves)
+                if (_localImagePruner is not null && record.Status == BuildStatus.ImageBuilt)
+                    await RunLocalPruneAsync(ctx, project, record, ct);
                 await SaveStep();
                 await ctx.BuildCompletedAsync();
             }
@@ -1015,7 +1070,11 @@ public class BuildOrchestrator
             }
 
             foreach (var (svc, sv) in services)
+            {
                 await PushServiceWithReauthAsync(ctx, record, registry, svc, sv, ct);
+                // Registry retention + local image cleanup after each push (non-fatal)
+                await RunRegistryRetentionAndLocalPruneAsync(ctx, project, record, svc, sv, ct);
+            }
         }
 
         record.Status = BuildStatus.PushSucceeded;

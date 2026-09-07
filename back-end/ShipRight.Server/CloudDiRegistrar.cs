@@ -13,6 +13,7 @@ using ShipRight.Modules.Database.Providers;
 using ShipRight.Modules.Projects;
 using ShipRight.Modules.RemoteHost;
 using ShipRight.Modules.Resources;
+using ShipRight.Modules.System.WslDisk;
 using ShipRight.Modules.Resources.Stores;
 using ShipRight.Modules.Scheduler;
 using ShipRight.Modules.Servers;
@@ -111,6 +112,9 @@ public static class CloudDiRegistrar
         services.AddSingleton<AwsProfileValidator>();
         services.AddSingleton<ResourceResolutionService>();
         services.AddSingleton<ScriptExecutor>();
+        services.AddSingleton<RegistryRotationCoordinator>();
+        services.AddSingleton<BuildMachineImagePruner>();
+        services.AddSingleton<WslDiskService>();
 
         // ── Scheduler (cloud: MariaDB-backed history) ──────────────────────────
         CloudSchedulerRegistrar.Register(services);

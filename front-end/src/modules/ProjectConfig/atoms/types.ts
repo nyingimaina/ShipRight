@@ -10,6 +10,8 @@ export interface ServiceDraft {
   composeServiceName: string;
   dockerUsername: string;
   dockerPassword: string;
+  imageRetentionCount?: number;
+  localImageKeepCount?: number;
   version: string | null;
 }
 
@@ -50,6 +52,7 @@ export interface ProjectDraft {
   watchPollSeconds: number;
   watchSteps: string;
   gitPushTimeoutSeconds: number;
+  localCachePruneKeepGb: number;
 }
 
 export const emptyServiceDraft = (): ServiceDraft => ({
@@ -61,6 +64,8 @@ export const emptyServiceDraft = (): ServiceDraft => ({
   composeServiceName: '',
   dockerUsername: '',
   dockerPassword: '',
+  imageRetentionCount: 5,
+  localImageKeepCount: 2,
   version: null,
 });
 

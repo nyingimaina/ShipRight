@@ -33,6 +33,7 @@ using ShipRight.Modules.Services;
 using ShipRight.Modules.Servers;
 using ShipRight.Modules.Ssh;
 using ShipRight.Modules.System;
+using ShipRight.Modules.System.WslDisk;
 using ShipRight.Shared.CommandExecution;
 using ShipRight.Shared.Events;
 using ShipRight.Shared.ProcessRunner;
@@ -169,6 +170,7 @@ try
 
     app.MapHealthRoutes(profile, cloudMode ? AppMode.Cloud : AppMode.Desktop);
     app.MapSystemRoutes();
+    app.MapWslDiskRoutes();
     app.MapFsRoutes();
     app.MapProjectRoutes();
     app.MapProjectSummaryRoutes();
@@ -301,4 +303,7 @@ static void RegisterDesktopServices(IServiceCollection services, string dataDir)
     services.AddSingleton<AwsProfileValidator>();
     services.AddSingleton<ResourceResolutionService>();
     services.AddSingleton<ScriptExecutor>();
+    services.AddSingleton<RegistryRotationCoordinator>();
+    services.AddSingleton<BuildMachineImagePruner>();
+    services.AddSingleton<WslDiskService>();
 }

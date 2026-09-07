@@ -54,7 +54,7 @@ function draftFrom(existing: IProject | undefined): ProjectDraft {
     features: existing ? (existing.features ?? featureFallback(existing)) : defaultFreeformFeatures,
     gitPushTimeoutSeconds: existing?.gitPushTimeoutSeconds ?? 300,
     services: existing
-      ? existing.services.map(s => ({ name: s.name, versionFilePath: s.versionFilePath, buildContextPath: s.buildContextPath, dockerImageName: s.dockerImageName, dockerRegistry: s.dockerRegistry ?? '', composeServiceName: s.composeServiceName ?? '', dockerUsername: s.dockerUsername ?? '', dockerPassword: '', version: null }))
+      ? existing.services.map(s => ({ name: s.name, versionFilePath: s.versionFilePath, buildContextPath: s.buildContextPath, dockerImageName: s.dockerImageName, dockerRegistry: s.dockerRegistry ?? '', composeServiceName: s.composeServiceName ?? '', dockerUsername: s.dockerUsername ?? '', dockerPassword: '', imageRetentionCount: s.imageRetentionCount ?? 5, localImageKeepCount: s.localImageKeepCount ?? 2, version: null }))
       : [],
     gitRepos: existing ? existing.gitRepos.map(r => ({ repoPath: r.repoPath, deployBranch: r.deployBranch, pushArgs: r.pushArgs, credentialResourceId: r.credentialResourceId })) : [],
     wslWorkingDir: existing?.wsl.workingDir ?? '',
@@ -79,6 +79,7 @@ function draftFrom(existing: IProject | undefined): ProjectDraft {
     watchBranch: existing?.watchBranch ?? '',
     watchPollSeconds: existing?.watchPollSeconds ?? 300,
     watchSteps: existing?.watchSteps ?? 'Build',
+    localCachePruneKeepGb: existing?.localCachePruneKeepGb ?? 5,
   };
 }
 
@@ -163,6 +164,8 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
       dockerRegistryResourceId: s.dockerRegistryResourceId || undefined,
       dockerUsername: s.dockerUsername || undefined,
       dockerPassword: s.dockerPassword || undefined,
+      imageRetentionCount: s.imageRetentionCount,
+      localImageKeepCount: s.localImageKeepCount,
     })),
     gitRepos: draft.gitRepos.map(r => ({ ...r, pushArgs: r.pushArgs || undefined })),
     wsl: { workingDir: draft.wslWorkingDir },
@@ -186,6 +189,7 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
     watchPollSeconds: draft.watchBranch ? draft.watchPollSeconds : undefined,
     watchSteps: draft.watchBranch ? draft.watchSteps : undefined,
     gitPushTimeoutSeconds: draft.gitPushTimeoutSeconds,
+    localCachePruneKeepGb: draft.localCachePruneKeepGb,
   });
 
   const handleSave = async () => {

@@ -199,6 +199,30 @@ export default function ServicesAtom({
           </div>
 
           <div className={styles.fieldRow}>
+            <span className={styles.fieldLabel}>Image retention count</span>
+            <input type="number" min={0} max={100} value={svc.imageRetentionCount ?? 5}
+              onChange={e => updateService(i, { imageRetentionCount: e.target.value === '' ? undefined : Number(e.target.value) })}
+              style={{ width: '120px', background: '#131D30', color: '#F0F2F5', border: '1px solid rgba(255,255,255,0.12)',
+                borderRadius: 6, padding: '6px 10px', fontSize: 14, boxSizing: 'border-box' }} />
+            {errors[`services[${i}].imageRetentionCount`] && (
+              <p className={styles.errorText}>{errors[`services[${i}].imageRetentionCount`]}</p>
+            )}
+            <p style={{ margin: '3px 0 0', fontSize: 11, color: '#637389' }}>
+              ECR tags to keep per service (0 = keep all). Default 5.
+            </p>
+          </div>
+          <div className={styles.fieldRow}>
+            <span className={styles.fieldLabel}>Local image keep count</span>
+            <input type="number" min={0} max={100} value={svc.localImageKeepCount ?? 2}
+              onChange={e => updateService(i, { localImageKeepCount: e.target.value === '' ? undefined : Number(e.target.value) })}
+              style={{ width: '120px', background: '#131D30', color: '#F0F2F5', border: '1px solid rgba(255,255,255,0.12)',
+                borderRadius: 6, padding: '6px 10px', fontSize: 14, boxSizing: 'border-box' }} />
+            <p style={{ margin: '3px 0 0', fontSize: 11, color: '#637389' }}>
+              Build-machine images + cache to keep after push/build (0 = remove all unused). Default 2.
+            </p>
+          </div>
+
+          <div className={styles.fieldRow}>
             <span className={styles.fieldLabel}>Version file</span>
             <div className={styles.fieldValue}>{svc.versionFilePath}</div>
           </div>

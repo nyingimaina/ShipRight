@@ -51,6 +51,19 @@ public record ServiceConfig
     /// DockerRegistryResource at build time instead of using inline values.
     /// </summary>
     public Guid? DockerRegistryResourceId { get; init; }
+    /// <summary>
+    /// How many image tags to keep in the registry for this service (newest N),
+    /// e.g. 5 keeps the newest 5 tags and prunes the 6th on the next push.
+    /// 0 = keep all tags. Only applies to Amazon ECR repositories; other
+    /// registries are skipped. When null, defaults to 5.
+    /// </summary>
+    public int? ImageRetentionCount { get; init; }
+    /// <summary>
+    /// How many recent built image tags to keep on this build machine (newest N
+    /// by build history). 0 = remove every unused image for this service.
+    /// When null, defaults to 2.
+    /// </summary>
+    public int? LocalImageKeepCount { get; init; }
 }
 
 public record GitConfig
@@ -153,4 +166,9 @@ public record ProjectConfig
     /// Set to 0 for no timeout.
     /// </summary>
     public int GitPushTimeoutSeconds { get; init; } = 300;
+    /// <summary>
+    /// BuildKit cache budget in GB to retain when pruning the local docker cache
+    /// (docker builder prune --keep-storage). 0 = never prune the build cache.
+    /// </summary>
+    public int LocalCachePruneKeepGb { get; init; } = 5;
 }

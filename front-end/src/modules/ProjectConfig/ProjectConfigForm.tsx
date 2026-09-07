@@ -97,9 +97,17 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
     setErrors(prev => { const e = { ...prev }; delete e[`services[${i}].${field}`]; return e; });
   };
 
+  const setServiceNumber = (i: number, field: string, value: string) => {
+    setForm(prev => ({
+      ...prev,
+      services: prev.services.map((s, idx) => idx === i ? { ...s, [field]: value === '' ? undefined : Math.max(0, parseInt(value, 10) || 0) } : s),
+    }));
+    setErrors(prev => { const e = { ...prev }; delete e[`services[${i}].${field}`]; return e; });
+  };
+
   const addService = () => setForm(prev => ({
     ...prev,
-    services: [...prev.services, { name: '', versionFilePath: '', buildContextPath: '', dockerImageName: '', dockerRegistry: '', composeServiceName: '', dockerUsername: '', dockerPassword: '' }],
+    services: [...prev.services, { name: '', versionFilePath: '', buildContextPath: '', dockerImageName: '', dockerRegistry: '', composeServiceName: '', dockerUsername: '', dockerPassword: '', imageRetentionCount: 5, localImageKeepCount: 2 }],
   }));
 
   const removeService = (i: number) => setForm(prev => ({
@@ -263,6 +271,26 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
                   Encrypted at rest with AES-256-GCM. Leave blank to keep existing or be prompted at build time.
                 </p>
               </Field>
+              <Field label="Image Retention Count" error={errors[`services[${i}].imageRetentionCount`]}>
+                <input type="number" min={0} max={100}
+                  value={svc.imageRetentionCount != null ? String(svc.imageRetentionCount) : '5'}
+                  onChange={e => setServiceNumber(i, 'imageRetentionCount', e.target.value)}
+                  placeholder="5" style={{ width: '100%', maxWidth: 140, background: '#131D30', color: '#F0F2F5', border: '1px solid rgba(255,255,255,0.12)',
+                    borderRadius: 6, padding: '6px 10px', fontSize: 14, boxSizing: 'border-box' }} />
+                <p style={{ margin: '4px 0 0', fontSize: 11, color: '#637389' }}>
+                  ECR tags to keep per service (0 = keep all, max 100). Default: 5.
+                </p>
+              </Field>
+              <Field label="Local Image Keep Count" error={errors[`services[${i}].localImageKeepCount`]}>
+                <input type="number" min={0} max={100}
+                  value={svc.localImageKeepCount != null ? String(svc.localImageKeepCount) : '2'}
+                  onChange={e => setServiceNumber(i, 'localImageKeepCount', e.target.value)}
+                  placeholder="2" style={{ width: '100%', maxWidth: 140, background: '#131D30', color: '#F0F2F5', border: '1px solid rgba(255,255,255,0.12)',
+                    borderRadius: 6, padding: '6px 10px', fontSize: 14, boxSizing: 'border-box' }} />
+                <p style={{ margin: '4px 0 0', fontSize: 11, color: '#637389' }}>
+                  Build-machine images/cache to keep after push or build (0 = remove all unused). Default: 2.
+                </p>
+              </Field>
             </div>
           ))}
           {form.services.length < 10 && (
@@ -419,6 +447,18 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
               placeholder="600" maxLength={6} zest={{ stretch: true }} />
             <p style={{ margin: '4px 0 0', fontSize: 11, color: '#637389' }}>
               Max time to wait for a git push to complete. Set to 0 for no timeout. Default: 600 (10 min).
+            </p>
+          </Field>
+          <Field label="Local Image Cache Disk (GB)" error={errors['localCachePruneKeepGb']}>
+            <ZestTextbox
+              value={form.localCachePruneKeepGb != null ? String(form.localCachePruneKeepGb) : '5'}
+              onChange={e => {
+                const v = e.target.value;
+                setForm(prev => ({ ...prev, localCachePruneKeepGb: v === '' ? 5 : Math.max(0, parseInt(v, 10) || 0) }));
+              }}
+              placeholder="5" maxLength={5} zest={{ stretch: true }} />
+            <p style={{ margin: '4px 0 0', fontSize: 11, color: '#637389' }}>
+              BuildKit cache budget kept on the build machine after push (0 = never prune cache). Default: 5 GB.
             </p>
           </Field>
         </TabPanel>

@@ -312,6 +312,9 @@ public static class ProjectRouter
             }
         }
 
+        // Retention settings (registry image count + local cache) — independent, additive
+        errors.AddRange(ProjectRetentionValidator.Validate(p));
+
         return errors;
     }
 

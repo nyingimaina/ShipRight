@@ -8,6 +8,8 @@ export interface IServiceConfig {
   dockerUsername?: string;
   dockerPassword?: string;
   dockerRegistryResourceId?: string;
+  imageRetentionCount?: number;
+  localImageKeepCount?: number;
 }
 
 export interface IGitConfig {
@@ -77,8 +79,9 @@ export interface IProject {
   watchBranch?: string;
   watchPollSeconds?: number;
   watchSteps?: string;
-  gitPushTimeoutSeconds?: number;
+gitPushTimeoutSeconds?: number;
   timeZone?: string;
+  localCachePruneKeepGb?: number;
   createdAt: string;
   modifiedAt: string;
 }
@@ -103,6 +106,7 @@ export const emptyProjectInput = (): IProjectInput => ({
   server: { host: '', username: 'ubuntu', sshKeyPath: '', remoteWorkingDir: '', rebuildScript: 'rebuild.sh', deployMode: 'GitScript' },
   gitPushTimeoutSeconds: 600,
   timeZone: 'UTC',
+  localCachePruneKeepGb: 5,
 });
 
 export interface IApiError {

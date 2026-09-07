@@ -16,7 +16,7 @@ import { useServerMode } from '@/shared/serverInfo';
 import AwsProfileWizard from '@/modules/Resources/AwsProfileWizard';
 import styles from './Styles/Resources.module.css';
 
-type Tab = 'registries' | 'scripts' | 'credentials' | 'aws-profiles';
+type Tab = 'registries' | 'scripts' | 'credentials' | 'aws-profiles' | 'wsl-disk';
 
 type RegistryInput = {
   id?: string;
@@ -52,6 +52,29 @@ type ScriptInput = {
   variables?: Record<string, string>;
 };
 type CredentialInput = { id?: string; name: string; value: string; hostPattern?: string; projectId?: string; tags?: string[] };
+
+type WslDiskReport = {
+  vhdxFiles: { path: string; sizeBytes: number }[];
+  distros: { name: string; state: string }[];
+  dockerDfSummary?: string | null;
+  error?: string | null;
+};
+
+type WslCompactResult = {
+  succeeded: boolean;
+  blockedReason?: string | null;
+  files: { path: string; beforeBytes: number; afterBytes: number }[];
+  messages: string[];
+};
+
+const formatBytes = (bytes: number): string => {
+  if (!bytes || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let idx = 0;
+  let value = bytes;
+  while (value >= 1024 && idx < units.length - 1) { value /= 1024; idx++; }
+  return `${value.toFixed(value >= 100 ? 0 : 1)} ${units[idx]}`;
+};
 
 const emptyScript = (): ScriptInput => ({
   name: '',
@@ -89,6 +112,9 @@ export default function ResourcesPage() {
   const [scripts, setScripts] = useState<IScriptResource[]>([]);
   const [credentials, setCredentials] = useState<ICredentialResource[]>([]);
   const [awsProfiles, setAwsProfiles] = useState<IAwsProfileResource[]>([]);
+  const [wslReport, setWslReport] = useState<WslDiskReport | null>(null);
+  const [compactResult, setCompactResult] = useState<WslCompactResult | null>(null);
+  const [compacting, setCompacting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [paneTarget, setPaneTarget] = useState<'new-registry' | 'edit-registry' | 'new-script' | 'edit-script' | 'new-credential' | 'edit-credential' | 'new-aws-profile' | 'edit-aws-profile' | undefined>(undefined);
   const [editItem, setEditItem] = useState<RegistryInput | ScriptInput | CredentialInput | AwsProfileInput | null>(null);
@@ -111,6 +137,41 @@ export default function ResourcesPage() {
   };
 
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    if (tab === 'wsl-disk') refreshWslReport();
+  }, [tab]);
+
+  const refreshWslReport = async () => {
+    try {
+      setWslReport(await api.get<WslDiskReport>('/api/system/wsl-disk'));
+    } catch {
+      setWslReport(null);
+      toast.error('Failed to read WSL disk state.');
+    }
+  };
+
+  const compactWslDisk = async () => {
+    if (!window.confirm('This stops all running WSL distros (wsl --shutdown), then compacts every WSL2 virtual disk. Continue?')) return;
+    setCompacting(true);
+    setCompactResult(null);
+    try {
+      const res = await api.post<WslCompactResult>('/api/system/wsl-disk/compact', {});
+      setCompactResult(res);
+      toast.success('WSL disk compaction complete.');
+    } catch (e: any) {
+      setCompactResult({
+        succeeded: false,
+        blockedReason: e?.error ?? e?.message ?? 'Compaction blocked.',
+        files: [],
+        messages: [],
+      });
+      toast.error(e?.error ?? e?.message ?? 'Compaction failed.');
+    } finally {
+      setCompacting(false);
+      refreshWslReport();
+    }
+  };
 
   const openNewRegistry = () => { setPaneTarget('new-registry'); setEditItem(null); };
   const openEditRegistry = (r: IDockerRegistryResource) => { setPaneTarget('edit-registry'); setEditItem(r); };
@@ -325,12 +386,12 @@ export default function ResourcesPage() {
                 zest={{ visualOptions: { variant: 'standard' }, semanticType: 'add' }}>
                 New Credential
               </ZestButton>
-            ) : (
+            ) : tab === 'aws-profiles' ? (
               <ZestButton onClick={openNewAwsProfile}
                 zest={{ visualOptions: { variant: 'standard' }, semanticType: 'add' }}>
                 New AWS Profile
               </ZestButton>
-            )}
+            ) : null}
           </div>
 
           <div className={styles.tabs}>
@@ -357,6 +418,12 @@ export default function ResourcesPage() {
               onClick={() => setTab('aws-profiles')}
             >
               AWS Profiles ({awsProfiles.length})
+            </button>
+            <button
+              className={`${styles.tab} ${tab === 'wsl-disk' ? styles.tabActive : ''}`}
+              onClick={() => setTab('wsl-disk')}
+            >
+              WSL Disk
             </button>
           </div>
 
@@ -534,6 +601,75 @@ export default function ResourcesPage() {
                   </button>.
                 </p>
               )}
+            </div>
+          )}
+
+          {tab === 'wsl-disk' && (
+            <div className={styles.grid} style={{ gridTemplateColumns: '1fr' }}>
+              <div className={styles.card}>
+                <div className={styles.cardTop}>
+                  <div>
+                    <h3 className={styles.cardTitle}>WSL Virtual Disk</h3>
+                    <p className={styles.cardDetail}>
+                      Docker prune frees space inside the WSL ext4.vhdx, but the Windows-side file only
+                      shrinks after <code>wsl --shutdown</code> + <code>Optimize-VHD -Mode Full</code>.
+                      Compaction stops all running WSL distros and is blocked while any build is active.
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <ZestButton onClick={refreshWslReport}
+                      zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}>
+                      Refresh
+                    </ZestButton>
+                    <ZestButton onClick={compactWslDisk} disabled={compacting}
+                      zest={{ visualOptions: { variant: 'danger', size: 'sm' } }}>
+                      {compacting ? 'Compacting…' : 'Compact Disk'}
+                    </ZestButton>
+                  </div>
+                </div>
+
+                {wslReport?.error && (
+                  <p className={styles.cardDetail} style={{ color: '#e8a838', marginTop: 8 }}>
+                    {wslReport.error}
+                  </p>
+                )}
+
+                {wslReport && wslReport.distros.length > 0 && (
+                  <div style={{ marginTop: 12 }}>
+                    <p className={styles.cardDetail} style={{ fontWeight: 600, marginBottom: 4 }}>Distros</p>
+                    {wslReport.distros.map(d => (
+                      <span key={d.name} className={styles.cardDetail}
+                        style={{ display: 'inline-block', marginRight: 8, marginBottom: 4 }}>
+                        {d.name} · {d.state}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {wslReport && wslReport.vhdxFiles.length > 0 && (
+                  <div style={{ marginTop: 12 }}>
+                    <p className={styles.cardDetail} style={{ fontWeight: 600, marginBottom: 4 }}>Virtual disks</p>
+                    {wslReport.vhdxFiles.map(f => (
+                      <div key={f.path} className={styles.cardDetail}
+                        style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                        <span style={{ wordBreak: 'break-all' }}>{f.path}</span>
+                        <span style={{ whiteSpace: 'nowrap', color: '#C9A84C' }}>{formatBytes(f.sizeBytes)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {compactResult && (
+                  <div style={{ marginTop: 12 }}>
+                    <p className={styles.cardDetail} style={{ fontWeight: 600, color: compactResult.succeeded ? '#6FCF97' : '#e8a838' }}>
+                      {compactResult.succeeded ? 'Compaction complete' : compactResult.blockedReason}
+                    </p>
+                    {compactResult.messages.map((m, i) => (
+                      <p key={i} className={styles.cardDetail} style={{ fontSize: 12 }}>{m}</p>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </ZestResponsiveLayout>
