@@ -182,6 +182,7 @@ try
     app.MapRepoMaintenanceRoutes();
     app.MapComposeRepoRoutes();
     app.MapServerRoutes();
+    app.MapServerBootstrapRoutes();
     if (cloudMode)
     {
         app.MapSchedulerCoreRoutes();

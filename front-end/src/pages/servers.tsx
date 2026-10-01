@@ -10,6 +10,8 @@ import AppShell from '@/modules/AppShell/AppShell';
 import { api } from '@/shared/ApiService';
 import { IServerConfig, IProject, DeployMode } from '@/shared/types/IProject';
 import SshKeySection from '@/modules/ProjectConfig/SshKeySection';
+import BrowsePathField from '@/modules/FilePicker/BrowsePathField';
+import ServerDeploySection from '@/modules/ServerDeploy/ServerDeploySection';
 import styles from './Styles/Servers.module.css';
 
 type ServerInput = Omit<IServerConfig, 'id'> & { id?: string };
@@ -192,32 +194,24 @@ function ServerForm({ initial, onSave, onCancel }: {
       </div>
       <div className={styles.formRow}>
         <label className={styles.label}>SSH Key Path</label>
-        <ZestTextbox value={form.sshKeyPath} onChange={e => set('sshKeyPath', e.target.value)}
-          placeholder="/home/nyingi/.../key.pem" zest={{ stretch: true }} />
+        <BrowsePathField value={form.sshKeyPath} onChange={p => set('sshKeyPath', p)}
+          placeholder="/home/nyingi/.../key.pem" storageKey="ssh-key"
+          label="Navigate to your .pem key file" />
       </div>
       <div className={styles.formRow}>
         <label className={styles.label}>Remote Working Directory</label>
-        <ZestTextbox value={form.remoteWorkingDir} onChange={e => set('remoteWorkingDir', e.target.value)}
-          placeholder="/home/ubuntu/jattac-docker" zest={{ stretch: true }} />
-      </div>
-      <div className={styles.formRow}>
-        <label className={styles.label}>Rebuild Script</label>
-        <ZestTextbox value={form.rebuildScript} onChange={e => set('rebuildScript', e.target.value)}
-          placeholder="rebuild.sh" zest={{ stretch: true }} />
-      </div>
-      <div className={styles.formRow}>
-        <label className={styles.label}>Deploy Mode</label>
-        <select value={form.deployMode ?? 'GitScript'}
-          onChange={e => set('deployMode', e.target.value)}
-          style={{ background: '#131D30', color: '#F0F2F5', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, padding: '6px 10px', width: '100%' }}>
-          <option value="GitScript">Git + Script</option>
-          <option value="GitCompose">Git + Compose</option>
-          <option value="EnvCompose">Env + Compose</option>
-        </select>
+        <BrowsePathField dirsOnly value={form.remoteWorkingDir} onChange={p => set('remoteWorkingDir', p)}
+          placeholder="/home/ubuntu/jattac-docker"
+          sshConfig={{ host: form.host, user: form.username, keyPath: form.sshKeyPath }}
+          label={`Browsing ${form.username}@${form.host}`}
+          browseDisabled={!form.host || !form.username || !form.sshKeyPath}
+          disabledReason="Fill in host, username and SSH key first to browse the server." />
       </div>
       {initial.id && (
         <SshKeySection apiBase={`/api/servers/${initial.id}/ssh-key`} />
       )}
+      <ServerDeploySection serverId={initial.id} values={form}
+        onChange={(field, value) => setForm(prev => ({ ...prev, [field]: value }))} />
       <div className={styles.footer}>
         <ZestButton onClick={handleSubmit} disabled={saving}
           zest={{ visualOptions: { variant: 'standard' }, buttonStyle: 'solid', semanticType: 'save' }}>

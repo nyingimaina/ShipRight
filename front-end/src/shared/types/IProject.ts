@@ -53,6 +53,12 @@ export interface IServerConfig {
   managedSshKey?: boolean;
   rebuildScriptResourceId?: string;
   pipelineResourceId?: string;
+  composeRepoUrl?: string;
+  ecrRegistry?: string;
+  ecrRegion?: string;
+  envFile?: string;
+  healthCheckUrl?: string;
+  skipHealthCheck?: boolean;
 }
 
 export type DbProviderType = 'MariaDb' | 'SqlServer';

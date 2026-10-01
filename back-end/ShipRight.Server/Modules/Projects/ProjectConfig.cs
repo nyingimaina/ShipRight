@@ -123,6 +123,20 @@ public record ServerConfig
     /// Takes precedence over RebuildScriptResourceId when both are set.
     /// </summary>
     public Guid? PipelineResourceId { get; init; }
+
+    // ── Remote bootstrap / deploy (EC2) ──────────────────────────────────────
+    /// <summary>Git URL of the compose repo to clone into RemoteWorkingDir.</summary>
+    public string ComposeRepoUrl { get; init; } = string.Empty;
+    /// <summary>AWS region used for `aws ecr get-login-password` on the server (instance role).</summary>
+    public string EcrRegion { get; init; } = string.Empty;
+    /// <summary>ECR registry host, e.g. 123456789012.dkr.ecr.us-east-2.amazonaws.com. Blank skips ECR login.</summary>
+    public string EcrRegistry { get; init; } = string.Empty;
+    /// <summary>Full contents of the .env file written to RemoteWorkingDir. Blank leaves any existing file alone.</summary>
+    public string EnvFile { get; init; } = string.Empty;
+    /// <summary>URL probed (from the server itself) after deploy. Blank uses http://localhost:5200/api/health.</summary>
+    public string HealthCheckUrl { get; init; } = string.Empty;
+    /// <summary>When true the post-deploy health check is skipped. Default false so existing servers keep checking.</summary>
+    public bool SkipHealthCheck { get; init; } = false;
 }
 
 /// <summary>
