@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import dynamic from 'next/dynamic';
 import AppShell from '@/modules/AppShell/AppShell';
 import BuildWizard from '@/modules/BuildWizard/BuildWizard';
+import ComposeRepoCard from '@/modules/ProjectDetail/ComposeRepoCard';
 import { ProjectSummary } from '@/modules/Dashboard/ProjectCard';
 import LogViewer, { LogEntry } from '@/modules/BuildWizard/LogViewer';
 import ZestButton from 'jattac.libs.web.zest-button';
@@ -363,6 +364,7 @@ export default function ProjectDetailPanel({ projectId, onBack }: Props) {
                 );
               })}
             </div>
+            <ComposeRepoCard projectId={project.id} />
           </section>
         )}
 

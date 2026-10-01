@@ -21,6 +21,8 @@ export interface IGitConfig {
 
 export interface IWslConfig {
   workingDir: string;
+  /** Clone URL of the compose repo itself — NOT the app source repo. */
+  composeRepoUrl?: string;
 }
 
 export type DeployMode = 'GitScript' | 'GitCompose' | 'EnvCompose';

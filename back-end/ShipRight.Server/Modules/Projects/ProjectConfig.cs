@@ -85,6 +85,12 @@ public record GitConfig
 public record WslConfig
 {
     public string WorkingDir { get; init; } = string.Empty;
+    /// <summary>
+    /// The compose repo's OWN clone URL, captured from its `origin` remote whenever the
+    /// repo is seen healthy, and editable from the project detail screen. This must not be
+    /// derived from GitRepos[0] — that is the app source repo, a different repository.
+    /// </summary>
+    public string ComposeRepoUrl { get; init; } = string.Empty;
 }
 
 /// <summary>

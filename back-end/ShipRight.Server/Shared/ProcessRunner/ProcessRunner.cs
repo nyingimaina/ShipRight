@@ -69,6 +69,13 @@ public class ProcessRunner : IProcessRunner
         var stdOutBuf = new StringBuilder();
         var stdErrBuf = new StringBuilder();
 
+        // Network git operations (pull/push/fetch/clone) get non-interactive credential handling
+        // and a default timeout so a missing credential fails the build instead of hanging on a
+        // prompt that can never be answered.
+        var gitDefaults = GitAutomation.Apply(executable, args, envOverride, timeout);
+        var effectiveEnv = gitDefaults.Env;
+        var effectiveTimeout = gitDefaults.Timeout;
+
         var (resolvedExe, resolvedArgs) = ResolveForPlatform(executable, args);
 
         // When wrapping in WSL, the working directory must also be a WSL path
@@ -78,9 +85,9 @@ public class ProcessRunner : IProcessRunner
 
         // Inject env vars. For WSL-wrapped commands, prepend `env VAR=val` so the Linux
         // process sees them regardless of WSLENV passthrough settings.
-        if (envOverride is { Count: > 0 })
+        if (effectiveEnv is { Count: > 0 })
         {
-            var envPairs = envOverride.Select(kv => $"{kv.Key}={kv.Value}").ToArray();
+            var envPairs = effectiveEnv.Select(kv => $"{kv.Key}={kv.Value}").ToArray();
             resolvedArgs = resolvedExe == "wsl"
                 ? new[] { "env" }.Concat(envPairs).Concat(resolvedArgs).ToArray()
                 : resolvedArgs;
@@ -99,9 +106,9 @@ public class ProcessRunner : IProcessRunner
         foreach (var arg in resolvedArgs) psi.ArgumentList.Add(arg);
 
         // For non-WSL processes, inject env vars via StartInfo.EnvironmentVariables.
-        if (envOverride is { Count: > 0 } && resolvedExe != "wsl")
+        if (effectiveEnv is { Count: > 0 } && resolvedExe != "wsl")
         {
-            foreach (var (k, v) in envOverride)
+            foreach (var (k, v) in effectiveEnv)
                 psi.EnvironmentVariables[k] = v;
         }
 
@@ -142,7 +149,9 @@ public class ProcessRunner : IProcessRunner
         process.BeginErrorReadLine();
 
         CancellationToken effectiveCt = ct;
-        var timeoutDuration = timeout.HasValue && timeout.Value > TimeSpan.Zero ? timeout.Value : (TimeSpan?)null;
+        var timeoutDuration = effectiveTimeout is { } configured && configured > TimeSpan.Zero
+            ? configured
+            : (TimeSpan?)null;
         using var timeoutCts = timeoutDuration is not null
             ? CancellationTokenSource.CreateLinkedTokenSource(ct)
             : null;

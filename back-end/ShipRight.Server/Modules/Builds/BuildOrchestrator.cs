@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Serilog;
 using Serilog.Context;
+using ShipRight.Modules.ComposeRepo;
 using ShipRight.Modules.Projects;
 using ShipRight.Modules.VersionFiles;
 using ShipRight.Shared.Events;
@@ -35,6 +36,7 @@ public class BuildOrchestrator
     private readonly ScriptExecutor _scriptExecutor;
     private readonly RegistryRotationCoordinator? _registryRotation;
     private readonly BuildMachineImagePruner? _localImagePruner;
+    private ComposeRepoService? _composeRepo;
     // BRS #2: ConcurrentDictionary prevents data race between pipeline thread and HTTP handler
     private readonly ConcurrentDictionary<string, TaskCompletionSource<RespondRequest>> _pauseWaiters = new();
     private static readonly ConcurrentDictionary<string, CancellationTokenSource> _cancellations = new();
@@ -50,10 +52,14 @@ public class BuildOrchestrator
         return true;
     }
 
+    /// <summary>Injected in production; built on demand so existing callers/tests need no changes.</summary>
+    private ComposeRepoService ComposeRepo => _composeRepo ??= new ComposeRepoService(_runner, _projectStore);
+
     public BuildOrchestrator(IBuildStore buildStore, IProjectStore projectStore,
         BuildEventBus bus, IProcessRunner runner, ISshRunner ssh, ResourceResolutionService resourceResolution,
         IPipelineResourceStore pipelineStore, IScriptResourceStore scriptStore, ICredentialResourceStore credentialStore, ScriptExecutor scriptExecutor,
-        RegistryRotationCoordinator? registryRotation = null, BuildMachineImagePruner? localImagePruner = null)
+        RegistryRotationCoordinator? registryRotation = null, BuildMachineImagePruner? localImagePruner = null,
+        ComposeRepoService? composeRepo = null)
     {
         _buildStore = buildStore;
         _projectStore = projectStore;
@@ -67,6 +73,7 @@ public class BuildOrchestrator
         _scriptExecutor = scriptExecutor;
         _registryRotation = registryRotation;
         _localImagePruner = localImagePruner;
+        _composeRepo = composeRepo;
     }
 
     public async Task<BuildRecord> StartAsync(StartBuildRequest request)
@@ -235,6 +242,7 @@ public class BuildOrchestrator
             }
 
             await ValidateComposeRepoAsync(ctx, record, project);
+            await EnsureComposeRepoHealthyAsync(ctx, record, project);
 
             await ctx.EmitLogAsync("Checking Docker daemon…");
             var dockerInfo = await _runner.RunAsync("docker", ["info"], null);
@@ -1711,20 +1719,78 @@ public class BuildOrchestrator
     }
 
     /// <summary>
-    /// Returns the git origin URL of the first project Git Repo, or null when unusable.
+    /// Complements <see cref="ValidateComposeRepoAsync"/>. A compose dir can be a perfectly good
+    /// git work tree and still be unusable because its object store is corrupt (zero-byte loose
+    /// objects, typically from an interrupted fetch). Every existence check then passes and the
+    /// build only dies much later at Step 5's `git pull` with an opaque fatal error — after the
+    /// version commit, tag and push have already happened.
+    /// <para>
+    /// So fsck it here, in Step 1: a clean repo just logs its verdict, a corrupt one pauses and
+    /// offers to repair (archive the damaged tree, re-clone from the compose repo's own URL).
+    /// </para>
+    /// </summary>
+    private async Task EnsureComposeRepoHealthyAsync(PipelineContext ctx, BuildRecord record, ProjectConfig project)
+    {
+        if (!ComposeRepoService.AppliesTo(project)) return;
+
+        var wslDir = project.Wsl.WorkingDir;
+        if (string.IsNullOrWhiteSpace(wslDir)) return;   // ValidateComposeRepoAsync already failed on this
+
+        var health = await ComposeRepo.CheckHealthAsync(wslDir);
+        if (health.IsHealthy)
+        {
+            await ctx.EmitLogAsync($"Compose repo health: {health.Summary}", "shipright");
+            return;
+        }
+
+        var origin = await ComposeRepo.ResolveCloneUrlAsync(project);
+        if (string.IsNullOrWhiteSpace(origin))
+            throw new InvalidOperationException(
+                $"The compose repo at '{wslDir}' is corrupt and no clone URL is known, so it cannot be " +
+                $"repaired automatically.\ngit fsck said: {health.Summary}\n" +
+                "Set the compose repo clone URL on the project (Compose repo card), or remove the " +
+                $"directory and clone it yourself: git clone <compose-repo-url> {wslDir}");
+
+        var tcs = new TaskCompletionSource<RespondRequest>();
+        _pauseWaiters[record.Id] = tcs;
+        await ctx.PauseAsync("compose_repo_corrupt",
+            $"The compose repo at '{wslDir}' is corrupt:\n{health.Summary}\n\n" +
+            $"Repair it by re-cloning from '{origin}'?\n" +
+            "The damaged directory is kept as '<dir>.corrupt-<timestamp>', so nothing is lost.",
+            ["repair", "abort"]);
+        await _buildStore.SaveAsync(record);
+
+        var response = await tcs.Task;
+        if (response.Choice != "repair")
+            throw new InvalidOperationException(
+                "The compose repo is corrupt and the repair was declined.\n" +
+                $"git fsck said: {health.Summary}\n" +
+                "Repair it from the project's Compose repo card, or clone it yourself: " +
+                $"git clone {origin} {wslDir}");
+
+        record.Status = BuildStatus.Running;
+        await ctx.EmitLogAsync($"Repairing compose repo from {origin}…", "shipright");
+        await ComposeRepo.RepairAsync(project, origin, line => ctx.EmitLogAsync(line, "shipright"));
+
+        var repaired = await ComposeRepo.CheckHealthAsync(wslDir);
+        if (!repaired.IsHealthy)
+            throw new InvalidOperationException(
+                $"The compose repo was re-cloned but is still unusable: {repaired.Summary}\n" +
+                $"Check that '{origin}' really is the compose repo (it should contain docker-compose.yml).");
+
+        await ctx.EmitLogAsync($"Compose repo repaired: {repaired.Summary}", "shipright");
+    }
+
+    /// <summary>
+    /// Returns the clone URL of the compose repo. Deliberately NOT the app repo's origin unless
+    /// the project predates <see cref="WslConfig.ComposeRepoUrl"/> — the compose repo and the app
+    /// source repo are different repositories.
     /// </summary>
     private async Task<string?> TryGetComposeOriginAsync(PipelineContext ctx, ProjectConfig project)
     {
-        var repo = project.GitRepos.FirstOrDefault();
-        if (repo is null || string.IsNullOrWhiteSpace(repo.RepoPath)) return null;
-
-        await ctx.EmitLogAsync($"Reading origin of {repo.RepoPath}…", "git");
-        var r = await _runner.RunAsync("git",
-            ["-C", repo.RepoPath, "remote", "get-url", "origin"], null,
-            line => ctx.EmitLogAsync(line, "git"));
-        if (!r.Success) return null;
-        var url = r.StdOut.Trim();
-        return string.IsNullOrWhiteSpace(url) ? null : url;
+        if (project.GitRepos.Count > 0)
+            await ctx.EmitLogAsync("Resolving compose-repo origin…", "git");
+        return await ComposeRepo.ResolveCloneUrlAsync(project);
     }
 
     /// <summary>

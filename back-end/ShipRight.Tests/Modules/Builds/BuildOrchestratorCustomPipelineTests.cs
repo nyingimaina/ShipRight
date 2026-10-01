@@ -1072,6 +1072,136 @@ public class BuildOrchestratorCustomPipelineTests
         StringAssert.Contains(saved.ErrorSummary ?? "", "docker-compose.yml not found");
     }
 
+    // ── Compose-repo corruption (default pipeline) ──────────────────────────
+    // A compose repo that exists but has zero-byte/corrupt loose objects passes every
+    // existence check, then blows up mid-`git pull` at Step 5 with an opaque fatal error.
+    // PreconditionCheck must fsck it and offer to repair (re-clone) or abort.
+
+    [TestMethod]
+    public async Task DefaultPipeline_CorruptComposeRepo_RepairOnConfirm_ReclonesFromComposeRepoUrl()
+    {
+        var id = "proj-comp-corrupt-repair";
+        var gitRepoPath = Path.Combine(Path.GetTempPath(), $"{id}_gitrepo");
+        var wslDir = Path.Combine(Path.GetTempPath(), $"{id}_wsl");
+        Directory.CreateDirectory(gitRepoPath);
+        Directory.CreateDirectory(wslDir);
+
+        // The app repo origin and the compose repo origin are DIFFERENT repos. The repair
+        // must clone the compose repo, never the app repo (the GitRepos[0] mis-derivation bug).
+        const string appOrigin     = "https://github.com/nyingimaina/ShipRight.git";
+        const string composeOrigin = "https://dev.azure.com/org/DefaultCollection/lattice-docker/_git/lattice-docker";
+
+        var project = CreateProject(id) with
+        {
+            GitRepos = [new() { RepoPath = gitRepoPath, DeployBranch = "master" }],
+            Wsl = new() { WorkingDir = wslDir, ComposeRepoUrl = composeOrigin },
+        };
+        _projectStore.Add(project);
+
+        var fsckCalls = 0;
+        _runner.SetResultFactory((exe, args) =>
+        {
+            if (exe == "wsl" && Array.Exists(args, a => a == "wslpath"))
+                return new ProcessResult(0, wslDir + "\n", "", TimeSpan.Zero);
+            if (Array.Exists(args, a => a == "--is-inside-work-tree"))
+                return new ProcessResult(0, "true\n", "", TimeSpan.Zero);
+            if (Array.Exists(args, a => a == "fsck"))
+            {
+                fsckCalls++;
+                return fsckCalls <= 1
+                    ? new ProcessResult(1, "",
+                        "error: object file .git/objects/7f/030bce is empty\nfatal: loose object 7f030bce is corrupt",
+                        TimeSpan.Zero)
+                    : new ProcessResult(0, "Checking object directories: 100% (100/100), done.\n", "", TimeSpan.Zero);
+            }
+            if (Array.Exists(args, a => a == "--abbrev-ref"))
+                return new ProcessResult(0, "master\n", "", TimeSpan.Zero);
+            if (Array.Exists(args, a => a == "get-url"))
+                return new ProcessResult(0, appOrigin + "\n", "", TimeSpan.Zero);
+            return new ProcessResult(0, "", "", TimeSpan.Zero);
+        });
+
+        var record = await _orchestrator.StartAsync(new StartBuildRequest(id, [new("api", "1.1.0")]));
+        await RespondToPauseAsync(record.Id, "compose_repo_corrupt", "repair", null);
+        await WaitForStatusAsync(record.Id, BuildStatus.BuildFailed);
+
+        var cloneCalls = _runner.Calls
+            .Where(c => c.Executable == "git" && Array.Exists(c.Args, a => a == "clone")).ToList();
+        Assert.AreEqual(1, cloneCalls.Count, "Confirming the repair must re-clone the compose repo exactly once.");
+        Assert.AreEqual($"clone|{composeOrigin}|{wslDir}", string.Join('|', cloneCalls[0].Args),
+            "The repair must clone Wsl.ComposeRepoUrl, not the app repo's origin.");
+
+        var saved = await _buildStore.GetByIdAsync(record.Id);
+        Assert.IsNotNull(saved);
+        Assert.AreEqual("ComposeRepoSync", saved.FailedStep,
+            $"After repair the build must proceed past PreconditionCheck. Status={saved.Status}, Error={saved.ErrorSummary}");
+    }
+
+    [TestMethod]
+    public async Task DefaultPipeline_CorruptComposeRepo_AbortFailsInPreconditionCheck()
+    {
+        var id = "proj-comp-corrupt-abort";
+        var wslDir = Path.Combine(Path.GetTempPath(), $"{id}_wsl");
+        Directory.CreateDirectory(wslDir);
+        var project = CreateProject(id) with
+        {
+            Wsl = new()
+            {
+                WorkingDir = wslDir,
+                ComposeRepoUrl = "https://dev.azure.com/org/DefaultCollection/lattice-docker/_git/lattice-docker",
+            },
+        };
+        _projectStore.Add(project);
+
+        _runner.SetResultFactory((exe, args) =>
+        {
+            if (Array.Exists(args, a => a == "--is-inside-work-tree"))
+                return new ProcessResult(0, "true\n", "", TimeSpan.Zero);
+            if (Array.Exists(args, a => a == "fsck"))
+                return new ProcessResult(1, "", "error: object file .git/objects/e2/0b08a5 is empty", TimeSpan.Zero);
+            return new ProcessResult(0, "", "", TimeSpan.Zero);
+        });
+
+        var record = await _orchestrator.StartAsync(new StartBuildRequest(id, [new("api", "1.1.0")]));
+        await RespondToPauseAsync(record.Id, "compose_repo_corrupt", "abort", null);
+        await WaitForStatusAsync(record.Id, BuildStatus.BuildFailed);
+
+        var saved = await _buildStore.GetByIdAsync(record.Id);
+        Assert.IsNotNull(saved);
+        Assert.AreEqual("PreconditionCheck", saved.FailedStep,
+            "Declining the repair must abort in Step 1, before any commits/merges/tags are made.");
+        StringAssert.Contains(saved.ErrorSummary ?? "", "corrupt");
+        Assert.IsFalse(_runner.Calls.Any(c =>
+            c.Executable == "git" && Array.Exists(c.Args, a => a == "clone")),
+            "No `git clone` may run when the user declines the repair.");
+    }
+
+    [TestMethod]
+    public async Task DefaultPipeline_HealthyComposeRepo_FsckRunsButNoRepairPause()
+    {
+        var id = "proj-comp-fsck-ok";
+        var project = CreateProject(id);
+        _projectStore.Add(project);
+
+        _runner.SetResultFactory((exe, args) =>
+        {
+            if (Array.Exists(args, a => a == "--is-inside-work-tree"))
+                return new ProcessResult(0, "true\n", "", TimeSpan.Zero);
+            if (Array.Exists(args, a => a == "fsck"))
+                return new ProcessResult(0, "Checking object directories: 100% (5/5), done.\n", "", TimeSpan.Zero);
+            return new ProcessResult(0, "ok", "", TimeSpan.Zero);
+        });
+
+        var record = await _orchestrator.StartAsync(new StartBuildRequest(id, [new("api", "1.1.0")]));
+        await WaitForBuildCompletion(record.Id);
+
+        Assert.IsTrue(_runner.Calls.Any(c => Array.Exists(c.Args, a => a == "fsck")),
+            "A healthy compose repo still gets fsck'd — that is the whole point of the check.");
+        var saved = await _buildStore.GetByIdAsync(record.Id);
+        Assert.AreNotEqual("PreconditionCheck", saved?.FailedStep,
+            "A healthy compose repo must not stop the build.");
+    }
+
     private static ProjectConfig CreateProject(string id)
     {
         var versionFile = Path.Combine(Path.GetTempPath(), $"{id}_version.txt");

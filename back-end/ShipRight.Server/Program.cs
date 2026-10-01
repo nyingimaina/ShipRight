@@ -18,6 +18,7 @@ using ShipRight.Modules.Auth.Middleware;
 using ShipRight.Modules.Auth.Models;
 using ShipRight.Modules.Auth.Services;
 using ShipRight.Modules.Builds;
+using ShipRight.Modules.ComposeRepo;
 using ShipRight.Modules.Database;
 using ShipRight.Modules.Database.Providers;
 using ShipRight.Modules.Filesystem;
@@ -179,6 +180,7 @@ try
     app.MapSshTerminalRoutes();
     app.MapContainerLogRoutes();
     app.MapRepoMaintenanceRoutes();
+    app.MapComposeRepoRoutes();
     app.MapServerRoutes();
     if (cloudMode)
     {
@@ -281,6 +283,7 @@ static void RegisterDesktopServices(IServiceCollection services, string dataDir)
     services.AddSingleton<AwsCliInstaller>();
 
     services.AddSingleton<BuildOrchestrator>();
+    services.AddSingleton<ComposeRepoService>();
     services.AddSingleton<MariaDbProvider>();
     services.AddSingleton<SqlServerProvider>();
     services.AddSingleton<IDbProviderResolver>(sp => new DbProviderResolver(
