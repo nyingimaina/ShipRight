@@ -1,6 +1,6 @@
 # DevTeam adoption baseline
 
-DevTeam 0.38.238 · 2026-10-13 03:01
+DevTeam 0.38.238 · 2026-10-13 03:04
 
 ## What was found
 
@@ -16,7 +16,7 @@ DevTeam 0.38.238 · 2026-10-13 03:01
 - API builds and all tests pass: **later** (the slower proof, run with: devteam verify)
 - Web app tests pass: **later** (the slower proof, run with: devteam verify)
 - Web app types are right: **passed**
-- Web app lints and builds: **too slow** (it did not finish in 90s; devteam verify measures it properly)
+- Web app lints and builds: **passed**
 
 ## Not set up in this project
 
@@ -33,10 +33,6 @@ This is optional. Without it the readiness page says 'not proven' for starting t
 1. If you want it: devteam run "Add a start-up check that starts the app and requests its home page"
 
 After you have done any of these, run `devteam adopt refresh` so DevTeam looks at the project again.
-
-## Survey
-
-Skipped: the project has unsaved changes (env.example); save them with git and the survey can run next time.
 
 ## Next:
 

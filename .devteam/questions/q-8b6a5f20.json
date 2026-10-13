@@ -1,0 +1,24 @@
+{
+  "id": "q-8b6a5f20",
+  "key": "ask:f02a32c3b6fa987a",
+  "title": "DevTeam is asking: fix the checks that are not set up?",
+  "question": "ShipRight: 1 check is not set up yet. Let DevTeam work out how to fix it now? It shows you the plan first and changes nothing without your yes.",
+  "options": [
+    {
+      "id": "yes",
+      "label": "Yes",
+      "consequence": "DevTeam carries on."
+    },
+    {
+      "id": "no",
+      "label": "No",
+      "consequence": "Nothing is changed."
+    }
+  ],
+  "recommended": "no",
+  "answer": null,
+  "answeredBy": null,
+  "createdAt": "2026-10-13T00:04:49.5967748+00:00",
+  "answeredAt": null,
+  "pending": true
+}
