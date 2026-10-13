@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>MyApp.Api</RootNamespace>
+    <AssemblyName>MyApp.Api</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Serilog.AspNetCore" />
+    <InternalsVisibleTo Include="MyApp.Api.Tests" />
+  </ItemGroup>
+</Project>

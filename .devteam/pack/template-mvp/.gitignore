@@ -1,0 +1,26 @@
+# Build output and local files
+bin/
+obj/
+TestResults/
+node_modules/
+.next/
+.next-smoke/
+out/
+next-env.d.ts
+*.tsbuildinfo
+playwright-report/
+test-results/
+
+# The app's data files (users and customers) and the end-to-end tests' own data stay out of git
+data/
+.e2e-data/
+
+# Secrets stay out of git
+.env
+
+# Logs are written here while the app runs (see logs/)
+logs/
+
+# Coverage reports (how much of the code the tests run)
+.coverage/
+coverage/

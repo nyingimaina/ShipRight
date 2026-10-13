@@ -1,0 +1,33 @@
+{
+  "api": {
+    "hostMarker": "Microsoft.NET.Sdk.Web",
+    "testMarkers": [ "Microsoft.NET.Test.Sdk" ],
+    "databaseMarkers": [ "MySqlConnector", "Pomelo", "MySql.Data" ],
+    "featureNames": [ "Features", "Modules", "Endpoints", "Controllers" ],
+    "sharedNames": [ "Shared", "Common", "Infrastructure", "Data" ]
+  },
+  "web": {
+    "requireAnyDependency": [ "next", "vite", "react-scripts", "@angular/core", "nuxt", "@sveltejs/kit", "@remix-run/react", "astro", "vue", "svelte", "react" ],
+    "featureNames": [ "src/features", "features", "src/app", "app", "src/pages", "pages" ],
+    "sharedNames": [ "src/components", "components", "src/lib", "lib", "src/shared", "shared" ],
+    "testRunners": [
+      { "dependency": "jest", "command": "npx jest" },
+      { "dependency": "vitest", "command": "npx vitest run" }
+    ],
+    "runScripts": [ "dev", "start" ],
+    "portFlag": "--port",
+    "defaultPort": 3100
+  },
+  "ci": {
+    "folders": [ ".github/workflows" ],
+    "commands": {
+      "web-tests": [ "npm test", "npm run test", "pnpm test", "pnpm run test", "yarn test", "npx jest", "npx vitest" ],
+      "api-build-test": [ "dotnet test" ],
+      "web-lint-build": [ "npm run build", "pnpm run build", "yarn build", "npx next build" ]
+    }
+  },
+  "fillableChecks": [ "web-tests", "web-typecheck", "web-lint-build", "api-build", "api-build-test" ],
+  "allowedPrograms": [ "npm", "npx", "pnpm", "yarn", "node", "dotnet" ],
+  "fillTimeoutSeconds": 180,
+  "ignoreExtra": [ "**/dist/**", "**/.venv/**", "**/venv/**", "**/__pycache__/**", "**/target/**", "**/coverage/**" ]
+}

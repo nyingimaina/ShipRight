@@ -1,0 +1,28 @@
+# Runs the whole app on your machine: the API and the web app. Data is kept in files (no database yet).
+#   docker compose up --build
+#   Open http://localhost:3000
+# This is for local use over http://localhost. A real deployment needs HTTPS in front of it.
+services:
+  api:
+    build: ./api
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Auth__Mode: ${AUTH_MODE:-single} # single: no sign-in, one person. multi: people sign in (see README)
+      Auth__AllowSingleUserInProduction: "true" # fine only because the ports below are bound to this computer (127.0.0.1)
+    volumes:
+      - api-data:/data # the data files; they survive "docker compose down" (but not "docker compose down -v")
+    ports:
+      - "127.0.0.1:5080:8080" # only this computer can reach it; to share it, turn on sign-in (AUTH_MODE=multi) and change this
+
+  web:
+    build:
+      context: ./web
+      args:
+        API_URL: http://api:8080 # the web app passes /api/* on to the API (see web/next.config.ts)
+    depends_on:
+      - api
+    ports:
+      - "127.0.0.1:3000:3000"
+
+volumes:
+  api-data:

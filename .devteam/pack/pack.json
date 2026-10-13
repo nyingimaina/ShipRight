@@ -1,0 +1,963 @@
+{
+  "id": "nextjs-csharp-mariadb",
+  "name": "Next.js + C# (ASP.NET Core) + MariaDB",
+  "description": "CRUD web apps: ASP.NET Core minimal APIs (.NET 10) with Dapper and MySqlConnector on MariaDB, Next.js (App Router, TypeScript) frontend.",
+  "prerequisites": {
+    "TEST_MARIADB": {
+      "what": "The address of a MariaDB database server that the automated API tests may use. The tests create a throwaway database of their own (named devteam_t_ plus random letters) and delete it when they finish, so they never touch your real data. Without it, the tests that prove the API works with a real database cannot run.",
+      "how": [
+        "1. You need a MariaDB server. Easiest: in the app folder run  docker compose up -d db  (needs Docker Desktop). It listens on port 3307.",
+        "2. Safest is a database user that can only touch test databases. In the MariaDB console run:  CREATE USER 'devteam_test'@'%' IDENTIFIED BY 'pick-a-password';  GRANT ALL ON `devteam_t_%`.* TO 'devteam_test'@'%';",
+        "3. Set the variable in PowerShell (use your own password):  setx TEST_MARIADB \"Server=localhost;Port=3307;Uid=devteam_test;Pwd=pick-a-password;\"",
+        "4. Close the terminal and reopen it (the change only reaches new windows), then start DevTeam again.",
+        "Do not put a database name in it (no Database=...), and do not use a user that owns your real data. To try it for this window only:  $env:TEST_MARIADB = \"Server=localhost;Port=3307;Uid=root;Pwd=...;\""
+      ]
+    },
+    "dotnet": {
+      "what": "The .NET SDK, the program that builds and tests the C# API.",
+      "how": [
+        "Install the .NET 10 SDK from https://dotnet.microsoft.com/download, then close and reopen the terminal. Check with:  dotnet --version"
+      ]
+    },
+    "node": {
+      "what": "Node.js, the program that runs the Next.js web app and its tooling.",
+      "how": [
+        "Install the current LTS version from https://nodejs.org, then close and reopen the terminal. Check with:  node --version"
+      ]
+    },
+    "npm": {
+      "what": "npm, the package manager that comes with Node.js; it installs and runs the web app's tooling.",
+      "how": [
+        "It is installed together with Node.js (see node above). Check with:  npm --version"
+      ]
+    }
+  },
+  "layout": {
+    "featureRoots": [
+      "back-end/ShipRight.Server/Modules",
+      "front-end/src/pages"
+    ],
+    "sharedRoots": [
+      "back-end/ShipRight.Server/Shared",
+      "front-end/src/shared"
+    ],
+    "ignore": [
+      "**/.vs/**",
+      "**/coverage/**",
+      "**/playwright-report/**",
+      "**/test-results/**",
+      "**/TestResults/**",
+      "**/next-env.d.ts",
+      "**/*.tsbuildinfo",
+      "**/.next-smoke/**",
+      "**/.coverage/**",
+      "front-end/AGENTS.md",
+      "front-end/CLAUDE.md",
+      "**/dist/**",
+      "**/.venv/**",
+      "**/venv/**",
+      "**/__pycache__/**",
+      "**/target/**"
+    ]
+  },
+  "bootCheck": "app-boots",
+  "specialists": [
+    {
+      "id": "database",
+      "name": "Database",
+      "charter": "specialists/database.md",
+      "guidance": "specialists/database-guidance.md",
+      "owns": [
+        "src/Shared/Db/Migrations/**",
+        "src/Features/**/*Repository.cs"
+      ],
+      "checks": [
+        "api-build",
+        "api-build-test",
+        "no-select-star",
+        "no-sql-leading-wildcard",
+        "no-raw-sql-interpolation"
+      ]
+    }
+  ],
+  "runApp": {
+    "openUrl": "http://localhost:3100/",
+    "services": [
+      {
+        "name": "API",
+        "command": "dotnet run --project back-end/ShipRight.Server --no-launch-profile",
+        "workingDir": ".",
+        "readyUrl": "http://127.0.0.1:5200/health",
+        "env": {
+          "ASPNETCORE_URLS": "http://127.0.0.1:5200",
+          "ASPNETCORE_ENVIRONMENT": "Development"
+        }
+      },
+      {
+        "name": "Web app",
+        "command": "npm run dev -- --port 3100",
+        "workingDir": "front-end",
+        "readyUrl": "http://localhost:3100/",
+        "env": {
+          "API_URL": "http://127.0.0.1:5200"
+        }
+      }
+    ]
+  },
+  "rules": [
+    {
+      "id": "PERF-001",
+      "rule": "Do no needless work and use only the memory, network, storage and startup time the feature needs: no repeated identical work, no loop over everything, no polling where an event exists, nothing loaded that is not shown, no unbounded read, query or cache, and everything opened (connection, listener, timer, file) is released. It must still behave when the data or the number of users is a hundred times larger.",
+      "why": "Slow, hungry software costs every user time and money, and what works with ten rows and one user fails at ten thousand.",
+      "plain": "The app stays fast and light, and keeps working when there is a lot more data or many more people.",
+      "appliesTo": [
+        "backend",
+        "frontend",
+        "library"
+      ],
+      "roles": [
+        "analyst",
+        "architect",
+        "developer",
+        "reviewer",
+        "qa"
+      ],
+      "severity": "blocking",
+      "overridable": true,
+      "check": "review",
+      "good": "",
+      "bad": ""
+    },
+    {
+      "id": "BOOT-001",
+      "rule": "The app must start and work as it was set up: its home page loads, sign-in behaves as configured (none when single-user), and reading data through the web app succeeds.",
+      "why": "Code that compiles and passes its tests can still fail the first time someone opens it (a missing route, a wrong setting, a failing read). The boot proof starts the app and looks.",
+      "plain": "Your app has to actually start and open, not just build.",
+      "appliesTo": [
+        "api",
+        "web"
+      ],
+      "roles": [],
+      "severity": "blocking",
+      "overridable": false,
+      "check": "automated",
+      "good": "Home page 200; the first page matches the sign-in mode; GET /api/customers answers as expected through the web app.",
+      "bad": "Home page 404; a single-user app asks to sign in; every GET answers 500."
+    },
+    {
+      "id": "SEC-001",
+      "rule": "No secrets (passwords, keys, tokens, connection-string passwords) in source code or committed config.",
+      "why": "Secrets in git history leak and cannot be un-leaked.",
+      "plain": "Passwords and keys come from settings on the server, never from the code.",
+      "appliesTo": [
+        "backend",
+        "frontend",
+        "database"
+      ],
+      "roles": [
+        "developer",
+        "reviewer",
+        "security"
+      ],
+      "severity": "blocking",
+      "overridable": false,
+      "check": "automated",
+      "good": "\"Default\": \"Server=db;Database=app;User=app;Password=${DB_PASSWORD}\"",
+      "bad": "var apiKey = \"sk_live_abc123\";"
+    },
+    {
+      "id": "SEC-002",
+      "rule": "Never build SQL by string concatenation or interpolation. SQL text is a constant; every value is passed as a Dapper parameter (@name).",
+      "why": "SQL injection.",
+      "plain": "Database queries are built safely so attackers can't inject commands.",
+      "appliesTo": [
+        "backend",
+        "database"
+      ],
+      "roles": [
+        "developer",
+        "reviewer",
+        "security"
+      ],
+      "severity": "blocking",
+      "overridable": false,
+      "check": "automated",
+      "good": "await conn.QueryAsync<CustomerDto>(\"SELECT id FROM customers WHERE id = @id\", new { id });",
+      "bad": "await conn.QueryAsync<CustomerDto>($\"SELECT id FROM customers WHERE id = {id}\");"
+    },
+    {
+      "id": "API-001",
+      "rule": "Every endpoint requires authorization (RequireAuthorization or a fallback policy) unless explicitly marked AllowAnonymous with a reason in a comment.",
+      "why": "Forgotten authorization is the most common CRUD security hole.",
+      "plain": "Pages and actions that touch your users' data need a login first.",
+      "appliesTo": [
+        "backend"
+      ],
+      "roles": [
+        "analyst",
+        "architect",
+        "developer",
+        "reviewer",
+        "security"
+      ],
+      "severity": "blocking",
+      "overridable": false,
+      "check": "review",
+      "good": "",
+      "bad": ""
+    },
+    {
+      "id": "API-002",
+      "rule": "Users can only read or change records they are allowed to see; ownership/tenant checks happen in the query, not after loading.",
+      "why": "Insecure direct object references (changing an id in the URL to see someone else's data).",
+      "plain": "Nobody can see or change another user's data by guessing a link.",
+      "appliesTo": [
+        "backend"
+      ],
+      "roles": [
+        "analyst",
+        "architect",
+        "developer",
+        "security",
+        "qa"
+      ],
+      "severity": "blocking",
+      "overridable": false,
+      "check": "review",
+      "good": "",
+      "bad": ""
+    },
+    {
+      "id": "API-003",
+      "rule": "Validate every write request (required fields, lengths, formats) and return RFC 7807 problem details with field errors on failure.",
+      "why": "Bad data in, bad data forever; clients need consistent, structured errors.",
+      "plain": "Forms tell people exactly what to fix, and bad data never gets saved.",
+      "appliesTo": [
+        "backend"
+      ],
+      "roles": [
+        "analyst",
+        "architect",
+        "developer",
+        "reviewer",
+        "qa"
+      ],
+      "severity": "blocking",
+      "overridable": false,
+      "check": "review",
+      "good": "",
+      "bad": ""
+    },
+    {
+      "id": "API-004",
+      "rule": "Endpoints accept and return DTO records. Database row types never cross the HTTP boundary, and sensitive columns (password hashes, owner ids) are never returned.",
+      "why": "Returning rows leaks columns and couples the API to the schema (over-posting, accidental data exposure).",
+      "plain": "The app only sends and accepts exactly the information each screen needs.",
+      "appliesTo": [
+        "backend"
+      ],
+      "roles": [
+        "architect",
+        "developer",
+        "reviewer",
+        "security"
+      ],
+      "severity": "blocking",
+      "overridable": false,
+      "check": "review",
+      "good": "",
+      "bad": ""
+    },
+    {
+      "id": "API-005",
+      "rule": "Every list endpoint is paginated (page + pageSize with a server-side maximum) and returns the total count.",
+      "why": "Unbounded lists get slow and expensive as data grows.",
+      "plain": "Lists stay fast no matter how much data you have.",
+      "appliesTo": [
+        "backend",
+        "frontend"
+      ],
+      "roles": [
+        "analyst",
+        "architect",
+        "developer",
+        "reviewer",
+        "qa"
+      ],
+      "severity": "blocking",
+      "overridable": false,
+      "check": "review",
+      "good": "",
+      "bad": ""
+    },
+    {
+      "id": "DB-001",
+      "rule": "Every schema change is a numbered migration pair in the project's own migrations folder (see the project map) (NNNN_name.up.sql and NNNN_name.down.sql). The down script undoes the up script. Never edit a migration that has been applied; add a new one.",
+      "why": "Edited migrations break every database that already ran them.",
+      "plain": "Database changes are applied the same way everywhere, safely.",
+      "appliesTo": [
+        "database"
+      ],
+      "roles": [
+        "architect",
+        "developer",
+        "reviewer"
+      ],
+      "severity": "blocking",
+      "overridable": false,
+      "check": "review",
+      "good": "",
+      "bad": ""
+    },
+    {
+      "id": "DB-002",
+      "rule": "Index foreign keys and every column used for filtering, sorting or uniqueness; enforce uniqueness with a unique index, not only in code.",
+      "why": "Missing indexes are the main cause of slow CRUD apps; code-only uniqueness fails under concurrency.",
+      "plain": "Searching and sorting stay fast, and duplicates are impossible.",
+      "appliesTo": [
+        "database"
+      ],
+      "roles": [
+        "analyst",
+        "architect",
+        "developer",
+        "reviewer"
+      ],
+      "severity": "blocking",
+      "overridable": false,
+      "check": "review",
+      "good": "",
+      "bad": ""
+    },
+    {
+      "id": "DB-003",
+      "rule": "Read queries select only the columns the screen needs into DTOs; list queries are paged in SQL (LIMIT/OFFSET); no N+1 queries (no query inside a loop: load related rows with a join, or one query for all the ids).",
+      "why": "N+1 queries and over-fetching make pages slow as data grows.",
+      "plain": "Pages load quickly even with lots of data.",
+      "appliesTo": [
+        "backend",
+        "database"
+      ],
+      "roles": [
+        "developer",
+        "reviewer"
+      ],
+      "severity": "blocking",
+      "overridable": false,
+      "check": "review",
+      "good": "SELECT id AS Id, name AS Name FROM customers WHERE CompanyId = @companyId ORDER BY name LIMIT @pageSize OFFSET @offset",
+      "bad": "SELECT * FROM customers WHERE CompanyId = @companyId"
+    },
+    {
+      "id": "DB-004",
+      "rule": "A search never starts with a wildcard (LIKE '%text' or LIKE CONCAT('%', ...)): it cannot use an index and reads the whole table. Search by prefix, or use a full-text index.",
+      "why": "A leading wildcard turns every search into a full table scan, which is fine with a hundred rows and unusable with a million.",
+      "plain": "Searches stay fast as the data grows.",
+      "appliesTo": [
+        "backend",
+        "database"
+      ],
+      "roles": [
+        "developer",
+        "reviewer"
+      ],
+      "severity": "blocking",
+      "overridable": true,
+      "check": "automated",
+      "good": "SELECT id FROM customers WHERE name LIKE @pattern",
+      "bad": "SELECT id FROM customers WHERE name LIKE '%smith'"
+    },
+    {
+      "id": "ARCH-001",
+      "rule": "Backend feature code lives in back-end/ShipRight.Server/Modules/<Feature>/ and frontend feature code in front-end/src/pages/<feature>/. Code used by two or more features lives in the Shared folders. Reuse before adding.",
+      "why": "A predictable layout is how every agent and person finds what already exists.",
+      "plain": "Code goes in a fixed place, so nothing gets built twice.",
+      "appliesTo": [
+        "backend",
+        "frontend"
+      ],
+      "roles": [
+        "architect",
+        "developer",
+        "reviewer"
+      ],
+      "severity": "blocking",
+      "overridable": false,
+      "check": "review",
+      "good": "",
+      "bad": ""
+    },
+    {
+      "id": "ARCH-002",
+      "rule": "No new packages, frameworks or architectural patterns without an explicit decision recorded in the decision log.",
+      "why": "Every dependency is a security, upgrade and consistency cost.",
+      "plain": "The app only uses tools that were deliberately chosen.",
+      "appliesTo": [
+        "backend",
+        "frontend"
+      ],
+      "roles": [
+        "architect",
+        "developer",
+        "reviewer",
+        "security"
+      ],
+      "severity": "blocking",
+      "overridable": false,
+      "check": "review",
+      "good": "",
+      "bad": ""
+    },
+    {
+      "id": "QUAL-001",
+      "rule": "No debugging leftovers: Console.WriteLine and Debugger.Break in the API, console.log in the web app. Use ILogger with structured messages.",
+      "why": "Debug output leaks data and pollutes logs.",
+      "plain": "Leftover debugging code has to be removed before the feature is done.",
+      "appliesTo": [
+        "backend",
+        "frontend"
+      ],
+      "roles": [
+        "developer",
+        "reviewer"
+      ],
+      "severity": "blocking",
+      "overridable": true,
+      "check": "automated",
+      "good": "logger.LogInformation(\"Customer {CustomerId} created\", customer.Id);",
+      "bad": "Console.WriteLine(\"created \" + customer.Id);"
+    },
+    {
+      "id": "BUILD-001",
+      "rule": "The API and web app build without errors, all tests pass, and lint passes.",
+      "why": "Nothing ships that doesn't compile or breaks existing behaviour.",
+      "plain": "The app has to build and all its tests have to pass.",
+      "appliesTo": [
+        "backend",
+        "frontend"
+      ],
+      "roles": [
+        "developer",
+        "qa"
+      ],
+      "severity": "blocking",
+      "overridable": false,
+      "check": "automated",
+      "good": "",
+      "bad": ""
+    },
+    {
+      "id": "UX-001",
+      "rule": "Every data screen handles loading, empty, error and success states explicitly.",
+      "why": "Blank or frozen screens are the most common UX failure in CRUD apps.",
+      "plain": "Screens always show what's happening, even when there's no data or something fails.",
+      "appliesTo": [
+        "frontend"
+      ],
+      "roles": [
+        "analyst",
+        "architect",
+        "developer",
+        "reviewer",
+        "qa"
+      ],
+      "severity": "blocking",
+      "overridable": false,
+      "check": "review",
+      "good": "",
+      "bad": ""
+    },
+    {
+      "id": "UX-002",
+      "rule": "Forms have visible labels, show field errors next to the field, disable submit while saving, and are fully keyboard-accessible.",
+      "why": "Accessibility is a legal and usability requirement, not polish.",
+      "plain": "Forms are clear, accessible, and can't be submitted twice by accident.",
+      "appliesTo": [
+        "frontend"
+      ],
+      "roles": [
+        "analyst",
+        "developer",
+        "reviewer",
+        "qa"
+      ],
+      "severity": "blocking",
+      "overridable": false,
+      "check": "review",
+      "good": "",
+      "bad": ""
+    },
+    {
+      "id": "TEST-001",
+      "rule": "Every requirement is proven by at least one test that names it.",
+      "why": "Untested requirements are guesses. Enforced by the engine on the build report.",
+      "plain": "Everything you asked for has a test proving it works.",
+      "appliesTo": [
+        "backend",
+        "frontend"
+      ],
+      "roles": [
+        "developer",
+        "qa"
+      ],
+      "severity": "blocking",
+      "overridable": false,
+      "check": "engine",
+      "good": "",
+      "bad": ""
+    },
+    {
+      "id": "TEST-002",
+      "rule": "API behaviour is tested through HTTP (WebApplicationFactory) against a real MariaDB (the server named by the project's own test-database setting (see its README or test fixtures), for example the compose database), including unauthorized and not-found cases.",
+      "why": "Tests against in-memory fakes miss SQL, migration and auth bugs.",
+      "plain": "Tests check the app the way it really runs.",
+      "appliesTo": [
+        "backend"
+      ],
+      "roles": [
+        "architect",
+        "developer",
+        "qa"
+      ],
+      "severity": "blocking",
+      "overridable": false,
+      "check": "review",
+      "good": "",
+      "bad": ""
+    },
+    {
+      "id": "TEST-003",
+      "rule": "Web app behaviour is tested with Jest and React Testing Library: components are rendered the way a person sees them (loading, error, empty and success states), and logic such as API calls and hooks has unit tests.",
+      "why": "A page can build and still not work. Component tests run it, and they also give the coverage numbers shown on the readiness page.",
+      "plain": "The screens have tests that use them like a person would.",
+      "appliesTo": [
+        "frontend"
+      ],
+      "roles": [
+        "developer",
+        "qa"
+      ],
+      "severity": "blocking",
+      "overridable": false,
+      "check": "automated",
+      "good": "A test renders the list, waits for the data, and checks the rows and the empty state.",
+      "bad": "A new screen with no test, or tests that only check that the page renders without crashing."
+    },
+    {
+      "id": "SCOPE-001",
+      "rule": "Only files inside the design's declared scope may change.",
+      "why": "Unplanned changes are where regressions hide. Enforced by the engine on the diff.",
+      "plain": "The developer may only change the parts of the app this feature is about.",
+      "appliesTo": [
+        "backend",
+        "frontend",
+        "database"
+      ],
+      "roles": [
+        "architect",
+        "developer"
+      ],
+      "severity": "blocking",
+      "overridable": false,
+      "check": "engine",
+      "good": "",
+      "bad": ""
+    }
+  ],
+  "checks": [
+    {
+      "id": "app-boots",
+      "name": "The app starts and works as set up",
+      "kind": "command",
+      "command": "echo Not set up in this project: Nothing starts the app and looks at it  no scripts/smoke/run.mjs , so nothing proves the app starts and works yet. && exit 78",
+      "workingDir": ".",
+      "timeoutSeconds": 600,
+      "rules": [
+        "BOOT-001"
+      ],
+      "files": [],
+      "exclude": [],
+      "tier": "full",
+      "group": "api",
+      "dependsOn": []
+    },
+    {
+      "id": "no-secrets-code",
+      "name": "No secrets in code",
+      "kind": "pattern",
+      "command": "",
+      "workingDir": ".",
+      "timeoutSeconds": 600,
+      "rules": [
+        "SEC-001"
+      ],
+      "files": [
+        "**/*.cs",
+        "front-end/src/**/*.ts",
+        "front-end/src/**/*.tsx",
+        "front-end/**/*.js"
+      ],
+      "exclude": [
+        "**/tests/**",
+        "**/test/**",
+        "**/Tests/**",
+        "**/*.Tests/**",
+        "**/*.Test/**",
+        "**/__tests__/**",
+        "**/*.test.*",
+        "**/*.spec.*",
+        "**/e2e/**",
+        "**/fixtures/**",
+        "back-end/ShipRight.Tests/**"
+      ],
+      "forbid": "(?i)(password|passwd|secret|api[_-]?key|token|connectionstring)\\s*=\\s*\"[^\"$]{6,}\"",
+      "tier": "fast",
+      "requiresEnv": [],
+      "requiresTools": [],
+      "dependsOn": []
+    },
+    {
+      "id": "no-secrets-config",
+      "name": "No secrets in committed config",
+      "kind": "pattern",
+      "command": "",
+      "workingDir": ".",
+      "timeoutSeconds": 600,
+      "rules": [
+        "SEC-001"
+      ],
+      "files": [
+        "**/appsettings*.json",
+        "**/docker-compose*.yml",
+        "**/compose*.yml"
+      ],
+      "exclude": [
+        "**/tests/**",
+        "**/test/**",
+        "**/Tests/**",
+        "**/*.Tests/**",
+        "**/*.Test/**",
+        "**/__tests__/**",
+        "**/*.test.*",
+        "**/*.spec.*",
+        "**/e2e/**",
+        "**/fixtures/**",
+        "back-end/ShipRight.Tests/**"
+      ],
+      "forbid": "(?i)(password|pwd)=(?!\\$\\{)[^;\"\\s]{3,}",
+      "tier": "fast",
+      "requiresEnv": [],
+      "requiresTools": [],
+      "dependsOn": []
+    },
+    {
+      "id": "no-raw-sql-interpolation",
+      "name": "No interpolated or concatenated SQL",
+      "kind": "pattern",
+      "command": "",
+      "workingDir": ".",
+      "timeoutSeconds": 600,
+      "rules": [
+        "SEC-002"
+      ],
+      "files": [
+        "**/*.cs"
+      ],
+      "exclude": [
+        "**/tests/**",
+        "**/test/**",
+        "**/Tests/**",
+        "**/*.Tests/**",
+        "**/*.Test/**",
+        "**/__tests__/**",
+        "**/*.test.*",
+        "**/*.spec.*",
+        "**/e2e/**",
+        "**/fixtures/**",
+        "back-end/ShipRight.Tests/**"
+      ],
+      "forbid": "\\b(Query|Execute)\\w*\\s*(<[^>(]*>)?\\s*\\(\\s*(new\\s+CommandDefinition\\s*\\(\\s*)?(\\$@?\"|@\\$\"|\"[^\"]*\"\\s*\\+)|new\\s+MySqlCommand\\s*\\(\\s*(\\$@?\"|\"[^\"]*\"\\s*\\+)",
+      "tier": "fast",
+      "requiresEnv": [],
+      "requiresTools": [],
+      "dependsOn": []
+    },
+    {
+      "id": "no-select-star",
+      "name": "No SELECT * (read only the columns the screen needs)",
+      "kind": "pattern",
+      "command": "",
+      "workingDir": ".",
+      "timeoutSeconds": 600,
+      "rules": [
+        "DB-003"
+      ],
+      "files": [
+        "src/**/*.cs"
+      ],
+      "exclude": [
+        "**/tests/**",
+        "**/test/**",
+        "**/Tests/**",
+        "**/*.Tests/**",
+        "**/*.Test/**",
+        "**/__tests__/**",
+        "**/*.test.*",
+        "**/*.spec.*",
+        "**/e2e/**",
+        "**/fixtures/**",
+        "back-end/ShipRight.Tests/**"
+      ],
+      "forbid": "(?i)\\bSELECT\\s+(DISTINCT\\s+)?\\*",
+      "tier": "fast",
+      "requiresEnv": [],
+      "requiresTools": [],
+      "dependsOn": []
+    },
+    {
+      "id": "no-sql-leading-wildcard",
+      "name": "No search that starts with a wildcard",
+      "kind": "pattern",
+      "command": "",
+      "workingDir": ".",
+      "timeoutSeconds": 600,
+      "rules": [
+        "DB-004"
+      ],
+      "files": [
+        "src/**/*.cs"
+      ],
+      "exclude": [
+        "**/tests/**",
+        "**/test/**",
+        "**/Tests/**",
+        "**/*.Tests/**",
+        "**/*.Test/**",
+        "**/__tests__/**",
+        "**/*.test.*",
+        "**/*.spec.*",
+        "**/e2e/**",
+        "**/fixtures/**",
+        "back-end/ShipRight.Tests/**"
+      ],
+      "forbid": "(?i)\\bLIKE\\s+(CONCAT\\s*\\(\\s*)?'%",
+      "tier": "fast",
+      "requiresEnv": [],
+      "requiresTools": [],
+      "dependsOn": []
+    },
+    {
+      "id": "no-debug-leftovers-api",
+      "name": "No debugging leftovers (API)",
+      "kind": "pattern",
+      "command": "",
+      "workingDir": ".",
+      "timeoutSeconds": 600,
+      "rules": [
+        "QUAL-001"
+      ],
+      "files": [
+        "src/**/*.cs"
+      ],
+      "exclude": [
+        "**/tests/**",
+        "**/test/**",
+        "**/Tests/**",
+        "**/*.Tests/**",
+        "**/*.Test/**",
+        "**/__tests__/**",
+        "**/*.test.*",
+        "**/*.spec.*",
+        "**/e2e/**",
+        "**/fixtures/**",
+        "back-end/ShipRight.Tests/**"
+      ],
+      "forbid": "Console\\.Write(Line)?\\(|Debugger\\.Break\\(",
+      "tier": "fast",
+      "requiresEnv": [],
+      "requiresTools": [],
+      "dependsOn": []
+    },
+    {
+      "id": "no-debug-leftovers-web",
+      "name": "No debugging leftovers (web)",
+      "kind": "pattern",
+      "command": "",
+      "workingDir": ".",
+      "timeoutSeconds": 600,
+      "rules": [
+        "QUAL-001"
+      ],
+      "files": [
+        "front-end/src/**/*.ts",
+        "front-end/src/**/*.tsx"
+      ],
+      "exclude": [
+        "**/tests/**",
+        "**/test/**",
+        "**/Tests/**",
+        "**/*.Tests/**",
+        "**/*.Test/**",
+        "**/__tests__/**",
+        "**/*.test.*",
+        "**/*.spec.*",
+        "**/e2e/**",
+        "**/fixtures/**",
+        "back-end/ShipRight.Tests/**"
+      ],
+      "forbid": "console\\.log\\(",
+      "tier": "fast",
+      "requiresEnv": [],
+      "requiresTools": [],
+      "dependsOn": []
+    },
+    {
+      "id": "api-build",
+      "name": "API compiles",
+      "kind": "command",
+      "command": "dotnet build --nologo",
+      "workingDir": ".",
+      "timeoutSeconds": 600,
+      "rules": [
+        "BUILD-001"
+      ],
+      "files": [],
+      "exclude": [],
+      "tier": "fast",
+      "group": "api",
+      "requiresEnv": [],
+      "requiresTools": [
+        "dotnet"
+      ],
+      "dependsOn": []
+    },
+    {
+      "id": "api-build-test",
+      "name": "API builds and all tests pass",
+      "kind": "command",
+      "command": "dotnet test --nologo --collect:\"XPlat Code Coverage\" --logger \"trx;LogFileName=results.trx\" --results-directory .coverage",
+      "workingDir": ".",
+      "timeoutSeconds": 900,
+      "rules": [
+        "BUILD-001",
+        "TEST-002"
+      ],
+      "files": [],
+      "exclude": [],
+      "tier": "full",
+      "group": "api",
+      "requiresTools": [
+        "dotnet"
+      ],
+      "dependsOn": []
+    },
+    {
+      "id": "web-tests",
+      "name": "Web app tests pass",
+      "kind": "command",
+      "command": "npm test",
+      "workingDir": "front-end",
+      "timeoutSeconds": 600,
+      "rules": [
+        "TEST-003"
+      ],
+      "files": [],
+      "exclude": [],
+      "tier": "full",
+      "group": "web",
+      "requiresEnv": [],
+      "requiresTools": [
+        "node",
+        "npm"
+      ],
+      "dependsOn": []
+    },
+    {
+      "id": "web-typecheck",
+      "name": "Web app types are right",
+      "kind": "command",
+      "command": "npx tsc --noEmit",
+      "workingDir": "front-end",
+      "timeoutSeconds": 300,
+      "rules": [
+        "BUILD-001"
+      ],
+      "files": [],
+      "exclude": [],
+      "onlyIfExists": "front-end/tsconfig.json",
+      "tier": "fast",
+      "group": "web",
+      "requiresEnv": [],
+      "requiresTools": [
+        "node",
+        "npm"
+      ],
+      "dependsOn": []
+    },
+    {
+      "id": "web-lint-build",
+      "name": "Web app lints and builds",
+      "kind": "command",
+      "command": "npm run lint && npm run build",
+      "workingDir": "front-end",
+      "timeoutSeconds": 900,
+      "rules": [
+        "BUILD-001"
+      ],
+      "files": [],
+      "exclude": [],
+      "onlyIfExists": "front-end/package.json",
+      "tier": "fast",
+      "group": "web",
+      "requiresEnv": [],
+      "requiresTools": [
+        "node",
+        "npm"
+      ],
+      "dependsOn": [
+        "web-typecheck"
+      ]
+    }
+  ],
+  "coverage": [
+    {
+      "name": "API",
+      "path": ".coverage/**/coverage.cobertura.xml",
+      "format": "cobertura"
+    },
+    {
+      "name": "Web app",
+      "path": "front-end/coverage/lcov.info",
+      "format": "lcov"
+    }
+  ],
+  "testResults": [
+    {
+      "name": "API",
+      "path": ".coverage/*.trx",
+      "format": "trx"
+    },
+    {
+      "name": "Web app",
+      "path": "front-end/coverage/test-results.json",
+      "format": "jest-json"
+    }
+  ],
+  "observability": {
+    "logs": [
+      {
+        "name": "API",
+        "path": "logs/api-*.json",
+        "format": "clef"
+      }
+    ]
+  },
+  "roleGuidance": {
+    "analyst": "guidance/analyst.md",
+    "architect": "guidance/architect.md",
+    "developer": "guidance/developer.md",
+    "reviewer": "guidance/reviewer.md",
+    "qa": "guidance/qa.md",
+    "security": "guidance/security.md"
+  }
+}

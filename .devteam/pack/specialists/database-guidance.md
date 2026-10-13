@@ -1,0 +1,8 @@
+The database is MariaDB (InnoDB), reached with Dapper and MySqlConnector. Copy the template's Customers feature and its migrations (`0001_users`, `0002_customers`): they are the pattern.
+
+- Tables: `BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY` ids, `DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`, `created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)`. Keys are named for what they do: `ux_<table>_<columns>` for unique keys, `ix_<table>_<columns>` for indexes, `fk_<table>_<parent>` for foreign keys, with `ON DELETE CASCADE` where the child cannot outlive its owner.
+- Migrations: DDL commits immediately in MariaDB, so there is no transaction to roll back. That is why every script is idempotent. The down script of a migration drops what its up script created (`DROP TABLE IF EXISTS`), and the template's migration test applies, rolls back and reapplies everything on a scratch database each time (it needs `TEST_MARIADB`, see the README).
+- A repository is `internal sealed class <Feature>Repository(Db db)` with one `const string` per query. Open a connection with `await using var conn = await db.OpenAsync(ct)`, run it with `new CommandDefinition(sql, parameters, cancellationToken: ct)`, and map to a `record` DTO by aliasing columns to its property names (`name AS Name`).
+- A search by prefix keeps the `(owner_id, name)` index usable: escape `%` and `_` typed by the user and append `%` (never prepend it).
+- In an `UPDATE`, MariaDB runs the `SET` assignments left to right, so order them with that in mind.
+- A table the design does not need does not get created; a column that is not read by any screen is questioned in the design, not added.

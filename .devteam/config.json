@@ -1,0 +1,52 @@
+{
+  "pack": ".devteam/pack",
+  "agent": {
+    "runtime": "claude-code",
+    "command": "claude",
+    "args": [
+      "-p",
+      "{prompt}",
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--permission-mode",
+      "acceptEdits",
+      "--allowedTools",
+      "Read,Write,Edit,Glob,Grep,Bash(dotnet:*),Bash(npm:*),Bash(npx:*),Bash(git status:*),Bash(git diff:*)"
+    ],
+    "discussArgs": [
+      "--permission-mode",
+      "plan",
+      "{prompt}"
+    ],
+    "timeoutSeconds": 900,
+    "ceilingSeconds": 7200,
+    "stallSeconds": 900,
+    "ceiling": "02:00:00",
+    "stallWindowSeconds": 900,
+    "roles": {}
+  },
+  "limits": {
+    "maxRevisionRounds": 2,
+    "maxDefineRounds": 2,
+    "maxArtifactAttempts": 2,
+    "budgetUsd": 10,
+    "parallelChallengers": true,
+    "baselineChecks": true,
+    "tidyStrayFiles": true,
+    "quietGraceSeconds": 300,
+    "noProgressMinutes": 20,
+    "progressPollSeconds": 15,
+    "quickCheckSeconds": 30,
+    "analystQuestionBudget": 8,
+    "analystQuestionCap": 12,
+    "maxAssumedTopics": 3,
+    "strictRequirements": true,
+    "maxRequirements": 25,
+    "requirementsSignOff": true,
+    "maxSignOffChanges": 3,
+    "offerDocumentation": true,
+    "documentByDefault": false,
+    "stageMinutes": 45
+  }
+}

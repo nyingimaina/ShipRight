@@ -1,0 +1,10 @@
+# Keep decisions, artifacts and proof reports; skip bulky or volatile files.
+current
+*.tmp
+runs/*/transcripts/
+runs/*/dashboard.html
+runs/*/scripted-cursor.json
+runs/*/run.lock
+runs/*/inbox/
+driver.log
+pending-request.md
