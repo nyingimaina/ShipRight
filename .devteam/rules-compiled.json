@@ -1,0 +1,131 @@
+{
+  "rules": [
+    {
+      "ruleId": "USR-001",
+      "ruleHash": "0CFA78785D959B3C",
+      "checks": [
+        {
+          "id": "check-1",
+          "name": "No native button (use zest-button)",
+          "kind": "pattern",
+          "command": "",
+          "workingDir": ".",
+          "timeoutSeconds": 600,
+          "rules": [],
+          "files": [
+            "front-end/src/**/*.tsx",
+            "front-end/app/**/*.tsx",
+            "front-end/components/**/*.tsx"
+          ],
+          "exclude": [],
+          "forbid": "\u003Cbutton[\\s\u003E]",
+          "tier": "fast",
+          "requiresEnv": [],
+          "requiresTools": [],
+          "dependsOn": [],
+          "phase": "challenge",
+          "inDocumentation": false
+        },
+        {
+          "id": "check-2",
+          "name": "No native text input or textarea (use zest-textbox)",
+          "kind": "pattern",
+          "command": "",
+          "workingDir": ".",
+          "timeoutSeconds": 600,
+          "rules": [],
+          "files": [
+            "front-end/src/**/*.tsx",
+            "front-end/app/**/*.tsx",
+            "front-end/components/**/*.tsx"
+          ],
+          "exclude": [],
+          "forbid": "\u003C(input|textarea)[\\s\u003E/]",
+          "tier": "fast",
+          "requiresEnv": [],
+          "requiresTools": [],
+          "dependsOn": [],
+          "phase": "challenge",
+          "inDocumentation": false
+        },
+        {
+          "id": "check-3",
+          "name": "No native table (use responsive-table)",
+          "kind": "pattern",
+          "command": "",
+          "workingDir": ".",
+          "timeoutSeconds": 600,
+          "rules": [],
+          "files": [
+            "front-end/src/**/*.tsx",
+            "front-end/app/**/*.tsx",
+            "front-end/components/**/*.tsx"
+          ],
+          "exclude": [],
+          "forbid": "\u003Ctable[\\s\u003E]",
+          "tier": "fast",
+          "requiresEnv": [],
+          "requiresTools": [],
+          "dependsOn": [],
+          "phase": "challenge",
+          "inDocumentation": false
+        },
+        {
+          "id": "check-4",
+          "name": "No react-tabs (use zest-tabs)",
+          "kind": "pattern",
+          "command": "",
+          "workingDir": ".",
+          "timeoutSeconds": 600,
+          "rules": [],
+          "files": [
+            "front-end/src/**/*.ts",
+            "front-end/src/**/*.tsx",
+            "front-end/app/**/*.ts",
+            "front-end/app/**/*.tsx",
+            "front-end/components/**/*.ts",
+            "front-end/components/**/*.tsx"
+          ],
+          "exclude": [],
+          "forbid": "from\\s\u002B[\u0027\u0022]react-tabs[\u0027\u0022]",
+          "tier": "fast",
+          "requiresEnv": [],
+          "requiresTools": [],
+          "dependsOn": [],
+          "phase": "challenge",
+          "inDocumentation": false
+        },
+        {
+          "id": "check-5",
+          "name": "No hand-rolled setInterval polling (use jattac-web-poller)",
+          "kind": "pattern",
+          "command": "",
+          "workingDir": ".",
+          "timeoutSeconds": 600,
+          "rules": [],
+          "files": [
+            "front-end/src/**/*.ts",
+            "front-end/src/**/*.tsx",
+            "front-end/app/**/*.ts",
+            "front-end/app/**/*.tsx",
+            "front-end/components/**/*.ts",
+            "front-end/components/**/*.tsx"
+          ],
+          "exclude": [],
+          "forbid": "\\bsetInterval\\s*\\(",
+          "tier": "fast",
+          "requiresEnv": [],
+          "requiresTools": [],
+          "dependsOn": [],
+          "phase": "challenge",
+          "inDocumentation": false
+        }
+      ],
+      "good": "import ZestButton from \u0027jattac.libs.web.zest-button\u0027;\nimport ZestTextbox from \u0027jattac.libs.web.zest-textbox\u0027;\n\nexport function Form() {\n  return (\n    \u003Cdiv\u003E\n      \u003CZestTextbox label=\u0022Name\u0022 /\u003E\n      \u003CZestButton\u003ESave\u003C/ZestButton\u003E\n    \u003C/div\u003E\n  );\n}",
+      "bad": "export function Form() {\n  return (\n    \u003Cdiv\u003E\n      \u003Cinput type=\u0022text\u0022 /\u003E\n      \u003Cbutton onClick={save}\u003ESave\u003C/button\u003E\n    \u003C/div\u003E\n  );\n}",
+      "notes": "A reviewer must judge: whether a library component exists for a given need and was used in preference to other third-party or custom components (e.g. dropdown menus vs overflow-menu, side navigation vs zest-sidekick-menu, page layout vs zest-responsive-layout, file uploads via \u003Cinput type=file\u003E vs zest-file-upload, and polling done through fetch loops or setTimeout instead of jattac-web-poller). Also that the packages are installed (they are currently listed in front-end/package.json, except jattac.libs.web.zest-file-upload, which is missing).",
+      "at": "2026-10-13T06:14:44.6126687+00:00",
+      "by": "claude-code"
+    }
+  ]
+}

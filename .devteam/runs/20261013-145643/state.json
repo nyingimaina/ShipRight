@@ -1,0 +1,997 @@
+{
+  "runId": "20261013-145643",
+  "options": {
+    "browser": "end",
+    "visible": false,
+    "document": false
+  },
+  "browser": {
+    "ran": false,
+    "passed": false,
+    "visible": false,
+    "document": false,
+    "seconds": 0,
+    "treeHash": "1B7AD9C670EA4F10E5577211EBF5B3F2C12477627731FD8BD35C121CC1072765",
+    "reason": "this stack has no browser journeys",
+    "output": ""
+  },
+  "isVerification": false,
+  "stageSeconds": {
+    "define": 131.6643099,
+    "design": 1795.3222228,
+    "build": 2921.929545,
+    "challenge": 1328.2253034999999,
+    "prove": 4.2243571
+  },
+  "timeCapExtensions": {},
+  "featureRequest": "Continue an earlier feature that was stopped before it was finished. Do not start over.\n\nOriginal request:\nContinue an earlier feature that was stopped before it was finished. Do not start over.\n\nOriginal request:\nRefactor the authentication setup in my ASP.NET Core project. Strip out all existing auth code and replace it with Microsoft.AspNetCore.Identity. Requirements: 1. Pure .NET Core Identity: Do NOT use Entity Framework Core (EF Core) or AddEntityFrameworkStores. I use custom SQL/Dapper for data access, so implement or wire up a minimal custom IUserStore / IUserRoleStore or lightweight custom handlers.\n2. Roles Support: Include support for Role-based authorization using RoleManager / IUserRoleStore or claims. 3. Multi-Tenancy: Support multi-tenancy. Explain and implement the cleanest way to scope user authentication, logins, and roles by TenantId (e.g., extracting TenantId from request headers/subdomain and passing it through the identity queries or claim assertions).\n4. External Auth: Include setup for Google OAuth alongside local password authentication. 5. Code Structure: Provide the complete Program.cs configuration, necessary Dapper/SQL query models, and example controller endpoints for Login, Register, and Role-based Tenant-scoped Authorization. Keep code concise and ready to drop in.\n\nThe work so far is on this branch: earlier commits, and any changes not yet committed. Read it, and the earlier run\u0027s notes, before changing anything:\n- The earlier run\u0027s requirements, design and findings: D:\\work\\nyingi\\code\\systems\\ShipRight\\.devteam\\runs\\20261013-061527\\artifacts\n- Decisions made so far: D:\\work\\nyingi\\code\\systems\\ShipRight\\.devteam\\decisions.jsonl\n- The earlier run\u0027s state: D:\\work\\nyingi\\code\\systems\\ShipRight\\.devteam\\runs\\20261013-061527\\state.json\n\nFinish the original request on top of what exists. Keep what is already right; fix or finish what is not.\n\nThe work so far is on this branch: earlier commits, and any changes not yet committed. Read it, and the earlier run\u0027s notes, before changing anything:\n- The earlier run\u0027s requirements, design and findings: D:\\work\\nyingi\\code\\systems\\ShipRight\\.devteam\\runs\\20261013-135701\\artifacts\n- Decisions made so far: D:\\work\\nyingi\\code\\systems\\ShipRight\\.devteam\\decisions.jsonl\n- The earlier run\u0027s state: D:\\work\\nyingi\\code\\systems\\ShipRight\\.devteam\\runs\\20261013-135701\\state.json\n\nFinish the original request on top of what exists. Keep what is already right; fix or finish what is not.",
+  "packId": "nextjs-csharp-mariadb",
+  "status": "completed",
+  "currentStage": "prove",
+  "stages": {
+    "define": "done",
+    "design": "done",
+    "build": "done",
+    "challenge": "done",
+    "prove": "done"
+  },
+  "defineRound": 4,
+  "designRound": 2,
+  "buildRound": 4,
+  "revisionsUsed": 2,
+  "requirementKickbacks": 0,
+  "planReviewRounds": 0,
+  "planConflictHashes": [
+    "D936131B2605CFE6",
+    "12746FA1F73C177E"
+  ],
+  "lastPlanConflicts": [
+    {
+      "requirement": "R11",
+      "against": "app-boots",
+      "kind": "check",
+      "owner": "requirements",
+      "why": "R11 acceptance requires the project\u0027s start-up check (app-boots) to be enabled so that it runs scripts/smoke/run.mjs and to pass for this feature, and the design states that creating scripts/smoke/run.mjs is what switches app-boots on. But app-boots is a fixed command check (kind: command) that only echoes \u0027Not set up in this project ... no scripts/smoke/run.mjs\u0027 and exits 78; it never invokes the runner and does no file detection. The engine itself reports it as \u0027could not run (not set up in this project yet: devteam adopt doctor can set it up)\u0027, and the adoption baseline says enabling it needs a separate \u0027devteam run ...\u0027 plus \u0027devteam adopt refresh\u0027. Adding the file from inside the feature therefore does not enable the check, and enabling it is outside the design\u0027s scope (SCOPE-001) and the pack guidance even says not to create the harness. The acceptance line can never be met as written, so BOOT-001 remains unproven; either the requirement must drop the claim that app-boots runs the runner and passes (accept it relaxed/unproven), or the builder must enable the check separately.",
+      "evidence": "R11 acceptance: \u0027The project\u0027s start-up check (app-boots) is enabled so that it runs this smoke runner, and it passes for this feature\u0027. Design summary: \u0027Its presence is what switches on the project\u0027s app-boots check (BOOT-001)\u0027. .devteam/pack/pack.json check: {\u0022id\u0022:\u0022app-boots\u0022,\u0022kind\u0022:\u0022command\u0022,\u0022command\u0022:\u0022echo Not set up in this project: Nothing starts the app and looks at it  no scripts/smoke/run.mjs , so nothing proves the app starts and works yet. \u0026\u0026 exit 78\u0022,\u0022rules\u0022:[\u0022BOOT-001\u0022],\u0022tier\u0022:\u0022full\u0022}. driver.log: \u0027Check \\\u0027The app starts and works as set up\\\u0027 could not run in 0.1s (not set up in this project yet: devteam adopt doctor can set it up)\u0027. .devteam/adoption/baseline.md: \u0027If you want it: devteam run \u0022Add a start-up check that starts the app and requests its home page\u0022 ... After you have done any of these, run \u0060devteam adopt refresh\u0060\u0027. .devteam/pack/guidance/developer.md: \u0027This project has no \u0060scripts/smoke\u0060 harness, so do not create one or add probe files\u0027. state.json baseline: app-boots passed=false, notRun=true, output \u0027Not set up in this project: Nothing starts the app and looks at it  no scripts/smoke/run.mjs , so nothing proves the app starts and works yet.\u0027"
+    }
+  ],
+  "planWaivedRules": [
+    "app-boots"
+  ],
+  "specialists": [
+    {
+      "id": "database",
+      "name": "Database",
+      "owns": [
+        "src/Shared/Db/Migrations/**",
+        "src/Features/**/*Repository.cs"
+      ],
+      "checks": [
+        "api-build",
+        "api-build-test",
+        "no-select-star",
+        "no-sql-leading-wildcard",
+        "no-raw-sql-interpolation"
+      ]
+    }
+  ],
+  "specialistsDone": [],
+  "specialistCallbacks": 0,
+  "specialistHashes": {},
+  "ran": [
+    "define",
+    "design",
+    "build",
+    "challenge",
+    "prove"
+  ],
+  "accepted": {
+    "define/analyst": "artifacts/01-define/analyst-r3.json",
+    "design/architect": "artifacts/02-design/architect-r2.json",
+    "design/planchecker": "artifacts/02-design/planchecker-r2.json",
+    "build/developer": "artifacts/03-build/developer-r4.json",
+    "challenge/reviewer": "artifacts/04-challenge/reviewer-r2.json",
+    "challenge/security": "artifacts/04-challenge/security-r4.json",
+    "challenge/qa": "artifacts/04-challenge/qa-r2.json",
+    "build/arbiter": "artifacts/03-build/arbiter-r3.json"
+  },
+  "extraRounds": 0,
+  "reviewPasses": 3,
+  "costUsd": 1.860734602,
+  "budgetUsd": 10,
+  "agentCalls": 21,
+  "modelCalls": {
+    "claude-sonnet-5-5": 4,
+    "opencode-go/deepseek-v4.1-flash": 17
+  },
+  "startedAt": "2026-10-13T14:56:43.1003454+00:00",
+  "updatedAt": "2026-10-13T16:50:44.9317664+00:00",
+  "completedAt": "2026-10-13T16:50:43.4501438+00:00",
+  "findings": [
+    {
+      "id": "CHK-app-boots",
+      "source": "check:app-boots",
+      "cites": "BOOT-001",
+      "severity": "advisory",
+      "description": "Check \u0027The app starts and works as set up\u0027 is failing.",
+      "file": "",
+      "evidence": "Not set up in this project: Nothing starts the app and looks at it  no scripts/smoke/run.mjs , so nothing proves the app starts and works yet.",
+      "status": "advisory",
+      "raisedRound": 1,
+      "note": "It could not be run, so nothing was checked here; it does not block this feature.",
+      "repeats": 0
+    },
+    {
+      "id": "REV-1",
+      "source": "reviewer",
+      "cites": "R11",
+      "severity": "blocking",
+      "description": "The smoke runner mutates the real user data directory. R11\u0027s edge case requires the runner to change no real data or project files whether it passes or fails, but it opens the real \u0060~/.shipright/builds.db\u0060, marks real Running/Deploying builds as Interrupted, and archives the real \u0060~/.shipright/builds\u0060 to \u0060builds.migrated\u0060. Isolate the legacy data path (or register the desktop stores with the resolved profile data dir) so a smoke run is fully contained in its temp dir.",
+      "file": "scripts/smoke/run.mjs",
+      "line": 230,
+      "evidence": "main() isolates only SHIPRIGHT_DATA_DIR/--data-dir to a temp dir (run.mjs:66-76, 230-239), but the desktop stores the started app registers do not all receive it: Program.cs:276 registers \u0060AddSingleton\u003CIBuildStore, SqliteBuildStore\u003E()\u0060, so SqliteBuildStore falls back to \u0060DataDirectory.Resolve()\u0060 = \u0060\u003CUserProfile\u003E/.shipright\u0060 (SqliteBuildStore.cs:26, DataDirectory.cs:8-16). Observed while running \u0060node scripts/smoke/run.mjs\u0060 and a minimal probe: the app logged \u0060Archived builds/ -\u003E C:\\Users\\nying\\.shipright\\builds.migrated\u0060 and \u0060~/.shipright/builds.migrated\u0060 was created (SqliteBuildStore.cs:231-300 runs unconditionally when the real builds dir exists); Program.cs:231 then calls IBuildStore.MarkInterruptedAsync(), which UPDATEs the real \u0060~/.shipright/builds.db\u0060 (SqliteBuildStore.cs:126-159).",
+      "status": "fixed",
+      "raisedRound": 1,
+      "fixedRound": 2,
+      "note": "Program.cs:276 now registers \u0060AddSingleton\u003CIBuildStore\u003E(_ =\u003E new SqliteBuildStore(dataDir))\u0060 (was \u0060AddSingleton\u003CIBuildStore, SqliteBuildStore\u003E()\u0060, whose parameterless ctor fell back to DataDirectory.Resolve() per SqliteBuildStore.cs:26); IServerStore takes dataDir at Program.cs:301 and the five SQLite resource stores at Program.cs:314-318. The stores that AddSchedulerModule/AddWatchBranchModule still build from DataDirectory.Resolve() are overridden with dataDir immediately after those calls (Program.cs:309-313: SqliteBackupHistoryStore, SqliteBackupOverflowStore, SqliteWatchBranchHistoryStore). New proof test DesktopMode_KeepsEveryStoreInsideTheConfiguredDataDirectory asserts projects.db, builds.db, scheduler/backup-history.db and watch-branch/watch-branch.db exist under SHIPRIGHT_DATA_DIR (DesktopModeStartupTests.cs:75-91). The concrete mutations REV-1 documented (real ~/.shipright/builds.db UPDATE via MarkInterruptedAsync, real builds/ archive to builds.migrated) are therefore confined to the temp data dir. The developer additionally reports a real smoke run left ~/.shipright byte-identical.",
+      "repeats": 0
+    },
+    {
+      "id": "REV-2",
+      "source": "reviewer",
+      "cites": "PERF-001",
+      "severity": "blocking",
+      "description": "Unbounded in-memory accumulation while only the final 20 lines are used. A chatty or looping server grows this array without limit. Keep a fixed-size ring buffer (or drop all but the last N lines as they arrive).",
+      "file": "scripts/smoke/run.mjs",
+      "line": 253,
+      "evidence": "capture() does \u0060output.push(line.trimEnd())\u0060 for every stdout/stderr line with no cap (run.mjs:251-256); the buffer is only ever consumed by tail(output) which prints the last 20 lines (run.mjs:223-225, 279-282).",
+      "status": "fixed",
+      "raisedRound": 1,
+      "fixedRound": 2,
+      "note": "run.mjs now captures stdout/stderr through a fixed-size ring buffer: createLineBuffer(maxLines = 200) stores at most 200 lines (run.mjs:227-244), capture() pushes into it via \u0060output.push(...)\u0060 (run.mjs:274-279), and tail() reads \u0060buffer.toArray().slice(-max)\u0060 (run.mjs:246-248, 302). Memory no longer grows with server chatter. A unit test, \u0027createLineBuffer keeps only the most recent lines in bounded memory\u0027, pushes 10 lines into a 3-line buffer and asserts only line-8..line-10 remain (run.test.mjs:209-216).",
+      "repeats": 0
+    },
+    {
+      "id": "REV-3",
+      "source": "reviewer",
+      "cites": "R11",
+      "severity": "advisory",
+      "description": "The home-page check can pass on a placeholder the runner itself supplied, so a build with no real home page would still report PASS. This weakens the start-up proof R11 asks for; fail instead when the app\u0027s own home page is missing. (Intentional per the design\u0027s staging note, hence advisory.)",
+      "file": "scripts/smoke/run.mjs",
+      "line": 127,
+      "evidence": "resolveContentRoot writes a synthetic \u0060\u003C!doctype html\u003E...\u0060 index.html when neither the project wwwroot nor front-end/out exists (run.mjs:124-133); MapFallbackToFile then serves it, so checkHomePage() (run.mjs:178-184, invoked at 266-267) sees 200 text/html even though the app\u0027s real home page is absent.",
+      "status": "advisory",
+      "raisedRound": 1,
+      "repeats": 0
+    },
+    {
+      "id": "REV-4",
+      "source": "reviewer",
+      "cites": "PERF-001",
+      "severity": "advisory",
+      "description": "A timer is left pending (up to 5s) after the process it guards has already exited; clear it on the exit path (or unref it). Low impact today because main()\u0027s wrapper exits the process immediately afterwards.",
+      "file": "scripts/smoke/run.mjs",
+      "line": 207,
+      "evidence": "stopServer() creates \u0060setTimeout(() =\u003E resolveExit(false), timeoutMs)\u0060 and never clears it when the child\u0027s exit fires first (run.mjs:205-208).",
+      "status": "advisory",
+      "raisedRound": 1,
+      "repeats": 0
+    },
+    {
+      "id": "QA-1",
+      "source": "qa",
+      "cites": "R9",
+      "severity": "blocking",
+      "description": "R9 edge case \u0027A very long name or email does not break the layout\u0027 has no test.",
+      "file": "front-end/src/modules/Team/__tests__/TeamPage.test.tsx",
+      "line": 88,
+      "evidence": "The 7 team tests only ever use name \u0027Ali\u0027 and email \u0027a@b.c\u0027 (line 73); no test renders a very long name or email. TeamPage.tsx:140,145 guard those cells with styles.cellText (TeamPage.module.css:114-118, word-break/overflow-wrap), but nothing would fail if that rule were removed.",
+      "status": "fixed",
+      "raisedRound": 1,
+      "fixedRound": 2,
+      "note": "TeamPage.test.tsx:97-108 adds \u0027keeps a very long name or email inside the wrapping cell so the layout does not break\u0027: it renders name \u0027A\u0027.repeat(200) and email \u0027b\u0027.repeat(190)\u002B\u0027@example.com\u0027 and asserts both cells have class styles.cellText. I ran the file: 8/8 pass (the whole web-tests check also went 248 -\u003E 249). The test fails if TeamPage stops applying the guard class, so the R9 edge case is no longer untested.",
+      "repeats": 0
+    },
+    {
+      "id": "QA-2",
+      "source": "qa",
+      "cites": "R11",
+      "severity": "blocking",
+      "description": "R11 edge case \u0027The smoke runner leaves no app process running and changes no real data or project files, whether it passes or fails\u0027 is uncovered.",
+      "file": "scripts/smoke/__tests__/run.test.mjs",
+      "line": 147,
+      "evidence": "The runner tests assert only the exit code and log text for the pass and four failure modes; none checks the child server process is gone after the runner exits or that no real data/project file changed. run.mjs:286-290 (finally: stopServer \u002B rmSync) is exercised but never asserted.",
+      "status": "fixed",
+      "raisedRound": 1,
+      "fixedRound": 2,
+      "note": "run.test.mjs:218-234 adds \u0027R11 the runner leaves no app process running and keeps all data in a temp dir it removes\u0027, run for both the pass (\u0027ok\u0027) and a failure (\u0027badhome\u0027) mode. It records the child PID/dataDir/cwd, then asserts dataDir is under tmpdir(), the temp dataDir is deleted, cwd is outside the project tree, and waitForProcessGone(pid) is true. I ran the file with \u0060node --test scripts/smoke/__tests__/run.test.mjs\u0060: 12/12 pass, including this test. It would fail if run.mjs\u0027s finally block (stopServer \u002B rmSync) stopped cleaning up, so the R11 edge case is now covered.",
+      "repeats": 0
+    },
+    {
+      "id": "QA-3",
+      "source": "qa",
+      "cites": "R3",
+      "severity": "advisory",
+      "description": "R3 acceptance \u0027If Google sign-in is cancelled or fails, the person returns to the sign-in screen with a plain message and can still use email and password\u0027 is only half-proven (failure branch yes, cancellation/return path no).",
+      "file": "back-end/ShipRight.Server/Modules/Identity/GoogleSignIn.cs",
+      "line": 61,
+      "evidence": "The OnRemoteFailure handler redirecting to CancelledRedirect (line 63) and the CancelledRedirect constant (line 23) are never driven by a test. CloudApiPipelineTests.cs:645 only covers the not-configured branch returning google_failed.",
+      "status": "advisory",
+      "raisedRound": 1,
+      "repeats": 0
+    },
+    {
+      "id": "QA-4",
+      "source": "qa",
+      "cites": "R9",
+      "severity": "advisory",
+      "description": "R9 acceptance \u0027The list shows loading, empty, error-with-retry and success states\u0027 is proven for success only; the other states are a stronger-coverage gap.",
+      "file": "front-end/src/modules/Team/__tests__/TeamPage.test.tsx",
+      "line": 82,
+      "evidence": "getMock.mockResolvedValue always returns one member; no test rejects (error-with-retry branch, TeamPage.tsx:267-278) or returns total:0 (empty branch, 280-282). Only the success state is asserted.",
+      "status": "advisory",
+      "raisedRound": 1,
+      "repeats": 0
+    },
+    {
+      "id": "QA-5",
+      "source": "qa",
+      "cites": "R9",
+      "severity": "advisory",
+      "description": "R9 acceptance \u0027Every action works with the keyboard only, and every field has a visible label\u0027 (and the phone-width line) has no test; UX-002 coverage is partial.",
+      "file": "front-end/src/modules/Team/__tests__/TeamPage.test.tsx",
+      "line": 108,
+      "evidence": "Inputs are found by placeholder text (lines 108-110); there is no getByLabelText assertion and no keyboard (tab/Enter) interaction in any team test, and LoginPage.test.tsx:74 does the same. No test checks the phone-width layout either.",
+      "status": "advisory",
+      "raisedRound": 1,
+      "repeats": 0
+    },
+    {
+      "id": "QA-6",
+      "source": "qa",
+      "cites": "R12",
+      "severity": "advisory",
+      "description": "R12 acceptance \u0027The sign-in, register, reset and Google screens show loading, error and success states\u0027 is proven only for sign-in; the register/reset screens have no component tests.",
+      "file": "front-end/src/pages/signup.tsx",
+      "line": 1,
+      "evidence": "No component test exists for signup.tsx, forgot-password.tsx, reset-password.tsx or change-password.tsx; front-end/src/shared/auth/__tests__ contains only AuthApi, AuthGuard and LoginPage tests.",
+      "status": "advisory",
+      "raisedRound": 1,
+      "repeats": 0
+    },
+    {
+      "id": "QA-7",
+      "source": "qa",
+      "cites": "R6",
+      "severity": "advisory",
+      "description": "The reliability non-functional check \u0027A failed registration, Google first sign-in or teammate creation leaves no partial records\u0027 is proven for registration only.",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/GoogleSignInTests.cs",
+      "line": 47,
+      "evidence": "Only registration has a forced-failure proof (CloudApiIdentityTests.cs:102, \u0027leaves no company without a person\u0027). No test forces a failure mid-way through Google first sign-in (GoogleSignIn.cs:98-110) or teammate creation (RegistrationService.CreateTeammateAsync) and then checks for no company without a person and no person without a company.",
+      "status": "advisory",
+      "raisedRound": 1,
+      "repeats": 0
+    },
+    {
+      "id": "QA-8",
+      "source": "qa",
+      "cites": "R11",
+      "severity": "advisory",
+      "description": "The smoke runner\u0027s tests name R11 and I confirmed all 10 pass (node --test), but nothing in the project or CI runs them, so a future regression here would not be caught automatically.",
+      "file": "scripts/smoke/__tests__/run.test.mjs",
+      "line": 1,
+      "evidence": "There is no root package.json and .github/workflows/ci.yml runs only front-end jest and dotnet test; the engine\u0027s checks (\u0027Web app tests pass\u0027, \u0027API builds and all tests pass\u0027) do not execute node --test, so these R11 tests are never run by any check.",
+      "status": "advisory",
+      "raisedRound": 1,
+      "repeats": 0
+    },
+    {
+      "id": "SEC-1",
+      "source": "security",
+      "cites": "API-004",
+      "severity": "blocking",
+      "description": "A read-only Viewer (or Operator) can fetch the company\u0027s Docker registry credentials, including the plaintext password, by calling GET /api/resources/registries or /api/resources/registries/{id}. Sensitive columns must not be returned; the server (not the UI) is the authority per R5. Return a DTO without Password (as team/password responses do) and/or raise the read rule to Admin like credentials.",
+      "file": "back-end/ShipRight.Server/Modules/Resources/ResourceRouter.cs",
+      "line": 14,
+      "evidence": "MapGet(\u0022/api/resources/registries\u0022) returns store.GetAllAsync() (and /{id} at line 20), so every DockerRegistryResource crosses the HTTP boundary including its plaintext Password field (Models/DockerRegistryResource.cs:15). RoleAccessRules.cs:28 assigns any other GET under /api/resources only AppRoles.Viewer, so an Operator or Viewer in the same company receives the registry password in the JSON response. Only GET /api/resources/credentials is Admin-restricted (RoleAccessRules.cs:26) even though registries carry the same class of secret; writes are Admin (RoleAccessRules.cs:29) but reads are not.",
+      "status": "fixed",
+      "raisedRound": 1,
+      "fixedRound": 2,
+      "note": "RoleAccessRules.cs:28 now reads \u0060R(\u0022GET\u0022, @\u0022/api/resources/registries(/.*)?\u0022, AppRoles.Admin)\u0060, so both GET /api/resources/registries and /{id} are Admin-only (first matching rule wins; line 30 still covers only the remaining /api/resources GETs as Viewer). RoleAuthorizationHandler runs as the fallback policy for every route ResourceRouter maps (IdentityRegistration.cs:80-82, Program.cs:165-167), so a Viewer/Operator is refused before the handler returns the record. Verified by running the targeted suite \u0060dotnet test --filter FullyQualifiedName~RoleAccessRulesTests\u0060: 46 passed / 0 failed, including SecretBearingResourceReads_NeedAdmin which asserts Admin for /api/resources/registries and /api/resources/registries/abc. This is the finding\u0027s \u0027or raise the read rule to Admin like credentials\u0027 option.",
+      "repeats": 0
+    },
+    {
+      "id": "SEC-2",
+      "source": "security",
+      "cites": "API-004",
+      "severity": "blocking",
+      "description": "A Viewer or Operator can read the company\u0027s AWS secret access keys and session tokens from GET /api/resources/aws-profiles and /api/resources/aws-profiles/{id}. This exposes usable long-lived cloud credentials to the lowest role. Exclude SecretAccessKey/SessionToken from the response (return a DTO) and restrict the read to Admin, or mark the fields write-only.",
+      "file": "back-end/ShipRight.Server/Modules/Resources/ResourceRouter.cs",
+      "line": 192,
+      "evidence": "MapGet(\u0022/api/resources/aws-profiles\u0022) returns store.GetAllAsync() (and /{id} at line 218), so every AwsProfileResource crosses the HTTP boundary including SecretAccessKey and SessionToken (Models/AwsProfileResource.cs:15-16). RoleAccessRules.cs:28 assigns this GET only AppRoles.Viewer. The nearby GET /api/resources/aws-profiles/available is deliberately Admin-only (RoleAccessRules.cs:27), which shows secret-bearing AWS reads are meant to be Admin; the list and detail endpoints were missed.",
+      "status": "fixed",
+      "raisedRound": 1,
+      "fixedRound": 2,
+      "note": "RoleAccessRules.cs:29 now reads \u0060R(\u0022GET\u0022, @\u0022/api/resources/aws-profiles(/.*)?\u0022, AppRoles.Admin)\u0060, which covers the list, /{id} and the previously Admin-only /available route, so SecretAccessKey and SessionToken (AwsProfileResource.cs:15-16) no longer reach a Viewer or Operator. Same fallback-policy enforcement and same passing RoleAccessRulesTests run as SEC-1 (SecretBearingResourceReads_NeedAdmin asserts Admin for /api/resources/aws-profiles and /api/resources/aws-profiles/abc while /api/resources/scripts stays Viewer). This is the finding\u0027s \u0027restrict the read to Admin\u0027 option.",
+      "repeats": 0
+    },
+    {
+      "id": "SEC-3",
+      "source": "security",
+      "cites": "API-004",
+      "severity": "advisory",
+      "description": "Same root cause as the registry and AWS findings: whole resource records (with their Variables maps) are returned to any signed-in role. If Variables can hold secrets, scrub them from read responses or require Admin.",
+      "file": "back-end/ShipRight.Server/Modules/Resources/ResourceRouter.cs",
+      "line": 74,
+      "evidence": "GET /api/resources/scripts (line 74) and GET /api/resources/pipelines (PipelineRouter.cs:13) return ScriptResource/PipelineResource directly, including the Variables dictionary (Models/ScriptResource.cs:13, Models/PipelineResource.cs:12) which holds arbitrary environment values that frequently contain tokens/secrets. Both are Viewer-readable under RoleAccessRules.cs:28.",
+      "status": "advisory",
+      "raisedRound": 1,
+      "repeats": 0
+    },
+    {
+      "id": "SEC-4",
+      "source": "security",
+      "cites": "R10",
+      "severity": "advisory",
+      "description": "In the standard docker-compose / reverse-proxy deployment the 7-day session cookie can be sent over the local hop in cleartext. Set CookieSecurePolicy.Always in cloud mode (or configure forwarded headers before production).",
+      "file": "back-end/ShipRight.Server/Modules/Identity/IdentityRegistration.cs",
+      "line": 73,
+      "evidence": "options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest with isPersistent:true and a 7-day ExpireTimeSpan (IdentityRegistration.cs:74). Program.cs calls neither UseForwardedHeaders nor UseHttpsRedirection (Program.cs:151-168), so a TLS-terminating proxy that forwards plain HTTP yields a session cookie with no Secure attribute.",
+      "status": "advisory",
+      "raisedRound": 1,
+      "repeats": 0
+    },
+    {
+      "id": "SEC-5",
+      "source": "security",
+      "cites": "R10",
+      "severity": "advisory",
+      "description": "The switch from bearer headers to a cookie session adds CSRF exposure that no token check covers. SameSite=Strict for the auth cookie and/or antiforgery validation on /api mutations would close it, and mutating GETs should not be GET.",
+      "file": "back-end/ShipRight.Server/Modules/Identity/IdentityRegistration.cs",
+      "line": 72,
+      "evidence": "SameSite=Lax is the only anti-CSRF defence; there is no antiforgery token anywhere in ShipRight.Server or front-end/src/shared (grep for antiforgery/csrf/xsrf/X-CSRF finds nothing). State-changing GETs exist: DatabaseRouter.cs:245 and ServerRouter.cs:373 /db/backups/open-folder perform a host-side action, and SameSite=Lax attaches the cookie on a top-level cross-site navigation to them.",
+      "status": "advisory",
+      "raisedRound": 1,
+      "repeats": 0
+    },
+    {
+      "id": "SEC-6",
+      "source": "security",
+      "cites": "R10",
+      "severity": "advisory",
+      "description": "A single client can exhaust the shared reset/login budget and block sign-in and password resets for every tenant, weakening R10\u0027s reset-rate limit. Configure trusted forwarded headers (X-Forwarded-For) or partition on a stable client identity.",
+      "file": "back-end/ShipRight.Server/CloudDiRegistrar.cs",
+      "line": 48,
+      "evidence": "Every limiter partitions on context.Connection.RemoteIpAddress (lines 48-74), and no forwarded-header middleware runs (Program.cs:151-168). Behind a reverse proxy all requests share the proxy IP, collapsing the global 100/min, the 30/min AuthAttempts and the 5/hour PasswordReset partitions into one site-wide bucket.",
+      "status": "advisory",
+      "raisedRound": 1,
+      "repeats": 0
+    },
+    {
+      "id": "SEC-7",
+      "source": "security",
+      "cites": "R5",
+      "severity": "advisory",
+      "description": "Server-targeted deploy is Admin-only while build deploy is Operator. If standalone-server deploy counts as \u0027deploy\u0027 per R5 the role table is wrong; if it is intended to be Admin it should be an explicit, commented rule rather than an accidental catch-all. Over-restriction, so advisory rather than a vulnerability.",
+      "file": "back-end/ShipRight.Server/Modules/Identity/RoleAccessRules.cs",
+      "line": 37,
+      "evidence": "POST /api/servers/{serverId}/deploy (ServerBootstrapRouter.cs:27) is not in the Operator allow-list (RoleAccessRules.cs:35) and falls through to the Admin catch-all at line 37, whereas POST /api/builds/{id}/deploy requires only Operator. R5 says an Operator can build and deploy.",
+      "status": "advisory",
+      "raisedRound": 1,
+      "repeats": 0
+    },
+    {
+      "id": "SEC-8",
+      "source": "security",
+      "cites": "",
+      "severity": "advisory",
+      "description": "Unauthenticated information disclosure of the host data-directory path and record counts. Low impact and required by R11\u0027s readiness probe, but consider dropping the path/counts from the public payload.",
+      "file": "back-end/ShipRight.Server/Modules/System/HealthRouter.cs",
+      "line": 83,
+      "evidence": "Public GET /api/health returns DataDirectory (absolute server path), ProjectCount, BuildCount, server/web versions and StartedAt (HealthPayload lines 12-21). RoleAccessRules.cs:63 keeps it anonymous so the smoke runner can probe it.",
+      "status": "advisory",
+      "raisedRound": 1,
+      "repeats": 0
+    },
+    {
+      "id": "SEC-9",
+      "source": "security",
+      "cites": "",
+      "severity": "advisory",
+      "description": "Minor unbounded-work risk in the new smoke runner: cap the captured buffer (ring buffer / max N lines) the way \u0060tail\u0060 already caps what is printed. Not reachable by an attacker, so advisory.",
+      "file": "scripts/smoke/run.mjs",
+      "line": 251,
+      "evidence": "The capture handler pushes every stdout/stderr line into the unbounded \u0060output\u0060 array (lines 251-259) with no cap, while only the last 20 are printed. A server that logs heavily during the up-to-60s readiness wait can grow this without limit.",
+      "status": "advisory",
+      "raisedRound": 1,
+      "repeats": 0
+    },
+    {
+      "id": "REV-5",
+      "source": "reviewer",
+      "cites": "R11",
+      "severity": "advisory",
+      "description": "Residual to REV-1, not a repeat of it: the file-mutating behaviour REV-1 proved (real builds.db UPDATE and real builds/ archive) is gone, but one desktop store still resolves the legacy ~/.shipright path. It contradicts the claim that every desktop store is registered with the resolved profile data directory, and on a clean machine a smoke run would create real (empty) directories under the user profile. Advisory because no existing data file is changed and R11\u0027s edge case names data and project files.",
+      "file": "back-end/ShipRight.Server/Program.cs",
+      "line": 279,
+      "evidence": "Program.cs:279 still registers \u0060services.AddSingleton\u003CKnownHostsStore\u003E()\u0060 with no resolved dataDir, so KnownHostsStore\u0027s ctor uses the legacy path: \u0060_path = Path.Combine(DataDirectory.Resolve(), \u0022known_hosts\u0022)\u0060 (KnownHostsStore.cs:16-19), and \u0060DataDirectory.Resolve()\u0060 calls \u0060EnsureSubdirectories\u0060, which creates builds/, logs/, backups/, scheduler/ and scheduler/overflow/ under \u003CUserProfile\u003E/.shipright (DataDirectory.cs:8-16, 25-32). DatabaseOrchestrator (ctor dependency, DatabaseOrchestrator.cs:30-34) is resolved at start-up by the scheduler queue factory (\u0060sp.GetRequiredService\u003CDatabase.DatabaseOrchestrator\u003E()\u0060, SchedulerModule.cs:23-24) when the hosted service starts, so this legacy path is resolved on every desktop/smoke start. On a machine where ~/.shipright does not exist yet this creates it (empty directories); the developer\u0027s byte-identical check ran on a machine where it already existed, so it could not observe this.",
+      "status": "advisory",
+      "raisedRound": 2,
+      "repeats": 0
+    },
+    {
+      "id": "QA-9",
+      "source": "qa",
+      "cites": "R9",
+      "severity": "advisory",
+      "description": "R9 edge case \u0027A very long name or email does not break the layout\u0027 now has a test that names R9 and protects the wrapping class; the assertion covers the class application rather than the CSS rule, which is a stronger-assertion gap, not a missing test.",
+      "file": "front-end/src/modules/Team/__tests__/TeamPage.test.tsx",
+      "line": 106,
+      "evidence": "The new test renders a 200-char name and a 190-char email and asserts each span carries styles.cellText (lines 104-107), the guard class that TeamPage.tsx:140,145 applies and TeamPage.module.css:114-118 wraps. This is the strongest check jsdom can make (it cannot compute layout), but it would not fail if only the .cellText word-break/overflow-wrap rule in the CSS were deleted, because jest maps CSS modules to a name proxy (styles.cellText === \u0027cellText\u0027). Residual proof-strength gap only.",
+      "status": "advisory",
+      "raisedRound": 2,
+      "repeats": 0
+    },
+    {
+      "id": "SEC-10",
+      "source": "security",
+      "cites": "API-004",
+      "severity": "blocking",
+      "description": "Same class as the fixed SEC-1/SEC-2: the new Viewer/Operator roles can fetch plaintext credentials the moment they can read a project. GET /api/projects and GET /api/projects/{id} must not return DockerPassword or database RootPassword to non-Admin callers - return a DTO without those fields (blank them for non-Admin, as the team/password responses do), since Viewer must still list projects per R5.",
+      "file": "back-end/ShipRight.Server/Modules/Projects/ProjectRouter.cs",
+      "line": 17,
+      "evidence": "GET /api/projects returns \u0060Results.Ok(await store.GetAllAsync())\u0060 and GET /api/projects/{id} (lines 33-39) returns the project directly; the cloud store (CloudDiRegistrar.cs:78 -\u003E CompanyScopedProjectStore) deserializes ProjectConfig straight from the Data column, and MariadbProjectStore.cs:84/98 writes that JSON with no encryption (unlike JsonProjectStore/SqliteProjectStore which encrypt at rest). ProjectConfig carries public serialized secrets: ProjectConfig.cs:48 DockerPassword (ServiceConfig) and ProjectConfig.cs:18 RootPassword (DatabaseConfig). RoleAccessRules.cs has no specific /api/projects GET rule, so the default at line 73 assigns it Viewer (also asserted by RoleAccessRulesTests.cs:31), meaning any Viewer or Operator receives the company\u0027s Docker registry password and database root password in plaintext.",
+      "status": "fixed",
+      "raisedRound": 2,
+      "fixedRound": 4,
+      "note": "Both project read endpoints now bind ClaimsPrincipal and run the result through RedactCredentialsFor: GET /api/projects at ProjectRouter.cs:18-19 and GET /api/projects/{id} at ProjectRouter.cs:35-41, calling the new helper at lines 170-181. The helper returns ProjectConfig unchanged only when the caller is unauthenticated (desktop/local, which binds 127.0.0.1 per Program.cs:81) or in AppRoles.Admin; for any other authenticated caller it returns a copy with every ServiceConfig.DockerPassword and DatabaseConfig.RootPassword set to empty, while the project itself (name, services, image names) is still returned. The role claim is ClaimTypes.Role (AppClaimsPrincipalFactory.cs:20), so user.IsInRole(AppRoles.Admin) evaluates correctly, and RoleAccessRules.cs:30 keeps the GETs at Viewer so a Viewer can still list projects per R5. Evidence of the outcome: CloudApiPipelineTests.cs:667 ProjectReads_GiveEveryRoleTheList_ButOnlyAnAdminTheStoredPasswords seeds a project whose JSON contains dockerPassword \u0027d0cker-secret-pass\u0027 and rootPassword \u0027r00t-secret-pass\u0027 and asserts Viewer and Operator get HTTP 200 with \u0027ghcr.io/org/api\u0027 but never either password, and an Admin receives both; the developer reports the full suite at 911 passed / 0 failed with this new test. The company-scoped store is untouched, so BuildOrchestrator/ResourceResolutionService still see the plaintext internally.",
+      "repeats": 0
+    },
+    {
+      "id": "SEC-11",
+      "source": "security",
+      "cites": "API-004",
+      "severity": "advisory",
+      "description": "The developer\u0027s round-2 fix raised registries and aws-profiles reads to Admin but scripts and pipelines - same root cause, whole record returned - are still Viewer-readable. If Variables can hold secrets, scrub them from non-Admin read responses or raise those reads to Admin.",
+      "file": "back-end/ShipRight.Server/Modules/Resources/ResourceRouter.cs",
+      "line": 74,
+      "evidence": "GET /api/resources/scripts (ResourceRouter.cs:74-78) returns ScriptResource whole and PipelineRouter.cs:13-35 returns PipelineResource whole, both including the Variables map (ScriptResource.cs:13, PipelineResource.cs:12). Variables feed script execution and are injected as process environment variables (ProcessRunner.cs:108-112, BuildOrchestrator.cs:1306), so they commonly hold tokens and passwords. RoleAccessRules.cs:30 leaves both GETs at Viewer.",
+      "status": "advisory",
+      "raisedRound": 2,
+      "repeats": 0
+    },
+    {
+      "id": "SEC-12",
+      "source": "security",
+      "cites": "R10",
+      "severity": "advisory",
+      "description": "Set CookieSecurePolicy.Always in cloud mode (or run forwarded-headers middleware before authentication) so the session cookie is never sent in cleartext. Unchanged from the round-1 advisory, still open.",
+      "file": "back-end/ShipRight.Server/Modules/Identity/IdentityRegistration.cs",
+      "line": 73,
+      "evidence": "options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest with a 7-day session; Program.cs (lines 151-168) calls neither UseForwardedHeaders nor UseHttpsRedirection, so behind the docker-compose TLS-terminating proxy the auth cookie is issued without the Secure attribute and can travel over the plain-HTTP hop.",
+      "status": "advisory",
+      "raisedRound": 2,
+      "repeats": 0
+    },
+    {
+      "id": "SEC-13",
+      "source": "security",
+      "cites": "R10",
+      "severity": "advisory",
+      "description": "Add antiforgery validation on /api mutations and/or SameSite=Strict for the auth cookie, and stop modelling host actions as GET. Unchanged from the round-1 advisory, still open.",
+      "file": "back-end/ShipRight.Server/Modules/Identity/IdentityRegistration.cs",
+      "line": 72,
+      "evidence": "SameSite=Lax is the only anti-CSRF defence and no antiforgery token exists anywhere in ShipRight.Server or front-end/src/shared. The switch from bearer headers to a cookie session therefore introduces CSRF exposure on state-changing calls, and mutating GETs (DatabaseRouter.cs:245, ServerRouter.cs:373 open-folder/backups) are reachable by a top-level cross-site navigation under Lax.",
+      "status": "advisory",
+      "raisedRound": 2,
+      "repeats": 0
+    },
+    {
+      "id": "SEC-14",
+      "source": "security",
+      "cites": "API-004",
+      "severity": "advisory",
+      "description": "SEC-10\u0027s fix covers the two named credential fields, but the same whole-ProjectConfig response still carries ServerConfig.EnvFile - the remote .env contents - to non-Admin callers. Blank EnvFile for authenticated non-Admins as well (or return a role-shaped DTO). Recorded advisory rather than blocking because EnvFile is user-supplied config text, not one of the named sensitive columns in API-004.",
+      "file": "back-end/ShipRight.Server/Modules/Projects/ProjectRouter.cs",
+      "line": 170,
+      "evidence": "RedactCredentialsFor (ProjectRouter.cs:170-181) blanks only ServiceConfig.DockerPassword and DatabaseConfig.RootPassword. ProjectConfig.Server.EnvFile (ProjectConfig.cs:135) is described as \u0027Full contents of the .env file written to RemoteWorkingDir\u0027 and is written verbatim to the server by RemoteServerBootstrapper.cs:111-112 and RemoteServerDeployer.cs:74-77 via RemoteEnvFileWriter, so it routinely holds database/API secrets. GET /api/projects and GET /api/projects/{id} (RoleAccessRules.cs:30 leaves these GETs at Viewer) still return that ServerConfig whole, so a Viewer or Operator receives whatever secrets the .env body contains.",
+      "status": "advisory",
+      "raisedRound": 4,
+      "repeats": 0
+    }
+  ],
+  "lastChecks": [
+    {
+      "id": "app-boots",
+      "name": "The app starts and works as set up",
+      "passed": false,
+      "seconds": 0.0947385,
+      "notRun": true,
+      "flaky": false,
+      "tier": "fast",
+      "output": "Not set up in this project: Nothing starts the app and looks at it  no scripts/smoke/run.mjs , so nothing proves the app starts and works yet.",
+      "rules": [
+        "BOOT-001"
+      ]
+    },
+    {
+      "id": "no-secrets-code",
+      "name": "No secrets in code",
+      "passed": true,
+      "seconds": 0.1617322,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern found.",
+      "rules": [
+        "SEC-001"
+      ]
+    },
+    {
+      "id": "no-secrets-config",
+      "name": "No secrets in committed config",
+      "passed": true,
+      "seconds": 0.0514371,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern found.",
+      "rules": [
+        "SEC-001"
+      ]
+    },
+    {
+      "id": "no-raw-sql-interpolation",
+      "name": "No interpolated or concatenated SQL",
+      "passed": true,
+      "seconds": 0.0777882,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern found.",
+      "rules": [
+        "SEC-002"
+      ]
+    },
+    {
+      "id": "no-select-star",
+      "name": "No SELECT * (read only the columns the screen needs)",
+      "passed": true,
+      "seconds": 0.037626,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern found.",
+      "rules": [
+        "DB-003"
+      ]
+    },
+    {
+      "id": "no-sql-leading-wildcard",
+      "name": "No search that starts with a wildcard",
+      "passed": true,
+      "seconds": 0.0443022,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern found.",
+      "rules": [
+        "DB-004"
+      ]
+    },
+    {
+      "id": "no-debug-leftovers-api",
+      "name": "No debugging leftovers (API)",
+      "passed": true,
+      "seconds": 0.050258,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern found.",
+      "rules": [
+        "QUAL-001"
+      ]
+    },
+    {
+      "id": "no-debug-leftovers-web",
+      "name": "No debugging leftovers (web)",
+      "passed": true,
+      "seconds": 0.0485255,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern in the files this change touched.\r\nAlso found in 1 file(s) this change did not touch (not counted against it): front-end/src/modules/ProjectDetail/ComposeRepoCard.tsx.",
+      "rules": [
+        "QUAL-001"
+      ]
+    },
+    {
+      "id": "api-build",
+      "name": "API compiles",
+      "passed": true,
+      "seconds": 3.9272323,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "Determining projects to restore...\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Tests\\ShipRight.Tests.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj [D:\\work\\nyingi\\code\\systems\\ShipRight\\ShipRight.sln]\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Desktop\\ShipRight.Desktop.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj [D:\\work\\nyingi\\code\\systems\\ShipRight\\ShipRight.sln]\r\n  All projects are up-to-date for restore.\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Desktop\\ShipRight.Desktop.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Tests\\ShipRight.Tests.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj\r\n  ShipRight.RuntimeConfig -\u003E D:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.RuntimeConfig\\bin\\Debug\\net10.0\\ShipRight.RuntimeConfig.dll\r\n  ShipRight.Desktop -\u003E D:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Desktop\\bin\\Debug\\net10.0-windows10.0.17763.0\\ShipRight.Desktop.dll\r\n  ShipRight.Server -\u003E D:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Server\\bin\\Debug\\net10.0\\ShipRight.Server.dll\r\n  ShipRight.Tests -\u003E D:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Tests\\bin\\Debug\\net10.0-windows10.0.17763.0\\ShipRight.Tests.dll\r\n\r\nBuild succeeded.\r\n\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Tests\\ShipRight.Tests.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj [D:\\work\\nyingi\\code\\systems\\ShipRight\\ShipRight.sln]\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Desktop\\ShipRight.Desktop.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj [D:\\work\\nyingi\\code\\systems\\ShipRight\\ShipRight.sln]\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Desktop\\ShipRight.Desktop.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Tests\\ShipRight.Tests.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj\r\n    4 Warning(s)\r\n    0 Error(s)\r\n\r\nTime Elapsed 00:00:03.33",
+      "rules": [
+        "BUILD-001"
+      ]
+    },
+    {
+      "id": "web-tests",
+      "name": "Web app tests pass",
+      "passed": true,
+      "seconds": 0,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "Not run again: the files this check looks at are unchanged since it last passed.",
+      "rules": [
+        "TEST-003"
+      ]
+    },
+    {
+      "id": "web-typecheck",
+      "name": "Web app types are right",
+      "passed": true,
+      "seconds": 0,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "Not run again: the files this check looks at are unchanged since it last passed.",
+      "rules": [
+        "BUILD-001"
+      ]
+    },
+    {
+      "id": "rule-USR-001-1",
+      "name": "No native button (use zest-button)",
+      "passed": true,
+      "seconds": 0.0329671,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern in the files this change touched.\r\nAlso found in 7 file(s) this change did not touch (not counted against it): front-end/src/pages/history.tsx, front-end/src/pages/pipelines.tsx, front-end/src/pages/resources.tsx, front-end/src/pages/servers.tsx, front-end/src/modules/BuildWizard/LogViewer.tsx, \u2026.",
+      "rules": [
+        "USR-001"
+      ]
+    },
+    {
+      "id": "rule-USR-001-2",
+      "name": "No native text input or textarea (use zest-textbox)",
+      "passed": true,
+      "seconds": 0.038029,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern in the files this change touched.\r\nAlso found in 11 file(s) this change did not touch (not counted against it): front-end/src/pages/databases.tsx, front-end/src/modules/ProjectConfig/ProjectConfigForm.tsx, front-end/src/modules/ServerDeploy/ServerDeploySection.tsx, front-end/src/tests/modules/BrowsePathField.test.tsx, front-end/src/tests/modules/ComposeRepoCard.test.tsx, \u2026.",
+      "rules": [
+        "USR-001"
+      ]
+    },
+    {
+      "id": "rule-USR-001-3",
+      "name": "No native table (use responsive-table)",
+      "passed": true,
+      "seconds": 0.0512917,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern in the files this change touched.\r\nAlso found in 5 file(s) this change did not touch (not counted against it): front-end/src/pages/backups.tsx, front-end/src/pages/databases.tsx, front-end/src/pages/monitoring.tsx, front-end/src/pages/watch-branch.tsx, front-end/src/modules/ProjectConfig/ProjectConfigForm.tsx.",
+      "rules": [
+        "USR-001"
+      ]
+    },
+    {
+      "id": "rule-USR-001-4",
+      "name": "No react-tabs (use zest-tabs)",
+      "passed": true,
+      "seconds": 0.0421192,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern in the files this change touched.\r\nAlso found in 1 file(s) this change did not touch (not counted against it): front-end/src/modules/ProjectConfig/ProjectConfigForm.tsx.",
+      "rules": [
+        "USR-001"
+      ]
+    },
+    {
+      "id": "rule-USR-001-5",
+      "name": "No hand-rolled setInterval polling (use jattac-web-poller)",
+      "passed": true,
+      "seconds": 0.0484704,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern in the files this change touched.\r\nAlso found in 4 file(s) this change did not touch (not counted against it): front-end/src/pages/watch-branch.tsx, front-end/src/modules/BuildWizard/BuildWizard.tsx, front-end/src/modules/Database/DbOperationsPanel.tsx, front-end/src/shared/hooks/useElapsedTimer.ts.",
+      "rules": [
+        "USR-001"
+      ]
+    },
+    {
+      "id": "api-build-test",
+      "name": "API builds and all tests pass",
+      "passed": true,
+      "seconds": 48.3451797,
+      "notRun": false,
+      "flaky": false,
+      "tier": "full",
+      "output": "\u2026\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022POST\u0022,\u0022/api/servers\u0022)\r\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022GET\u0022,\u0022/api/resources/scripts\u0022)\r\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022GET\u0022,\u0022/api/resources/credentials\u0022)\r\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022GET\u0022,\u0022/api/team\u0022)\r\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022POST\u0022,\u0022/api/team\u0022)\r\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022GET\u0022,\u0022/api/scheduler/history\u0022)\r\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022GET\u0022,\u0022/api/watch-branch/history\u0022)\r\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022GET\u0022,\u0022/api/fs/list\u0022)\r\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022GET\u0022,\u0022/api/auth/me\u0022)\r\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022POST\u0022,\u0022/api/auth/change-password\u0022)\r\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022POST\u0022,\u0022/api/system/shutdown\u0022)\r\n  Skipped PublicEndpoints_NeedNoSignIn\r\n  Skipped OperatorCanReadAndOperate_ButNotChangeSettingsOrServers\r\n  Skipped ViewerCanOnlyRead_AndSeesNoChangeAllowed\r\n  Skipped AdminDoesEverything\r\n  Skipped ARoleChangeAppliesOnThePersonsNextRequest\r\n  Skipped AnotherCompanysProject_LooksExactlyLikeOneThatDoesNotExist\r\n  Skipped Lists_OnlyEverShowTheCallersOwnCompany\r\n  Skipped ChangingOrDeletingAnotherCompanysProject_ChangesNothing\r\n  Skipped ACompanyIdInAHeaderOrQuery_IsIgnored\r\n  Skipped AnotherCompanysTeamMember_IsNotFound_ForEveryTeamAction\r\n  Skipped Teammate_IsCreatedInTheAdminsCompany_AndNeverEchoesThePassword\r\n  Skipped Teammate_MustChooseANewPasswordFirst_ThenWorksNormally\r\n  Skipped Teammate_WithATakenEmail_IsRefusedBesideTheEmailField_EvenInAnotherCompany\r\n  Skipped Teammate_InvalidFields_AreReportedBesideTheField (\u0022bad\u0022,\u0022Name\u0022,\u0022temp-pass-123\u0022,\u0022Viewer\u0022,\u0022email\u0022)\r\n  Skipped Teammate_InvalidFields_AreReportedBesideTheField (\u0022ok@example.test\u0022,\u0022Name\u0022,\u0022short\u0022,\u0022Viewer\u0022,\u0022temporaryPassword\u0022)\r\n  Skipped Teammate_InvalidFields_AreReportedBesideTheField (\u0022ok@example.test\u0022,\u0022Name\u0022,\u0022temp-pass-123\u0022,\u0022\u0022,\u0022role\u0022)\r\n  Skipped Teammate_InvalidFields_AreReportedBesideTheField (\u0022ok@example.test\u0022,\u0022Name\u0022,\u0022temp-pass-123\u0022,\u0022Owner\u0022,\u0022role\u0022)\r\n  Skipped Teammate_SavedTwiceAtOnce_IsCreatedOnce\r\n  Skipped LastActiveAdmin_CannotBeDemotedOrSwitchedOff\r\n  Skipped OnceAnotherAdminExists_TheFirstCanStepDown\r\n  Skipped TwoAdminsStepDownAtOnce_LeaveTheCompanyWithAnAdmin\r\n  Skipped RoleChange_WhenSomeoneElseChangedItFirst_IsReportedNotSilentlyOverwritten\r\n  Skipped SwitchingOff_StopsSignInAndAnOpenSession_KeepsEverything_AndCanBeUndone\r\n  Skipped SwitchingOffOrOn_Twice_DoesNothingAndShowsNoError\r\n  Skipped BuildStartedByASwitchedOffTeammate_StillShowsTheirName\r\n  Skipped TeamList_IsPaged_OrderedByName_WithATotal_AndAServerSideMaximum\r\n  Skipped CompanyWithOnlyItsAdmin_ListsThatPerson\r\n  Skipped TeamList_With50People_AndSignIn_AreEachUnderOneSecond\r\n  Skipped ForgotPassword_SaysTheSameThing_WhetherOrNotTheEmailExists_AndNeverShowsTheLink\r\n  Skipped ResetLink_WorksOnce_ThenSaysItIsUsedOrExpired\r\n  Skipped ResetLink_WithAGarbageToken_IsRefusedPlainly\r\n  Skipped ResettingForASwitchedOffAccount_NeitherWorksNorSwitchesItOn\r\n  Skipped ResetRequests_AreRateLimited\r\n  Skipped Google_WhenNotConfigured_IsOffAndEmailSignInStillWorks\r\n  Skipped OldCookieOrTokenFromBeforeTheSwitch_GetsAPlainSignInRequired_NotAnErrorPage\r\n  Skipped OldAuthEndpoints_AreGone\r\n  Skipped ErrorResponses_NeverContainSecrets\r\n  Skipped Upgrade_KeepsEveryAccountAndCompany_MakesThemAdmins_AndKeepsTheOldPasswordHash [33 ms]\r\n  Skipped Upgrade_GivesOrphanedRowsToTheOldestCompany_AndLosesNoProject [21 ms]\r\n  Skipped Upgrade_RunTwice_LeavesTheDataIntact [21 ms]\r\n  Skipped Upgrade_RerunningTheFirstScriptByHand_IsHarmless [20 ms]\r\n  Skipped Upgrade_DropsTheOldTokenTablesAndColumns_ButAddsIdentityTables [21 ms]\r\n  Skipped Upgrade_EnforcesUniqueEmailsRegardlessOfCapitals [22 ms]\r\n  Skipped FreshInstall_FromSchemaSql_NeedsNoMigration [6 ms]\r\n  Skipped DownScripts_RestoreTheOldShape_WithoutLosingAccounts [18 ms]\r\nWARNING: Overwriting results file: D:\\work\\nyingi\\code\\systems\\ShipRight\\.coverage\\results.trx\r\nResults File: D:\\work\\nyingi\\code\\systems\\ShipRight\\.coverage\\results.trx\r\n\r\nPassed!  - Failed:     0, Passed:   911, Skipped:    76, Total:   987, Duration: 40 s - ShipRight.Tests.dll (net10.0)",
+      "rules": [
+        "BUILD-001",
+        "TEST-002"
+      ]
+    }
+  ],
+  "fullGreenHash": "1B7AD9C670EA4F10E5577211EBF5B3F2C12477627731FD8BD35C121CC1072765",
+  "baseline": [
+    {
+      "id": "app-boots",
+      "name": "The app starts and works as set up",
+      "passed": false,
+      "seconds": 0.1642254,
+      "notRun": true,
+      "flaky": false,
+      "tier": "full",
+      "output": "Not set up in this project: Nothing starts the app and looks at it  no scripts/smoke/run.mjs , so nothing proves the app starts and works yet.",
+      "rules": [
+        "BOOT-001"
+      ]
+    },
+    {
+      "id": "no-secrets-code",
+      "name": "No secrets in code",
+      "passed": true,
+      "seconds": 0.1944237,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern found.",
+      "rules": [
+        "SEC-001"
+      ]
+    },
+    {
+      "id": "no-secrets-config",
+      "name": "No secrets in committed config",
+      "passed": true,
+      "seconds": 0.092585,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern found.",
+      "rules": [
+        "SEC-001"
+      ]
+    },
+    {
+      "id": "no-raw-sql-interpolation",
+      "name": "No interpolated or concatenated SQL",
+      "passed": true,
+      "seconds": 0.1692916,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern found.",
+      "rules": [
+        "SEC-002"
+      ]
+    },
+    {
+      "id": "no-select-star",
+      "name": "No SELECT * (read only the columns the screen needs)",
+      "passed": true,
+      "seconds": 0.0786953,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern found.",
+      "rules": [
+        "DB-003"
+      ]
+    },
+    {
+      "id": "no-sql-leading-wildcard",
+      "name": "No search that starts with a wildcard",
+      "passed": true,
+      "seconds": 0.0903338,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern found.",
+      "rules": [
+        "DB-004"
+      ]
+    },
+    {
+      "id": "no-debug-leftovers-api",
+      "name": "No debugging leftovers (API)",
+      "passed": true,
+      "seconds": 0.0903793,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern found.",
+      "rules": [
+        "QUAL-001"
+      ]
+    },
+    {
+      "id": "no-debug-leftovers-web",
+      "name": "No debugging leftovers (web)",
+      "passed": true,
+      "seconds": 0.1029945,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern in the files this change touched.\r\nAlso found in 1 file(s) this change did not touch (not counted against it): front-end/src/modules/ProjectDetail/ComposeRepoCard.tsx.",
+      "rules": [
+        "QUAL-001"
+      ]
+    },
+    {
+      "id": "api-build",
+      "name": "API compiles",
+      "passed": true,
+      "seconds": 4.2831132,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "Determining projects to restore...\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Desktop\\ShipRight.Desktop.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj [D:\\work\\nyingi\\code\\systems\\ShipRight\\ShipRight.sln]\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Tests\\ShipRight.Tests.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj [D:\\work\\nyingi\\code\\systems\\ShipRight\\ShipRight.sln]\r\n  All projects are up-to-date for restore.\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Desktop\\ShipRight.Desktop.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Tests\\ShipRight.Tests.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj\r\n  ShipRight.RuntimeConfig -\u003E D:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.RuntimeConfig\\bin\\Debug\\net10.0\\ShipRight.RuntimeConfig.dll\r\n  ShipRight.Desktop -\u003E D:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Desktop\\bin\\Debug\\net10.0-windows10.0.17763.0\\ShipRight.Desktop.dll\r\n  ShipRight.Server -\u003E D:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Server\\bin\\Debug\\net10.0\\ShipRight.Server.dll\r\n  ShipRight.Tests -\u003E D:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Tests\\bin\\Debug\\net10.0-windows10.0.17763.0\\ShipRight.Tests.dll\r\n\r\nBuild succeeded.\r\n\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Desktop\\ShipRight.Desktop.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj [D:\\work\\nyingi\\code\\systems\\ShipRight\\ShipRight.sln]\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Tests\\ShipRight.Tests.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj [D:\\work\\nyingi\\code\\systems\\ShipRight\\ShipRight.sln]\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Desktop\\ShipRight.Desktop.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Tests\\ShipRight.Tests.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj\r\n    4 Warning(s)\r\n    0 Error(s)\r\n\r\nTime Elapsed 00:00:03.62",
+      "rules": [
+        "BUILD-001"
+      ]
+    },
+    {
+      "id": "api-build-test",
+      "name": "API builds and all tests pass",
+      "passed": true,
+      "seconds": 52.1024229,
+      "notRun": false,
+      "flaky": false,
+      "tier": "full",
+      "output": "\u2026\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022POST\u0022,\u0022/api/servers\u0022)\r\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022GET\u0022,\u0022/api/resources/scripts\u0022)\r\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022GET\u0022,\u0022/api/resources/credentials\u0022)\r\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022GET\u0022,\u0022/api/team\u0022)\r\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022POST\u0022,\u0022/api/team\u0022)\r\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022GET\u0022,\u0022/api/scheduler/history\u0022)\r\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022GET\u0022,\u0022/api/watch-branch/history\u0022)\r\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022GET\u0022,\u0022/api/fs/list\u0022)\r\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022GET\u0022,\u0022/api/auth/me\u0022)\r\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022POST\u0022,\u0022/api/auth/change-password\u0022)\r\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022POST\u0022,\u0022/api/system/shutdown\u0022)\r\n  Skipped PublicEndpoints_NeedNoSignIn\r\n  Skipped OperatorCanReadAndOperate_ButNotChangeSettingsOrServers\r\n  Skipped ViewerCanOnlyRead_AndSeesNoChangeAllowed\r\n  Skipped AdminDoesEverything\r\n  Skipped ARoleChangeAppliesOnThePersonsNextRequest\r\n  Skipped AnotherCompanysProject_LooksExactlyLikeOneThatDoesNotExist\r\n  Skipped Lists_OnlyEverShowTheCallersOwnCompany\r\n  Skipped ChangingOrDeletingAnotherCompanysProject_ChangesNothing\r\n  Skipped ACompanyIdInAHeaderOrQuery_IsIgnored\r\n  Skipped AnotherCompanysTeamMember_IsNotFound_ForEveryTeamAction\r\n  Skipped Teammate_IsCreatedInTheAdminsCompany_AndNeverEchoesThePassword\r\n  Skipped Teammate_MustChooseANewPasswordFirst_ThenWorksNormally\r\n  Skipped Teammate_WithATakenEmail_IsRefusedBesideTheEmailField_EvenInAnotherCompany\r\n  Skipped Teammate_InvalidFields_AreReportedBesideTheField (\u0022bad\u0022,\u0022Name\u0022,\u0022temp-pass-123\u0022,\u0022Viewer\u0022,\u0022email\u0022)\r\n  Skipped Teammate_InvalidFields_AreReportedBesideTheField (\u0022ok@example.test\u0022,\u0022Name\u0022,\u0022short\u0022,\u0022Viewer\u0022,\u0022temporaryPassword\u0022)\r\n  Skipped Teammate_InvalidFields_AreReportedBesideTheField (\u0022ok@example.test\u0022,\u0022Name\u0022,\u0022temp-pass-123\u0022,\u0022\u0022,\u0022role\u0022)\r\n  Skipped Teammate_InvalidFields_AreReportedBesideTheField (\u0022ok@example.test\u0022,\u0022Name\u0022,\u0022temp-pass-123\u0022,\u0022Owner\u0022,\u0022role\u0022)\r\n  Skipped Teammate_SavedTwiceAtOnce_IsCreatedOnce\r\n  Skipped LastActiveAdmin_CannotBeDemotedOrSwitchedOff\r\n  Skipped OnceAnotherAdminExists_TheFirstCanStepDown\r\n  Skipped TwoAdminsStepDownAtOnce_LeaveTheCompanyWithAnAdmin\r\n  Skipped RoleChange_WhenSomeoneElseChangedItFirst_IsReportedNotSilentlyOverwritten\r\n  Skipped SwitchingOff_StopsSignInAndAnOpenSession_KeepsEverything_AndCanBeUndone\r\n  Skipped SwitchingOffOrOn_Twice_DoesNothingAndShowsNoError\r\n  Skipped BuildStartedByASwitchedOffTeammate_StillShowsTheirName\r\n  Skipped TeamList_IsPaged_OrderedByName_WithATotal_AndAServerSideMaximum\r\n  Skipped CompanyWithOnlyItsAdmin_ListsThatPerson\r\n  Skipped TeamList_With50People_AndSignIn_AreEachUnderOneSecond\r\n  Skipped ForgotPassword_SaysTheSameThing_WhetherOrNotTheEmailExists_AndNeverShowsTheLink\r\n  Skipped ResetLink_WorksOnce_ThenSaysItIsUsedOrExpired\r\n  Skipped ResetLink_WithAGarbageToken_IsRefusedPlainly\r\n  Skipped ResettingForASwitchedOffAccount_NeitherWorksNorSwitchesItOn\r\n  Skipped ResetRequests_AreRateLimited\r\n  Skipped Google_WhenNotConfigured_IsOffAndEmailSignInStillWorks\r\n  Skipped OldCookieOrTokenFromBeforeTheSwitch_GetsAPlainSignInRequired_NotAnErrorPage\r\n  Skipped OldAuthEndpoints_AreGone\r\n  Skipped ErrorResponses_NeverContainSecrets\r\n  Skipped Upgrade_KeepsEveryAccountAndCompany_MakesThemAdmins_AndKeepsTheOldPasswordHash [25 ms]\r\n  Skipped Upgrade_GivesOrphanedRowsToTheOldestCompany_AndLosesNoProject [18 ms]\r\n  Skipped Upgrade_RunTwice_LeavesTheDataIntact [20 ms]\r\n  Skipped Upgrade_RerunningTheFirstScriptByHand_IsHarmless [22 ms]\r\n  Skipped Upgrade_DropsTheOldTokenTablesAndColumns_ButAddsIdentityTables [19 ms]\r\n  Skipped Upgrade_EnforcesUniqueEmailsRegardlessOfCapitals [24 ms]\r\n  Skipped FreshInstall_FromSchemaSql_NeedsNoMigration [1 ms]\r\n  Skipped DownScripts_RestoreTheOldShape_WithoutLosingAccounts [20 ms]\r\nWARNING: Overwriting results file: D:\\work\\nyingi\\code\\systems\\ShipRight\\.coverage\\results.trx\r\nResults File: D:\\work\\nyingi\\code\\systems\\ShipRight\\.coverage\\results.trx\r\n\r\nPassed!  - Failed:     0, Passed:   904, Skipped:    76, Total:   980, Duration: 39 s - ShipRight.Tests.dll (net10.0)",
+      "rules": [
+        "BUILD-001",
+        "TEST-002"
+      ]
+    },
+    {
+      "id": "web-tests",
+      "name": "Web app tests pass",
+      "passed": true,
+      "seconds": 12.0507995,
+      "notRun": false,
+      "flaky": false,
+      "tier": "full",
+      "output": "\u003E front-end@4.3.13 test\r\n\u003E jest --passWithNoTests\r\n\r\n\n\r\nTest Suites: 35 passed, 35 total\r\nTests:       248 passed, 248 total\r\nSnapshots:   0 total\r\nTime:        7.805 s, estimated 13 s\r\nRan all test suites.",
+      "rules": [
+        "TEST-003"
+      ]
+    },
+    {
+      "id": "web-typecheck",
+      "name": "Web app types are right",
+      "passed": true,
+      "seconds": 6.4207812,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "",
+      "rules": [
+        "BUILD-001"
+      ]
+    },
+    {
+      "id": "web-lint-build",
+      "name": "Web app lints and builds",
+      "passed": true,
+      "seconds": 50.8786427,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "\u2026\n \u2713 Compiled successfully in 4.8s\r\n   Collecting page data ...\r\n   Generating static pages (0/20) ...\r\n   Generating static pages (5/20) \r\n   Generating static pages (10/20) \r\n   Generating static pages (15/20) \r\n \u2713 Generating static pages (20/20)\r\n   Finalizing page optimization ...\r\n   Collecting build traces ...\r\n   Exporting (0/20) ...\r\n   Exporting (5/20) \r\n   Exporting (10/20) \r\n   Exporting (15/20) \r\n \u2713 Exporting (20/20)\r\n\r\nRoute (pages)                                Size  First Load JS\r\n\u250C \u25CB / (491 ms)                              289 B        88.6 kB\r\n\u251C   /_app                                     0 B        88.3 kB\r\n\u251C \u25CB /404                                  2.29 kB        90.6 kB\r\n\u251C \u25CB /backups (485 ms)                     4.14 kB         121 kB\r\n\u251C \u25CB /change-password                      1.48 kB         110 kB\r\n\u251C \u25CB /databases (668 ms)                   4.94 kB         200 kB\r\n\u251C   \u2514 css/0352aa14d20fd113.css            1.37 kB\r\n\u251C \u25CB /forgot-password                       1.4 kB         110 kB\r\n\u251C \u25CB /history (668 ms)                     4.83 kB         223 kB\r\n\u251C   \u2514 css/a3e93c6f436ea74b.css             1.8 kB\r\n\u251C \u25CB /login (484 ms)                       1.72 kB         110 kB\r\n\u251C \u25CB /monitoring (487 ms)                  5.78 kB         115 kB\r\n\u251C   \u2514 css/e59c685cf6be5f77.css            1.74 kB\r\n\u251C \u25CB /pipelines                            21.5 kB         298 kB\r\n\u251C   \u2514 css/71de852433b38578.css            2.11 kB\r\n\u251C \u25CB /projects                             7.39 kB         290 kB\r\n\u251C   \u2514 css/f301fc038b13a5cb.css            1.46 kB\r\n\u251C \u25CF /projects/[id]                          340 B        88.6 kB\r\n\u251C \u25CF /projects/[id]/edit                     342 B        88.6 kB\r\n\u251C \u25CB /projects/new (486 ms)                  292 B        88.6 kB\r\n\u251C \u25CB /reset-password                       1.52 kB         110 kB\r\n\u251C \u25CB /resources (670 ms)                   14.7 kB         208 kB\r\n\u251C   \u2514 css/b6bd5b49bb530585.css            1.21 kB\r\n\u251C \u25CB /servers (669 ms)                       11 kB         209 kB\r\n\u251C   \u2514 css/5bc80050de4abe4e.css            2.39 kB\r\n\u251C \u25CB /signup (484 ms)                      1.75 kB         110 kB\r\n\u251C \u25CB /team (669 ms)                        4.22 kB         209 kB\r\n\u251C   \u2514 css/48a6e8251a340d6d.css            1.34 kB\r\n\u251C \u25CB /terminal (486 ms)                    4.29 kB         144 kB\r\n\u251C   \u2514 css/a5aefe90c590e99b.css              821 B\r\n\u2514 \u25CB /watch-branch (485 ms)                3.91 kB         113 kB\r\n\u002B First Load JS shared by all             90.2 kB\r\n  \u251C chunks/framework-f31701c9d93f12a4.js  44.8 kB\r\n  \u251C chunks/main-c010c2578b2e0e15.js       34.5 kB\r\n  \u2514 other shared chunks (total)           10.9 kB\r\n\r\n\u25CB  (Static)  prerendered as static content\r\n\u25CF  (SSG)     prerendered as static HTML (uses getStaticProps)\r\n\r\n\n\u0060next lint\u0060 is deprecated and will be removed in Next.js 16.\r\nFor new projects, use create-next-app to choose your preferred linter.\r\nFor existing projects, migrate to the ESLint CLI:\r\nnpx @next/codemod@canary next-lint-to-eslint-cli .",
+      "rules": [
+        "BUILD-001"
+      ]
+    },
+    {
+      "id": "rule-USR-001-1",
+      "name": "No native button (use zest-button)",
+      "passed": true,
+      "seconds": 0.0941341,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern in the files this change touched.\r\nAlso found in 7 file(s) this change did not touch (not counted against it): front-end/src/pages/history.tsx, front-end/src/pages/pipelines.tsx, front-end/src/pages/resources.tsx, front-end/src/pages/servers.tsx, front-end/src/modules/BuildWizard/LogViewer.tsx, \u2026.",
+      "rules": [
+        "USR-001"
+      ]
+    },
+    {
+      "id": "rule-USR-001-2",
+      "name": "No native text input or textarea (use zest-textbox)",
+      "passed": true,
+      "seconds": 0.082249,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern in the files this change touched.\r\nAlso found in 11 file(s) this change did not touch (not counted against it): front-end/src/pages/databases.tsx, front-end/src/modules/ProjectConfig/ProjectConfigForm.tsx, front-end/src/modules/ServerDeploy/ServerDeploySection.tsx, front-end/src/tests/modules/BrowsePathField.test.tsx, front-end/src/tests/modules/ComposeRepoCard.test.tsx, \u2026.",
+      "rules": [
+        "USR-001"
+      ]
+    },
+    {
+      "id": "rule-USR-001-3",
+      "name": "No native table (use responsive-table)",
+      "passed": true,
+      "seconds": 0.0822529,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern in the files this change touched.\r\nAlso found in 5 file(s) this change did not touch (not counted against it): front-end/src/pages/backups.tsx, front-end/src/pages/databases.tsx, front-end/src/pages/monitoring.tsx, front-end/src/pages/watch-branch.tsx, front-end/src/modules/ProjectConfig/ProjectConfigForm.tsx.",
+      "rules": [
+        "USR-001"
+      ]
+    },
+    {
+      "id": "rule-USR-001-4",
+      "name": "No react-tabs (use zest-tabs)",
+      "passed": true,
+      "seconds": 0.0986669,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern in the files this change touched.\r\nAlso found in 1 file(s) this change did not touch (not counted against it): front-end/src/modules/ProjectConfig/ProjectConfigForm.tsx.",
+      "rules": [
+        "USR-001"
+      ]
+    },
+    {
+      "id": "rule-USR-001-5",
+      "name": "No hand-rolled setInterval polling (use jattac-web-poller)",
+      "passed": true,
+      "seconds": 0.147124,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern in the files this change touched.\r\nAlso found in 4 file(s) this change did not touch (not counted against it): front-end/src/pages/watch-branch.tsx, front-end/src/modules/BuildWizard/BuildWizard.tsx, front-end/src/modules/Database/DbOperationsPanel.tsx, front-end/src/shared/hooks/useElapsedTimer.ts.",
+      "rules": [
+        "USR-001"
+      ]
+    }
+  ],
+  "checkPassedOn": {
+    "api-build": "EF0DD52E43A4819FA0434BA619202A1D946C322956445A90FF635CF9EBDED8EF",
+    "api-build-test": "C0781033F06A5AED6F1A688635D143A37C900372F2E7C09E894AEE591B39F862",
+    "web-tests": "4ADF5FBC44B68A4C3CD7B82C730DD7AE1F22E191F0264FBD0CE0922BF9F58265",
+    "web-typecheck": "9AC6100B43C3FE4728A536A3D8BFD1122CEA5ED7FE2964CBD688F7654EF973AF",
+    "web-lint-build": "63660BB7D1186FAD1090D49C54763672AD4D2B11C9756C43BA0D316CC3A317C8"
+  },
+  "generatedByChecks": [],
+  "ignoredPaths": [],
+  "acceptedGaps": [],
+  "scopeExtensions": [
+    "back-end/ShipRight.Server/Modules/Projects/ProjectRouter.cs"
+  ],
+  "scopeSeen": {},
+  "scopeRequestsMade": 1,
+  "preflightAnswered": false,
+  "analystQuestions": 0,
+  "analysisClosed": false,
+  "youDecided": 0,
+  "requirementsApproved": true,
+  "signOffRounds": 2,
+  "changedFiles": [
+    "back-end/ShipRight.Server/Modules/Identity/RoleAccessRules.cs",
+    "back-end/ShipRight.Server/Modules/Projects/ProjectRouter.cs",
+    "back-end/ShipRight.Server/Program.cs",
+    "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+    "back-end/ShipRight.Tests/Modules/Identity/DesktopModeStartupTests.cs",
+    "back-end/ShipRight.Tests/Modules/Identity/RoleAccessRulesTests.cs",
+    "front-end/src/modules/Team/__tests__/TeamPage.test.tsx",
+    "scripts/smoke/run.mjs",
+    "scripts/smoke/__tests__/run.test.mjs"
+  ]
+}

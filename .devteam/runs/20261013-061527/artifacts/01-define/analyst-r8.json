@@ -1,0 +1,35 @@
+{
+  "summary": "",
+  "requirements": [],
+  "questions": [],
+  "ask": {
+    "text": "When an Admin no longer wants a teammate in the company (for example Priya leaves), what should \"removing\" her do?",
+    "why": "It decides whether the account and the history of what she built or deployed stay or vanish, whether she can be brought back, and whether her email can be reused for another account.",
+    "topic": "deletion",
+    "options": [
+      { "label": "Switch her off: she can no longer sign in, but her account and history stay, and the Admin can switch her back on", "consequence": "Nothing is lost, builds and deploys she started still show her name, and her email stays taken. Reversible.", "recommended": true },
+      { "label": "Delete her account for good (after the Admin confirms)", "consequence": "Her email is freed up and her sign-in is gone forever; past builds she started show no name or a generic one. Cannot be undone." },
+      { "label": "Admin cannot remove anyone, only change their role", "consequence": "Simplest, but a person who left the company keeps access until someone changes it by hand." }
+    ]
+  },
+  "coverage": [
+    { "topic": "users", "status": "answered", "note": "Admin creates a teammate's account directly with email, temporary password and role (Admin, Operator or Viewer)." },
+    { "topic": "data", "status": "answered", "note": "Existing accounts, companies and password hashes stay valid; email unique system-wide; each person has one company and one role." },
+    { "topic": "permissions", "status": "answered", "note": "Admin all; Operator build and deploy but not settings or servers; Viewer read-only. Assumed only Admins create teammates and change roles." },
+    { "topic": "validation", "status": "assumed", "note": "Email format, password minimum 8 characters, names up to 200 characters; messages beside the field." },
+    { "topic": "states", "status": "assumed", "note": "Loading, empty, error and success states on sign-in, register, reset and the team screen." },
+    { "topic": "duplicates", "status": "answered", "note": "Email unique regardless of capitals; double submit creates one account; creating a teammate with an email already in use is refused with a clear message." },
+    { "topic": "volume", "status": "assumed", "note": "A company's team list is small (up to about 50 people) but still paged with a server-side maximum." },
+    { "topic": "deletion", "status": "open", "note": "How an Admin removes a teammate is not yet decided." },
+    { "topic": "privacy", "status": "answered", "note": "Only email, name and password hash (or Google link) stored; passwords and tokens never logged or shown after creation." },
+    { "topic": "quality", "status": "assumed", "note": "Lockout 5 attempts per 5 minutes, 7-day sessions, sign-in under 1 second." }
+  ],
+  "assumptions": [
+    "Passwords must be at least 8 characters; names and company names up to 200 characters; emails compared without regard to capitals.",
+    "A Google-created company is named from the person's Google display name.",
+    "Accounts lock for 5 minutes after 5 wrong passwords; sessions last 7 days.",
+    "Only an Admin can create teammates, change roles or remove people.",
+    "A teammate given a temporary password must choose a new one at first sign-in.",
+    "Company scoping comes from the person's account, not from a header or subdomain."
+  ]
+}

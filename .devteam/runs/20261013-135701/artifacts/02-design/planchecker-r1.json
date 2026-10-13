@@ -1,0 +1,13 @@
+{
+  "summary": "The plan fits together except that its boot proof cannot satisfy the blocking BOOT-001 check app-boots, which is not set up and needs a smoke runner the design's declared scope omits.",
+  "conflicts": [
+    {
+      "requirement": "R11",
+      "against": "BOOT-001",
+      "kind": "check",
+      "owner": "design",
+      "why": "R11 (and the reliability NFR) requires the app to start and be looked at in both modes, and BOOT-001 is a blocking rule enforced by the app-boots check. The design's finishing step (4) says to 'prove the boot requirement in both modes with the existing start-up tests' (DesktopModeStartupTests via WebApplicationFactory), but app-boots does not run any project test: it is an external smoke runner that requires scripts/smoke/run.mjs, which does not exist, and the design's declared scope lists no scripts/smoke file. So as written the design can neither run nor pass the only automated enforcement of BOOT-001, and SCOPE-001 forbids the builder from adding the missing file unless the design first puts it in scope.",
+      "evidence": "R11 acceptance: 'Starting the app in desktop/local mode and opening the home page and reading data succeeds'. BOOT-001: 'The app must start and work as it was set up: its home page loads, sign-in behaves as configured (none when single-user), and reading data through the web app succeeds.', enforced by check app-boots: 'echo Not set up in this project: Nothing starts the app and looks at it  no scripts/smoke/run.mjs , so nothing proves the app starts and works yet. && exit 78'. Baseline result in state.json: app-boots passed=false, notRun=true, output 'Not set up in this project: Nothing starts the app and looks at it  no scripts/smoke/run.mjs , so nothing proves the app starts and works yet.'. The design summary says 'Prove the boot requirement in both modes with the existing start-up tests (home page loads, data read works, desktop has no sign-in routes)', and its scope array contains no scripts/smoke/run.mjs entry."
+    }
+  ]
+}

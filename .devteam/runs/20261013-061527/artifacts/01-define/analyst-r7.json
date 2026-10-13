@@ -1,0 +1,34 @@
+{
+  "summary": "",
+  "requirements": [],
+  "questions": [],
+  "ask": {
+    "text": "You've asked for teammates to be added to a company. How should an Admin get a teammate in? For example, Sam (Admin) wants Priya to join as an Operator.",
+    "why": "It decides what the Admin sees and what Priya has to do, and whether we reuse the existing email sending (as used for password reset) or build a different joining step. It also decides what happens when Priya already has her own ShipRight account, since one email can belong to only one company today.",
+    "topic": "users",
+    "options": [
+      { "label": "Admin sends an invite by email; Priya opens the link, sets her own password (or uses Google) and joins with the role the Admin picked", "consequence": "Admin never sees or sets a password. The link expires, and the Admin can see pending invites and cancel them. If Priya already has an account in another company, she is told the email is already in use.", "recommended": true },
+      { "label": "Admin creates Priya's account directly: types her email and a temporary password, and picks her role", "consequence": "No email needed, but the Admin has to hand the password to Priya some other way, and Priya should be made to change it on first sign-in." },
+      { "label": "Admin shares a company join link or code that anyone can use; the Admin then sets each person's role", "consequence": "Simplest for the Admin, but anyone holding the link could join until the Admin turns it off, so people would need approval before getting access." }
+    ]
+  },
+  "coverage": [
+    { "topic": "users", "status": "open", "note": "Teammates are now in scope; how a teammate joins a company is not yet decided." },
+    { "topic": "data", "status": "answered", "note": "Existing accounts, companies and password hashes stay valid; email unique system-wide. Invite details depend on the answer above." },
+    { "topic": "permissions", "status": "assumed", "note": "Roles unchanged: Admin all, Operator build/deploy not settings/servers, Viewer read-only. Assumed only Admins can invite teammates and change roles." },
+    { "topic": "validation", "status": "assumed", "note": "Email format, password minimum 8 characters, names up to 200 characters; messages beside the field." },
+    { "topic": "states", "status": "assumed", "note": "Loading, empty, error and success states on sign-in, register, reset and the new team screen." },
+    { "topic": "duplicates", "status": "answered", "note": "Email unique regardless of capitals; double submit and simultaneous registration create one company. Inviting the same email twice handled once the join method is known." },
+    { "topic": "volume", "status": "assumed", "note": "A company's team list is small (up to about 50 people) but is still paged with a server-side maximum." },
+    { "topic": "deletion", "status": "open", "note": "Removing a teammate is now arguably in scope; to be settled after the join method." },
+    { "topic": "privacy", "status": "answered", "note": "Only email, name and password hash (or Google link) stored; passwords, invite links and tokens never logged." },
+    { "topic": "quality", "status": "assumed", "note": "Lockout 5 attempts/5 minutes, 7-day sessions, sign-in under 1 second." }
+  ],
+  "assumptions": [
+    "Passwords must be at least 8 characters; names and company names up to 200 characters; emails compared without regard to capitals.",
+    "A Google-created company is named from the person's Google display name.",
+    "Accounts lock for 5 minutes after 5 wrong passwords; sessions last 7 days.",
+    "Only an Admin can invite teammates, change roles or remove people.",
+    "Company scoping comes from the person's account, not from a header or subdomain."
+  ]
+}

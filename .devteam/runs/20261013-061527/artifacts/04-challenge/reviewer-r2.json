@@ -1,0 +1,141 @@
+{
+  "reviewer": "r2",
+  "verdict": "approve",
+  "summary": "Round-2 auth refactor (ASP.NET Core Identity replacing the hand-built JWT stack) is comprehensive, compliant with R5-R10, and tightly covered by tests that derive the route table from the real DI graph. The three round-1 USR-001 findings are resolved and verified clean in both changed source and test mock code. No blocking defects found on first pass; six advisory/informational hardening notes follow.",
+  "blocking_findings": [],
+
+  "advisory_findings": [
+    {
+      "id": "SEC-COOKIE-SECURE",
+      "title": "Session cookie Secure attribute depends on scheme seen by Kestrel",
+      "severity": "high-if-behind-proxy",
+      "rules": "R5 (session), security NFR",
+      "evidence": {
+        "file": "back-end/ShipRight.Server/Modules/Identity/IdentityRegistration.cs",
+        "line": 73,
+        "text": "options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;"
+      },
+      "detail": "If the cloud deployment terminates TLS at a reverse proxy (nginx) and proxies plain HTTP to Kestrel without ForwardedHeaders middleware, Set-Cookie responses carry no Secure attribute and the browser will happily send the 7-day session cookie over plaintext requests. Recommend CookieSecurePolicy.Always in cloud mode (or configured ForwardedHeaders verifying X-Forwarded-Proto). Not blocking: localhost development and direct-TLS deployments are unaffected by the flag; none of the round-2 files configure ForwardedHeaders, so the safe-to-hold assumption is that production TLS is expected by the deployment."
+    },
+    {
+      "id": "SEC-GOOGLE-LINK",
+      "title": "Google sign-in auto-links a verified Google email to any existing account at that address",
+      "severity": "medium",
+      "rules": "R5 (Google sign-in), security NFR",
+      "evidence": {
+        "file": "back-end/ShipRight.Server/Modules/Identity/GoogleSignIn.cs",
+        "line": 138,
+        "text": "var existing = await users.FindByEmailAsync(email); if (existing is not null) { await users.AddLoginAsync(...); return existing; }"
+      },
+      "detail": "Because email confirmation is disabled at registration (IdentityRegistration.cs:48 Set RequireConfirmedEmail=false), a ShipRight account can exist at an address nobody has proved they control. Anyone who later controls a Google account at that address (Google has verified the email) is silently signed into the existing account. This is the designed link-on-match behavior and the race handling is sound, but the identity-trust consequence is real: recommend requiring a confirmed email for accounts, or at least documenting the accepted risk. Advisory; not a round-2 regression."
+    },
+    {
+      "id": "SEC-RESET-STAMP",
+      "title": "Password reset does not rotate the security stamp",
+      "severity": "low",
+      "rules": "R10 (reset password)",
+      "evidence": {
+        "file": "back-end/ShipRight.Server/Modules/Identity/AuthEndpoints.cs",
+        "line": 117,
+        "text": "var result = await users.ResetPasswordAsync(user, parts[1], request.NewPassword!); ... user.MustChangePassword = false;"
+      },
+      "detail": "ResetPasswordAsync changes only the password hash; the reset flow never calls UpdateSecurityStampAsync, so existing sessions stay valid and any earlier e-mailed reset link (TokenLifespan = 1h, IdentityRegistration.cs:55) can still redeem for the same account within its window. Requirements only demand the old password stop working and the person signs in with the new one (both true), so this is hardening, not a defect. If other-session/other-link invalidation is ever wanted, an explicit UpdateSecurityStampAsync + UpdateAsync here matches ChangePasswordAsync semantics."
+    },
+    {
+      "id": "OBS-PROPAGATION",
+      "title": "Role/switch-off take effect within ~1 minute, not literally on the next request",
+      "severity": "info",
+      "rules": "R5 (role applies within a few minutes), R8 (switched off)",
+      "evidence": [
+        { "file": "back-end/ShipRight.Server/Modules/Identity/IdentityRegistration.cs", "line": 56, "text": "services.Configure<SecurityStampValidatorOptions>(o => o.ValidationInterval = StampCheckInterval); // 1 minute" },
+        { "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs", "line": 526, "text": "APersonSwitchedOffWhileSignedIn_LosesAccessOnTheNextRequest" },
+        { "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs", "line": 316, "text": "ARoleChangeAppliesOnThePersonsNextRequest" }
+      ],
+      "detail": "Production guarantee is stamp re-validation every minute (documented in AppClaimsPrincipalFactory.cs: 'a changed role applies within a minute (R5)'). The two test names claim next-request semantics; the test harness may re-issue principals per request, so they are stronger than the shipping implementation. Within-a-minute satisfies the R5 'within a few minutes' bound and matches the change-decision; flagging so nobody later reads 'next request' and assumes immediate revocation. If immediate effect is ever required, rotate the stamp on role change (ChangeRoleSql currently does not, unlike SetActiveSql) or shorten ValidationInterval."
+    },
+    {
+      "id": "OBS-CALLBACK-PATH",
+      "title": "/api/auth/google/callback is not in the anonymous whitelist and is invisible to the route sweep",
+      "severity": "info",
+      "rules": "R5, API-001 sweep",
+      "evidence": {
+        "file": "back-end/ShipRight.Server/Modules/Identity/GoogleSignIn.cs",
+        "line": 35,
+        "text": "options.CallbackPath = \"/api/auth/google/callback\";"
+      },
+      "detail": "The OAuth callback is intercepted by the framework's remote-authentication middleware, so it never appears in the endpoint table that OnlyTheListedEndpoints_AreMarkedPublic and EveryApiRoute_HasARequiredRole sweep (RoleAccessRulesTests.cs:154-192). Functionally fine today. Guard: if a literal MapGet(\"/api/auth/google/callback\") is ever added, the sweep forces an explicit anonymous/role decision, so the risk is documentation only."
+    },
+    {
+      "id": "OBS-DP-KEYS-PATH",
+      "title": "DataProtection keys always live in ~/.shipright/keys, independent of SHIPRIGHT_DATA_DIR",
+      "severity": "info",
+      "rules": "R9-style persistence expectation",
+      "evidence": {
+        "file": "back-end/ShipRight.Server/Modules/Identity/IdentityRegistration.cs",
+        "line": 59,
+        "text": "PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(DataDirectory.Resolve(), \"keys\")))"
+      },
+      "detail": "DataDirectory.Resolve() (Shared/Store/DataDirectory.cs:8-16) is the legacy profile path; a custom SHIPRIGHT_DATA_DIR is honored elsewhere (DataDirectory.Resolve(profile)) but not here. Defaults coincide, so cookies/reset links survive restarts as intended; only with a custom data dir do keys land elsewhere than the app data, and it is still stable per host user. Info; no change needed."
+    }
+  ],
+
+  "notes": [
+    "Round-1 USR-001 fixed and verified: TeamPage.tsx uses ZestButton for the load-error retry; TeamPage.test.tsx and LoginPage.test.tsx mocks rebuilt with react.createElement + jest.requireActual and drop native <button>/<input>. Grep for <(button|input|textarea|table)[\\s>/] in src/modules/Team and src/shared/auth returns nothing; remaining front-end hits are pre-existing untouched pages (backups, databases, history, pipelines, monitoring, projects/index) and tests.",
+    "R5 public surface is exactly the 7 AllowAnonymous endpoints (login, register, providers, forgot-password, reset-password, google/start, google/complete) and is locked by a test (RoleAccessRulesTests.cs:171-192) so no new route can silently become public; the callback path stays out of the table by design (see OBS-CALLBACK-PATH).",
+    "Every /api route has a required role: unknown routes fall to Viewer on read, Operator on write (RoleAccessRules.cs:71); EveryApiRoute_HasARequiredRole_ExceptTheHealthCheck (RoleAccessRulesTests.cs:154-168) builds the route table from CloudDiRegistrar + every Map*Routes module and proves coverage across all 80+ routes and each HTTP verb.",
+    "Brute-force posture is solid: fixed-window/IP rate limiters guard login/register/reset-password (AuthAttemptsLimiter) and forgot-password (PasswordResetLimiter) (AuthEndpoints.cs:23-31), lockout is 5 attempts/5 minutes (IdentityRegistration.cs:45-47) and is cleared on successful reset; login returns 429 when locked out, identical 401 for unknown-email vs wrong-password, 403 with 'switched off' only when the account is genuinely switched off.",
+    "Email verification is off by design (IdentityRegistration.cs:48) and I intentionally do not flag it as blocking: R1 registration is open to any email and R5 lists the public endpoints; the residual risk lands on the Google link-on-match path covered by SEC-GOOGLE-LINK.",
+    "CSRF posture is sound and unchanged: SameSite=Lax cookie (IdentityRegistration.cs:72), JSON bodies, and no state-changing GET endpoints; all mutations are POST/PUT/DELETE.",
+    "Reset link embeds {userId:N}.{token} (AuthEndpoints.cs:93) - a GUID plus the DP token; the message text is identical for known and unknown emails and only the intended recipient receives mail; mail-send and Google failures log exception type only, never the message or token (AuthEndpoints.cs:95-99, GoogleSignIn.cs:107-109).",
+    "Session re-issue is immediate where it matters: change-password calls RefreshSignInAsync after clearing MustChangePassword (AuthEndpoints.cs:156-158); switch-off rotates the stamp in the DB (SetActiveSql) so the signed-in person is cut off at the next stamp check (within a minute).",
+    "Legacy users are not broken: LegacyAwarePasswordHasher is registered before AddIdentityCore (IdentityRegistration.cs:33-34) so the pre-refactor hash format still verifies, and migration 0001 backfills NormalizedEmail, SecurityStamp and normalizes old Viewer role (Database/Migrations/0001_identity.up.sql).",
+    "Backend integration tests were not executed here (SHIPRIGHT_TEST_DB_CONNECTION points at no running MariaDB; MariaDbTestDatabase.CreateOrSkip is inconclusive without it). Role/route/rate-limit semantics are covered by unit tests that do not need the DB (RoleAccessRulesTests, pipeline tests in CloudApiIdentityTests/CloudApiPipelineTests use the in-memory failure-injection harness). Front-end suite (14 tests) passes."
+  ],
+
+  "files_reviewed": [
+    "back-end/ShipRight.Server/Modules/Identity/AuthEndpoints.cs",
+    "back-end/ShipRight.Server/Modules/Identity/AppClaimsPrincipalFactory.cs",
+    "back-end/ShipRight.Server/Modules/Identity/DapperUserStore.cs",
+    "back-end/ShipRight.Server/Modules/Identity/GoogleSignIn.cs",
+    "back-end/ShipRight.Server/Modules/Identity/IdentityDtos.cs",
+    "back-end/ShipRight.Server/Modules/Identity/IdentityRegistration.cs",
+    "back-end/ShipRight.Server/Modules/Identity/IdentityRepository.cs",
+    "back-end/ShipRight.Server/Modules/Identity/LegacyAwarePasswordHasher.cs",
+    "back-end/ShipRight.Server/Modules/Identity/RegistrationService.cs",
+    "back-end/ShipRight.Server/Modules/Identity/RoleAccessRules.cs",
+    "back-end/ShipRight.Server/Modules/Identity/RoleAuthorizationHandler.cs",
+    "back-end/ShipRight.Server/Modules/Identity/TeamEndpoints.cs",
+    "back-end/ShipRight.Server/Modules/Identity/TeamRepository.cs",
+    "back-end/ShipRight.Server/Shared/Store/DataDirectory.cs",
+    "back-end/ShipRight.Server/Shared/Tenancy/CompanyContext.cs",
+    "back-end/ShipRight.Server/Shared/Tenancy/CompanyScope.cs",
+    "back-end/ShipRight.Server/CloudDiRegistrar.cs",
+    "back-end/ShipRight.Server/CloudConfiguration.cs",
+    "back-end/ShipRight.Server/Database/CloudDatabaseRegistrar.cs",
+    "back-end/ShipRight.Server/Database/MigrationRunner.cs",
+    "back-end/ShipRight.Server/Database/Migrations/0001_identity.up.sql",
+    "back-end/ShipRight.Server/Database/Migrations/0001_identity.down.sql",
+    "back-end/ShipRight.Server/Database/Migrations/0002_drop_legacy_auth.up.sql",
+    "back-end/ShipRight.Server/Database/Migrations/0002_drop_legacy_auth.down.sql",
+    "back-end/ShipRight.Server/Modules/Scheduler/MariadbBackupHistoryStore.cs",
+    "back-end/ShipRight.Server/Modules/Scheduler/CloudSchedulerRegistrar.cs",
+    "back-end/ShipRight.Server/Modules/WatchBranch/MariadbWatchBranchHistoryStore.cs",
+    "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+    "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+    "back-end/ShipRight.Tests/Modules/Identity/RoleAccessRulesTests.cs",
+    "front-end/src/shared/auth/AuthApi.ts",
+    "front-end/src/shared/ApiService.ts",
+    "front-end/src/shared/auth/AuthStore.ts",
+    "front-end/src/shared/auth/AuthGuard.tsx",
+    "front-end/src/pages/login.tsx",
+    "front-end/src/pages/signup.tsx",
+    "front-end/src/pages/forgot-password.tsx",
+    "front-end/src/pages/reset-password.tsx",
+    "front-end/src/pages/change-password.tsx",
+    "front-end/src/pages/team.tsx",
+    "front-end/src/modules/AppShell/AppShell.tsx",
+    "front-end/src/modules/Team/TeamPage.tsx",
+    "front-end/src/modules/Team/__tests__/TeamPage.test.tsx",
+    "front-end/src/shared/auth/__tests__/LoginPage.test.tsx"
+  ]
+}

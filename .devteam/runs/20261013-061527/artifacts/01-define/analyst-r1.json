@@ -1,0 +1,28 @@
+{
+  "summary": "Replace ShipRight's hand-built sign-in (own JWT, refresh tokens, password reset, Company/User tables, IsAdmin flag) with ASP.NET Core Identity backed by the existing SQL/Dapper-style data access (no EF Core), add roles, Google sign-in, and per-company (tenant) scoping of users, logins and roles. Still open: what happens to existing accounts and passwords.",
+  "requirements": [],
+  "questions": [],
+  "ask": {
+    "text": "People already have ShipRight accounts with passwords. When the new sign-in system goes live, should those people still be able to log in with their current email and password?",
+    "why": "It decides whether existing accounts, passwords and company data are carried over (needs a migration and a way to read the old password format) or whether everyone starts from scratch.",
+    "topic": "users",
+    "options": [
+      { "label": "Yes, keep existing accounts and passwords working", "consequence": "Existing users and companies are migrated; nobody has to re-register or reset a password. More careful migration work and tests.", "recommended": true },
+      { "label": "Keep accounts, but everyone must reset their password once", "consequence": "Accounts and companies are kept, old passwords are discarded; each person gets a reset email on first use." },
+      { "label": "No, start fresh", "consequence": "Existing accounts are not carried over; everyone registers again. Simplest, but existing data tied to a company is lost or orphaned." }
+    ]
+  },
+  "coverage": [
+    { "topic": "users", "status": "open", "note": "Existing-account migration, roles and how tenants are identified still to confirm." },
+    { "topic": "data", "status": "open", "note": "Depends on migration answer; existing Company/User tables use CompanyId." },
+    { "topic": "permissions", "status": "open", "note": "Which role may do what; currently only IsAdmin exists." },
+    { "topic": "validation", "status": "open", "note": "Password rules and messages to confirm." },
+    { "topic": "states", "status": "open", "note": "Login/register/Google screens already exist in front-end; changes depend on answers." },
+    { "topic": "duplicates", "status": "open", "note": "Same email in two companies allowed or not." },
+    { "topic": "volume", "status": "open", "note": "Users per company and paging for any user/role list." },
+    { "topic": "deletion", "status": "open", "note": "Removing users/roles and sessions." },
+    { "topic": "privacy", "status": "open", "note": "Email and Google profile data stored." },
+    { "topic": "quality", "status": "open", "note": "Security expectations (lockout, token lifetime) to confirm." }
+  ],
+  "assumptions": []
+}

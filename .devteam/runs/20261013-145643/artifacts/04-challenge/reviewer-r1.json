@@ -1,0 +1,37 @@
+{
+  "findings": [
+    {
+      "cites": "R11",
+      "severity": "blocking",
+      "file": "scripts/smoke/run.mjs",
+      "line": 230,
+      "evidence": "main() isolates only SHIPRIGHT_DATA_DIR/--data-dir to a temp dir (run.mjs:66-76, 230-239), but the desktop stores the started app registers do not all receive it: Program.cs:276 registers `AddSingleton<IBuildStore, SqliteBuildStore>()`, so SqliteBuildStore falls back to `DataDirectory.Resolve()` = `<UserProfile>/.shipright` (SqliteBuildStore.cs:26, DataDirectory.cs:8-16). Observed while running `node scripts/smoke/run.mjs` and a minimal probe: the app logged `Archived builds/ -> C:\\Users\\nying\\.shipright\\builds.migrated` and `~/.shipright/builds.migrated` was created (SqliteBuildStore.cs:231-300 runs unconditionally when the real builds dir exists); Program.cs:231 then calls IBuildStore.MarkInterruptedAsync(), which UPDATEs the real `~/.shipright/builds.db` (SqliteBuildStore.cs:126-159).",
+      "description": "The smoke runner mutates the real user data directory. R11's edge case requires the runner to change no real data or project files whether it passes or fails, but it opens the real `~/.shipright/builds.db`, marks real Running/Deploying builds as Interrupted, and archives the real `~/.shipright/builds` to `builds.migrated`. Isolate the legacy data path (or register the desktop stores with the resolved profile data dir) so a smoke run is fully contained in its temp dir."
+    },
+    {
+      "cites": "PERF-001",
+      "severity": "blocking",
+      "file": "scripts/smoke/run.mjs",
+      "line": 253,
+      "evidence": "capture() does `output.push(line.trimEnd())` for every stdout/stderr line with no cap (run.mjs:251-256); the buffer is only ever consumed by tail(output) which prints the last 20 lines (run.mjs:223-225, 279-282).",
+      "description": "Unbounded in-memory accumulation while only the final 20 lines are used. A chatty or looping server grows this array without limit. Keep a fixed-size ring buffer (or drop all but the last N lines as they arrive)."
+    },
+    {
+      "cites": "R11",
+      "severity": "advisory",
+      "file": "scripts/smoke/run.mjs",
+      "line": 127,
+      "evidence": "resolveContentRoot writes a synthetic `<!doctype html>...` index.html when neither the project wwwroot nor front-end/out exists (run.mjs:124-133); MapFallbackToFile then serves it, so checkHomePage() (run.mjs:178-184, invoked at 266-267) sees 200 text/html even though the app's real home page is absent.",
+      "description": "The home-page check can pass on a placeholder the runner itself supplied, so a build with no real home page would still report PASS. This weakens the start-up proof R11 asks for; fail instead when the app's own home page is missing. (Intentional per the design's staging note, hence advisory.)"
+    },
+    {
+      "cites": "PERF-001",
+      "severity": "advisory",
+      "file": "scripts/smoke/run.mjs",
+      "line": 207,
+      "evidence": "stopServer() creates `setTimeout(() => resolveExit(false), timeoutMs)` and never clears it when the child's exit fires first (run.mjs:205-208).",
+      "description": "A timer is left pending (up to 5s) after the process it guards has already exited; clear it on the exit path (or unref it). Low impact today because main()'s wrapper exits the process immediately afterwards."
+    }
+  ],
+  "verifications": []
+}

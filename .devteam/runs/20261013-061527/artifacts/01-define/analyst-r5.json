@@ -1,0 +1,28 @@
+{
+  "summary": "Replace ShipRight's hand-built sign-in (own JWT, refresh tokens, password reset, Company/User tables, IsAdmin flag) with ASP.NET Core Identity backed by the existing Dapper-style data access (no EF Core), add the roles Admin, Operator and Viewer, add Google sign-in, and scope users, logins and roles per company (CompanyId). Decided: existing accounts and passwords keep working; desktop/local mode needs no sign-in and switches over transparently with no loss of data or projects; anyone can sign in with Google and a new company is created for them as Admin; no teammates for now, so every company has exactly one person (its Admin) and no invite or user-management screen is built. Still open: what an Operator or Viewer would be allowed to do once the roles are enforced.",
+  "requirements": [],
+  "questions": [],
+  "ask": {
+    "text": "Operator and Viewer exist as roles, but nobody can be given them yet. When they are used later, what should each be allowed to do in ShipRight? For example, can a Viewer see projects and builds but not start a deploy?",
+    "why": "It decides which actions the server must block for each role now (so the rules are ready and tested), and which buttons the screens hide or disable.",
+    "topic": "permissions",
+    "options": [
+      { "label": "Admin does everything; Operator can build and deploy but not change settings or servers; Viewer is read-only", "consequence": "Three clear levels. Operators run builds, deploys and backups; only Admins change project, server, secret and account settings; Viewers can look but not act.", "recommended": true },
+      { "label": "Admin does everything; Operator and Viewer both read-only for now", "consequence": "Simplest to test, but Operator and Viewer would be identical until a later change." },
+      { "label": "Admin and Operator do everything; Viewer is read-only", "consequence": "Only one restriction to enforce: Viewers cannot change anything." }
+    ]
+  },
+  "coverage": [
+    { "topic": "users", "status": "answered", "note": "Roles Admin, Operator, Viewer; desktop mode needs no auth; Google first sign-in creates a new company with that person as Admin; no teammates for now." },
+    { "topic": "data", "status": "answered", "note": "Existing users, companies and password hashes stay valid; no invite data needed." },
+    { "topic": "permissions", "status": "open", "note": "What Operator and Viewer may do is still to confirm; records stay scoped by CompanyId." },
+    { "topic": "validation", "status": "open", "note": "Password and email rules to assume once permissions are settled." },
+    { "topic": "states", "status": "open", "note": "Google button and error states to assume." },
+    { "topic": "duplicates", "status": "open", "note": "Email stays globally unique; double sign-up must not create two companies." },
+    { "topic": "volume", "status": "not-applicable", "note": "No teammates, so no user lists to page or search." },
+    { "topic": "deletion", "status": "not-applicable", "note": "No removal of users or accounts is part of this change." },
+    { "topic": "privacy", "status": "open", "note": "Email and Google profile name stored; passwords never logged." },
+    { "topic": "quality", "status": "open", "note": "Lockout and session lifetime defaults to assume." }
+  ],
+  "assumptions": []
+}

@@ -1,0 +1,19 @@
+{
+  "findings": [
+    {
+      "cites": "API-004",
+      "severity": "advisory",
+      "file": "back-end/ShipRight.Server/Modules/Projects/ProjectRouter.cs",
+      "line": 170,
+      "evidence": "RedactCredentialsFor (ProjectRouter.cs:170-181) blanks only ServiceConfig.DockerPassword and DatabaseConfig.RootPassword. ProjectConfig.Server.EnvFile (ProjectConfig.cs:135) is described as 'Full contents of the .env file written to RemoteWorkingDir' and is written verbatim to the server by RemoteServerBootstrapper.cs:111-112 and RemoteServerDeployer.cs:74-77 via RemoteEnvFileWriter, so it routinely holds database/API secrets. GET /api/projects and GET /api/projects/{id} (RoleAccessRules.cs:30 leaves these GETs at Viewer) still return that ServerConfig whole, so a Viewer or Operator receives whatever secrets the .env body contains.",
+      "description": "SEC-10's fix covers the two named credential fields, but the same whole-ProjectConfig response still carries ServerConfig.EnvFile - the remote .env contents - to non-Admin callers. Blank EnvFile for authenticated non-Admins as well (or return a role-shaped DTO). Recorded advisory rather than blocking because EnvFile is user-supplied config text, not one of the named sensitive columns in API-004."
+    }
+  ],
+  "verifications": [
+    {
+      "id": "SEC-10",
+      "status": "fixed",
+      "evidence": "Both project read endpoints now bind ClaimsPrincipal and run the result through RedactCredentialsFor: GET /api/projects at ProjectRouter.cs:18-19 and GET /api/projects/{id} at ProjectRouter.cs:35-41, calling the new helper at lines 170-181. The helper returns ProjectConfig unchanged only when the caller is unauthenticated (desktop/local, which binds 127.0.0.1 per Program.cs:81) or in AppRoles.Admin; for any other authenticated caller it returns a copy with every ServiceConfig.DockerPassword and DatabaseConfig.RootPassword set to empty, while the project itself (name, services, image names) is still returned. The role claim is ClaimTypes.Role (AppClaimsPrincipalFactory.cs:20), so user.IsInRole(AppRoles.Admin) evaluates correctly, and RoleAccessRules.cs:30 keeps the GETs at Viewer so a Viewer can still list projects per R5. Evidence of the outcome: CloudApiPipelineTests.cs:667 ProjectReads_GiveEveryRoleTheList_ButOnlyAnAdminTheStoredPasswords seeds a project whose JSON contains dockerPassword 'd0cker-secret-pass' and rootPassword 'r00t-secret-pass' and asserts Viewer and Operator get HTTP 200 with 'ghcr.io/org/api' but never either password, and an Admin receives both; the developer reports the full suite at 911 passed / 0 failed with this new test. The company-scoped store is untouched, so BuildOrchestrator/ResourceResolutionService still see the plaintext internally."
+    }
+  ]
+}

@@ -22,5 +22,6 @@ public static class CloudDatabaseRegistrar
         services.AddSingleton<DatabaseHelper<Guid>>();
         services.AddSingleton<IDatabaseHelper<Guid>>(sp =>
             new SerializedDatabaseHelper<Guid>(sp.GetRequiredService<DatabaseHelper<Guid>>()));
+        services.AddSingleton<MigrationRunner>();
     }
 }

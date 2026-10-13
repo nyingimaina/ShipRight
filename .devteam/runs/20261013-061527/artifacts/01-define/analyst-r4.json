@@ -1,0 +1,28 @@
+{
+  "summary": "Replace ShipRight's hand-built sign-in (own JWT, refresh tokens, password reset, Company/User tables, IsAdmin flag) with ASP.NET Core Identity backed by the existing Dapper-style data access (no EF Core), add the roles Admin, Operator and Viewer, add Google sign-in, and scope users, logins and roles per company (CompanyId). Decided: existing accounts and passwords keep working; desktop/local mode needs no sign-in and switches over transparently with no loss of data or projects; anyone can sign in with Google and a new company is created for them as Admin. Still open: how Operators and Viewers get into a company, since today the only way to get an account is to sign up and start a new company.",
+  "requirements": [],
+  "questions": [],
+  "ask": {
+    "text": "Today every sign-up creates a brand-new company, and there is no way to add a teammate to an existing one. With the new Operator and Viewer roles, how should an Admin get other people into their company?",
+    "why": "It decides whether we build an invite or user-management screen and the endpoints behind it, how a teammate's account is created (password or Google), and what the tests check for joining and for changing someone's role.",
+    "topic": "users",
+    "options": [
+      { "label": "Admin invites by email and picks the role", "consequence": "The Admin enters an email and a role (Admin, Operator or Viewer). The person follows the invite, sets a password or uses Google with that email, and lands in that company with that role. The Admin can also change or remove people later.", "recommended": true },
+      { "label": "Admin creates the account directly", "consequence": "The Admin types the teammate's email, role and a starting password, and tells them. No email link needed, but the Admin handles passwords." },
+      { "label": "No teammates for now", "consequence": "Roles exist and are enforced, but each company still has only its first Admin. Smallest to build; Operator and Viewer cannot be given to anyone yet." }
+    ]
+  },
+  "coverage": [
+    { "topic": "users", "status": "open", "note": "Roles decided (Admin, Operator, Viewer); desktop mode needs no auth; Google first sign-in creates a new company with that person as Admin. How other people join an existing company is still to confirm." },
+    { "topic": "data", "status": "open", "note": "Existing User/Company records (email, password hash, CompanyId, IsAdmin) must stay valid; invite and Google link data depends on the open answer." },
+    { "topic": "permissions", "status": "open", "note": "What Operator and Viewer may do will be assumed once the join flow is settled." },
+    { "topic": "validation", "status": "open", "note": "Password and email rules to assume once flows are settled." },
+    { "topic": "states", "status": "open", "note": "Google button, invite and error states depend on the open answer." },
+    { "topic": "duplicates", "status": "open", "note": "Email is globally unique today; assume this stays." },
+    { "topic": "volume", "status": "open", "note": "Will assume small teams per company and a paged user list." },
+    { "topic": "deletion", "status": "open", "note": "Removing users and ending their sessions; will assume default." },
+    { "topic": "privacy", "status": "open", "note": "Email and Google profile data stored; will assume minimal." },
+    { "topic": "quality", "status": "open", "note": "Lockout, session lifetime; will assume defaults." }
+  ],
+  "assumptions": []
+}

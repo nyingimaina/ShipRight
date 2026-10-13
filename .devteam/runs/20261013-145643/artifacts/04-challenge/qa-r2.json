@@ -1,0 +1,24 @@
+{
+  "findings": [
+    {
+      "cites": "R9",
+      "severity": "advisory",
+      "file": "front-end/src/modules/Team/__tests__/TeamPage.test.tsx",
+      "line": 106,
+      "evidence": "The new test renders a 200-char name and a 190-char email and asserts each span carries styles.cellText (lines 104-107), the guard class that TeamPage.tsx:140,145 applies and TeamPage.module.css:114-118 wraps. This is the strongest check jsdom can make (it cannot compute layout), but it would not fail if only the .cellText word-break/overflow-wrap rule in the CSS were deleted, because jest maps CSS modules to a name proxy (styles.cellText === 'cellText'). Residual proof-strength gap only.",
+      "description": "R9 edge case 'A very long name or email does not break the layout' now has a test that names R9 and protects the wrapping class; the assertion covers the class application rather than the CSS rule, which is a stronger-assertion gap, not a missing test."
+    }
+  ],
+  "verifications": [
+    {
+      "id": "QA-1",
+      "status": "fixed",
+      "evidence": "TeamPage.test.tsx:97-108 adds 'keeps a very long name or email inside the wrapping cell so the layout does not break': it renders name 'A'.repeat(200) and email 'b'.repeat(190)+'@example.com' and asserts both cells have class styles.cellText. I ran the file: 8/8 pass (the whole web-tests check also went 248 -> 249). The test fails if TeamPage stops applying the guard class, so the R9 edge case is no longer untested."
+    },
+    {
+      "id": "QA-2",
+      "status": "fixed",
+      "evidence": "run.test.mjs:218-234 adds 'R11 the runner leaves no app process running and keeps all data in a temp dir it removes', run for both the pass ('ok') and a failure ('badhome') mode. It records the child PID/dataDir/cwd, then asserts dataDir is under tmpdir(), the temp dataDir is deleted, cwd is outside the project tree, and waitForProcessGone(pid) is true. I ran the file with `node --test scripts/smoke/__tests__/run.test.mjs`: 12/12 pass, including this test. It would fail if run.mjs's finally block (stopServer + rmSync) stopped cleaning up, so the R11 edge case is now covered."
+    }
+  ]
+}

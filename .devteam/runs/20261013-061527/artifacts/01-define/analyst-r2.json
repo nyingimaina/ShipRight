@@ -1,0 +1,28 @@
+{
+  "summary": "Replace ShipRight's hand-built sign-in (own JWT, refresh tokens, password reset, Company/User tables, IsAdmin flag) with ASP.NET Core Identity backed by the existing Dapper-style data access (no EF Core), add roles, Google sign-in, and per-company (tenant, CompanyId) scoping of users, logins and roles. Decided: existing accounts and passwords keep working. Still open: which roles exist, how Google sign-in joins a company, how a company is identified at login, and same-email-in-two-companies.",
+  "requirements": [],
+  "questions": [],
+  "ask": {
+    "text": "Today every account is either an admin or not (the first person who signs up for a company is the admin). Which roles should people be able to have inside a company?",
+    "why": "It decides which roles are created, who may do what in the app, and what the role-protected endpoints and tests check.",
+    "topic": "users",
+    "options": [
+      { "label": "Two roles: Admin and Member", "consequence": "Matches today's admin/non-admin split. Existing admins become Admin, everyone else Member. Admin manages the company's users and roles.", "recommended": true },
+      { "label": "Three roles: Admin, Operator and Viewer", "consequence": "Operators can build and deploy, Viewers can only look. More rules to define and test across every existing screen." },
+      { "label": "Admin-defined roles", "consequence": "Admins create their own roles per company. Most flexible, but needs screens to manage roles and a permission model." }
+    ]
+  },
+  "coverage": [
+    { "topic": "users", "status": "open", "note": "Roles to confirm; existing accounts decided (keep working)." },
+    { "topic": "data", "status": "open", "note": "Depends on role, Google and tenant answers; existing User/Company tables use CompanyId and PBKDF2 hashes that must stay valid." },
+    { "topic": "permissions", "status": "open", "note": "Which role may do what; follows from roles answer." },
+    { "topic": "validation", "status": "open", "note": "Password rules and messages to confirm." },
+    { "topic": "states", "status": "open", "note": "Login/signup screens exist in front-end; changes depend on answers." },
+    { "topic": "duplicates", "status": "open", "note": "Same email in two companies allowed or not." },
+    { "topic": "volume", "status": "open", "note": "Users per company and paging for any user/role list." },
+    { "topic": "deletion", "status": "open", "note": "Removing users/roles and sessions." },
+    { "topic": "privacy", "status": "open", "note": "Email and Google profile data stored." },
+    { "topic": "quality", "status": "open", "note": "Lockout, session lifetime to confirm or assume." }
+  ],
+  "assumptions": []
+}

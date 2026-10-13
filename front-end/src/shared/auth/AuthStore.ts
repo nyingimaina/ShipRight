@@ -1,49 +1,32 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+
+export type Role = 'Admin' | 'Operator' | 'Viewer';
 
 export interface User {
   id: string;
   email: string;
   name: string;
   companyId: string;
-  isAdmin: boolean;
+  role: Role;
+  mustChangePassword: boolean;
 }
 
 export interface AuthState {
-  accessToken: string | null;
-  refreshToken: string | null;
   user: User | null;
   isAuthenticated: boolean;
-  setAuth: (accessToken: string, refreshToken: string, user: User) => void;
-  setTokens: (accessToken: string, refreshToken: string) => void;
+  setUser: (user: User | null) => void;
   clearAuth: () => void;
 }
 
-export const useAuthStore = create<AuthState>()(
-  persist(
-    (set) => ({
-      accessToken: null,
-      refreshToken: null,
-      user: null,
-      isAuthenticated: false,
-      setAuth: (accessToken, refreshToken, user) => {
-        set({ accessToken, refreshToken, user, isAuthenticated: true });
-      },
-      setTokens: (accessToken, refreshToken) => {
-        set({ accessToken, refreshToken, isAuthenticated: true });
-      },
-      clearAuth: () => {
-        set({ accessToken: null, refreshToken: null, user: null, isAuthenticated: false });
-      },
-    }),
-    {
-      name: 'shipright-auth',
-      partialize: (state) => ({
-        accessToken: state.accessToken,
-        refreshToken: state.refreshToken,
-        user: state.user,
-        isAuthenticated: state.isAuthenticated,
-      }),
-    },
-  ),
-);
+// The sign-in session lives in the server's httpOnly cookie; this store only mirrors the person
+// returned by /api/auth/me so the UI can gate screens and nav. Nothing secret is kept in the browser.
+export const useAuthStore = create<AuthState>()((set) => ({
+  user: null,
+  isAuthenticated: false,
+  setUser: (user) => {
+    set({ user, isAuthenticated: user !== null });
+  },
+  clearAuth: () => {
+    set({ user: null, isAuthenticated: false });
+  },
+}));

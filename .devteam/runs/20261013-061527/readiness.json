@@ -1,0 +1,43 @@
+{
+  "overall": 3,
+  "headline": "Not ready: something is still broken.",
+  "items": [
+    {
+      "id": "boot",
+      "title": "The app starts and works as set up",
+      "status": 2,
+      "evidence": "Nothing starts this app and looks at it yet. DevTeam can set that up: run  devteam adopt doctor."
+    },
+    {
+      "id": "tests",
+      "title": "Automated tests and checks pass",
+      "status": 0,
+      "evidence": "17 of 17 checks passed. 903 tests ran (75 skipped), all passed."
+    },
+    {
+      "id": "requirements",
+      "title": "Every requirement has a test that names it",
+      "status": 0,
+      "evidence": "13 of 13 requirements have a test."
+    },
+    {
+      "id": "findings",
+      "title": "No problems left open by review, QA or security",
+      "status": 3,
+      "evidence": "3 problem(s) are still open."
+    },
+    {
+      "id": "coverage",
+      "title": "The tests run the code",
+      "status": 2,
+      "evidence": "No coverage report was produced, so nobody knows how much of the code the tests run."
+    },
+    {
+      "id": "skipped",
+      "title": "Nothing was skipped",
+      "status": 0,
+      "evidence": "Every check that applies was run."
+    }
+  ],
+  "notes": []
+}

@@ -1,0 +1,24 @@
+{
+  "findings": [
+    {
+      "cites": "R11",
+      "severity": "advisory",
+      "file": "back-end/ShipRight.Server/Program.cs",
+      "line": 279,
+      "evidence": "Program.cs:279 still registers `services.AddSingleton<KnownHostsStore>()` with no resolved dataDir, so KnownHostsStore's ctor uses the legacy path: `_path = Path.Combine(DataDirectory.Resolve(), \"known_hosts\")` (KnownHostsStore.cs:16-19), and `DataDirectory.Resolve()` calls `EnsureSubdirectories`, which creates builds/, logs/, backups/, scheduler/ and scheduler/overflow/ under <UserProfile>/.shipright (DataDirectory.cs:8-16, 25-32). DatabaseOrchestrator (ctor dependency, DatabaseOrchestrator.cs:30-34) is resolved at start-up by the scheduler queue factory (`sp.GetRequiredService<Database.DatabaseOrchestrator>()`, SchedulerModule.cs:23-24) when the hosted service starts, so this legacy path is resolved on every desktop/smoke start. On a machine where ~/.shipright does not exist yet this creates it (empty directories); the developer's byte-identical check ran on a machine where it already existed, so it could not observe this.",
+      "description": "Residual to REV-1, not a repeat of it: the file-mutating behaviour REV-1 proved (real builds.db UPDATE and real builds/ archive) is gone, but one desktop store still resolves the legacy ~/.shipright path. It contradicts the claim that every desktop store is registered with the resolved profile data directory, and on a clean machine a smoke run would create real (empty) directories under the user profile. Advisory because no existing data file is changed and R11's edge case names data and project files."
+    }
+  ],
+  "verifications": [
+    {
+      "id": "REV-1",
+      "status": "fixed",
+      "evidence": "Program.cs:276 now registers `AddSingleton<IBuildStore>(_ => new SqliteBuildStore(dataDir))` (was `AddSingleton<IBuildStore, SqliteBuildStore>()`, whose parameterless ctor fell back to DataDirectory.Resolve() per SqliteBuildStore.cs:26); IServerStore takes dataDir at Program.cs:301 and the five SQLite resource stores at Program.cs:314-318. The stores that AddSchedulerModule/AddWatchBranchModule still build from DataDirectory.Resolve() are overridden with dataDir immediately after those calls (Program.cs:309-313: SqliteBackupHistoryStore, SqliteBackupOverflowStore, SqliteWatchBranchHistoryStore). New proof test DesktopMode_KeepsEveryStoreInsideTheConfiguredDataDirectory asserts projects.db, builds.db, scheduler/backup-history.db and watch-branch/watch-branch.db exist under SHIPRIGHT_DATA_DIR (DesktopModeStartupTests.cs:75-91). The concrete mutations REV-1 documented (real ~/.shipright/builds.db UPDATE via MarkInterruptedAsync, real builds/ archive to builds.migrated) are therefore confined to the temp data dir. The developer additionally reports a real smoke run left ~/.shipright byte-identical."
+    },
+    {
+      "id": "REV-2",
+      "status": "fixed",
+      "evidence": "run.mjs now captures stdout/stderr through a fixed-size ring buffer: createLineBuffer(maxLines = 200) stores at most 200 lines (run.mjs:227-244), capture() pushes into it via `output.push(...)` (run.mjs:274-279), and tail() reads `buffer.toArray().slice(-max)` (run.mjs:246-248, 302). Memory no longer grows with server chatter. A unit test, 'createLineBuffer keeps only the most recent lines in bounded memory', pushes 10 lines into a 3-line buffer and asserts only line-8..line-10 remain (run.test.mjs:209-216)."
+    }
+  ]
+}

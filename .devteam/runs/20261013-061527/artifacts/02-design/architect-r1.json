@@ -1,0 +1,228 @@
+{
+  "summary": "Cloud mode only: replace the hand-built JWT/refresh-token sign-in with ASP.NET Core Identity (framework-included, no EF Core) using a Dapper/QBuilder IUserStore, cookie sessions (7 days) and Google via the framework's generic AddOAuth handler (no new package, so ARCH-002 is not triggered). Desktop mode is untouched: it registers no auth, binds 127.0.0.1 and keeps its SQLite stores, so local data stays intact with no action from the user (R11). Findings that shape the design: (1) cloud Mariadb*Store classes currently write CompanyId = Guid.Empty and never filter by company, so R4 needs a small ICompanyContext (company from the signed-in person's claim, never from a header) that every cloud store applies in its WHERE and INSERT; background work (watch-branch startup, scheduler) runs inside an explicit SystemScope and everything else fails closed with no company. (2) Existing hashes are base64(16B salt + 20B PBKDF2-SHA256/100k); a LegacyAwarePasswordHasher verifies them and returns SuccessRehashNeeded so the next sign-in silently upgrades to Identity v3 (R1). (3) Tables: User gains NormalizedEmail (unique), Role (Admin/Operator/Viewer, one per person), IsActive, MustChangePassword, SecurityStamp, LockoutEnd, AccessFailedCount; new ExternalLogin(Provider, ProviderKey -> UserId) unique; RefreshToken and ResetToken are dropped (reset uses Identity's DataProtection tokens + the kept SMTP sender); IsAdmin/TokenVersion are dropped after backfill. Migration 0001 backfills every existing person as Admin (every legacy account was the sole owner of its company, so nobody loses access), moves legacy Guid.Empty domain rows to the oldest company, and is applied at cloud startup by a tiny idempotent runner; schema.sql is updated for fresh installs. (4) Roles: no RoleManager/role table (only three fixed roles); an IUserRoleStore adapter exposes the one Role column and a claims factory emits role + company_id claims. Enforcement is central, not per-endpoint: a fallback policy requires sign-in (endpoints marked AllowAnonymous with a reason comment: login, register, google, forgot/reset, health), plus one RoleAccessRules table (method + route prefix -> minimum role) evaluated by an authorization handler: Viewer = GET only; Operator = everything except changing projects settings, servers, resources, ssh keys, team; Admin = all. Rules are tested against every mapped route so a new route without a rule fails a test. (5) Sign-in: Identity lockout 5 failures/5 min, password >= 8, case-insensitive email, cookie 7 days with stamp validation every 1 minute (so switching someone off takes effect within a minute at one PK read per user per minute). Registration, Google first sign-in and teammate creation each insert Company+User inside one transaction (Google completion is a GET so it opens its own; POSTs reuse DatabaseTransactionMiddleware), so there are no partial records. The 'last active Admin' rule is checked in the same UPDATE (conditional on another active Admin existing) to avoid races. (6) Team list: GET /api/team?page&pageSize (default 20, max 50) ordered by name with index (CompanyId, Name), returns total; always CompanyId-filtered in SQL. (7) Settings after the change: MODE, TIME_ZONE, DB_CONNECTION, CORS_ORIGINS, PUBLIC_URL, SMTP_HOST/PORT/USERNAME/PASSWORD/FROM, plus GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET (optional so an existing deployment still starts; Google button hidden when unset). Removed: JWT_KEY, ADMIN_EMAIL, ADMIN_PASSWORD, and the System.IdentityModel.Tokens.Jwt package. Compose, .env.example and code are compared by an automated test. (8) Front end: tokens and refresh logic removed from ApiService/AuthStore (cookie is sent same-origin; CORS already allows credentials); AuthGuard, login, signup, forgot/reset pages keep their look and gain Google button, change-password screen for temporary passwords, and a new Team page (zest-responsive-table/textbox/button/overflow-menu per USR-001) shown to Admins only. Order of work (tests first): characterization tests for current sign-in/signup/reset, hash compatibility, CloudConfiguration, CloudDiRegistrar, ApiService/AuthGuard, then the new code, then deletion of the old pieces. Costs: no extra work in desktop mode; cloud adds one PK read per user per minute and one indexed company filter per query; no new background threads, timers or packages; startup adds one idempotent migration check. Open items for review: legacy rows with Guid.Empty are assigned to the oldest company (cannot be known precisely if several legacy companies exist); SshKeyStore is file-based per machine and is not company-scoped by this change.",
+  "impact": {
+    "touches": [
+      "back-end/ShipRight.Server/Program.cs (cloud pipeline: Identity, cookie auth, authorization, remove JwtMiddleware/seed; desktop branch unchanged; expose Program for WebApplicationFactory)",
+      "back-end/ShipRight.Server/CloudDiRegistrar.cs and CloudConfiguration.cs (drop JWT/admin seed, add Google, register Identity services)",
+      "back-end/ShipRight.Server/Modules/Auth/** (old router, middleware, token/jwt/setup/password services and models replaced)",
+      "back-end/ShipRight.Server/Modules/Auth/Services/PasswordResetEmail.cs (kept; link built from Identity reset token)",
+      "All cloud Mariadb*Store classes (Projects, Servers, Builds, Resources/Stores x5, Scheduler history, WatchBranch history) to filter and insert by CompanyId",
+      "back-end/ShipRight.Server/Database/schema.sql plus new Database/Migrations pair",
+      "back-end/ShipRight.Server/ShipRight.Server.csproj (remove Jwt package)",
+      "docker-compose.yml, .env.example, SETUP.md (settings list)",
+      "front-end/src/shared/ApiService.ts, shared/auth/*, pages/_app.tsx, login, signup, forgot-password, reset-password, modules/AppShell/AppShell.tsx and their tests",
+      "back-end/ShipRight.Tests auth, config and DI tests (JwtMiddlewareTests replaced)"
+    ],
+    "reuses": [
+      "Rocket.Libraries.DatabaseIntegrator IDatabaseHelper + QBuilder (all SQL, no EF Core)",
+      "DatabaseTransactionMiddleware for atomic POSTs",
+      "CompanyScopedModel and DatabaseReaderBase.ApplyTenantFilter pattern",
+      "SmtpPasswordResetEmailSender and PasswordResetEmail.BuildResetLink (forgot-password email kept)",
+      "Existing Company table, CompanyId columns and idx_*_company indexes",
+      "Existing rate limiter, CORS policy with credentials, HealthRouter AppMode, useServerMode on the front end",
+      "Existing login/signup/forgot/reset pages, Auth.module.css, AuthGuard PUBLIC_PATHS, HoverTip",
+      "Microsoft.AspNetCore.Identity and Authentication.OAuth from the ASP.NET Core shared framework"
+    ],
+    "adds": [
+      "Modules/Identity: AppUser, DapperUserStore (IUserStore/Password/Email/Role/Lockout/SecurityStamp/Login), IdentityRepository, LegacyAwarePasswordHasher, claims factory, ICompanyContext + SystemScope, RoleAccessRules + handler, AuthEndpoints, TeamEndpoints, TeamRepository, DTO records and validators (RFC 7807)",
+      "Migration 0001_identity up/down and a small idempotent MigrationRunner",
+      "Google sign-in via AddOAuth with Google endpoints and /api/auth/google, /google/callback, /google/complete",
+      "front-end Team page and module, change-password page, Google button, role-aware nav",
+      "WebApplicationFactory integration tests against MariaDB, characterization tests, settings-agreement test, jest tests"
+    ]
+  },
+  "scope": [
+    "back-end/ShipRight.Server/Program.cs",
+    "back-end/ShipRight.Server/CloudDiRegistrar.cs",
+    "back-end/ShipRight.Server/CloudConfiguration.cs",
+    "back-end/ShipRight.Server/ShipRight.Server.csproj",
+    "back-end/ShipRight.Server/Database/schema.sql",
+    "back-end/ShipRight.Server/Database/Migrations/**",
+    "back-end/ShipRight.Server/Database/MigrationRunner.cs",
+    "back-end/ShipRight.Server/Database/CloudDatabaseRegistrar.cs",
+    "back-end/ShipRight.Server/Modules/Auth/**",
+    "back-end/ShipRight.Server/Modules/Identity/**",
+    "back-end/ShipRight.Server/Modules/Projects/MariadbProjectStore.cs",
+    "back-end/ShipRight.Server/Modules/Servers/MariadbServerStore.cs",
+    "back-end/ShipRight.Server/Modules/Builds/MariadbBuildStore.cs",
+    "back-end/ShipRight.Server/Modules/Resources/Stores/Mariadb*.cs",
+    "back-end/ShipRight.Server/Modules/Scheduler/MariadbBackupHistoryStore.cs",
+    "back-end/ShipRight.Server/Modules/Scheduler/CloudSchedulerRegistrar.cs",
+    "back-end/ShipRight.Server/Modules/WatchBranch/MariadbWatchBranchHistoryStore.cs",
+    "back-end/ShipRight.Server/Shared/Tenancy/**",
+    "back-end/ShipRight.Tests/Modules/Auth/**",
+    "back-end/ShipRight.Tests/Modules/Identity/**",
+    "back-end/ShipRight.Tests/Modules/Deployment/CloudConfigurationTests.cs",
+    "back-end/ShipRight.Tests/Database/CloudDiRegistrarTests.cs",
+    "back-end/ShipRight.Tests/Database/CloudDatabaseRegistrarTests.cs",
+    "back-end/ShipRight.Tests/Database/Migration*Tests.cs",
+    "back-end/ShipRight.Tests/Modules/Tenancy/**",
+    "back-end/ShipRight.Tests/ShipRight.Tests.csproj",
+    "docker-compose.yml",
+    ".env.example",
+    "SETUP.md",
+    "front-end/package.json",
+    "front-end/package-lock.json",
+    "front-end/src/shared/ApiService.ts",
+    "front-end/src/shared/auth/**",
+    "front-end/src/shared/__tests__/ApiService.test.ts",
+    "front-end/src/pages/_app.tsx",
+    "front-end/src/pages/login.tsx",
+    "front-end/src/pages/signup.tsx",
+    "front-end/src/pages/forgot-password.tsx",
+    "front-end/src/pages/reset-password.tsx",
+    "front-end/src/pages/change-password.tsx",
+    "front-end/src/pages/team.tsx",
+    "front-end/src/modules/Team/**",
+    "front-end/src/modules/AppShell/**",
+    "front-end/src/pages/Styles/Auth.module.css",
+    "front-end/src/pages/Styles/Team.module.css"
+  ],
+  "components": [
+    {
+      "name": "AuthCharacterizationTests",
+      "path": "back-end/ShipRight.Tests/Modules/Auth/AuthCharacterizationTests.cs",
+      "requirements": ["R1", "R10", "R11", "R12", "R13"]
+    },
+    {
+      "name": "IdentityMigration0001",
+      "path": "back-end/ShipRight.Server/Database/Migrations/0001_identity.up.sql (and 0001_identity.down.sql)",
+      "requirements": ["R1", "R3", "R4", "R5", "R6", "R7", "R8", "R10", "R12"]
+    },
+    {
+      "name": "MigrationRunner",
+      "path": "back-end/ShipRight.Server/Database/MigrationRunner.cs",
+      "requirements": ["R1", "R4", "R12"]
+    },
+    {
+      "name": "SchemaSql",
+      "path": "back-end/ShipRight.Server/Database/schema.sql",
+      "requirements": ["R2", "R4", "R12"]
+    },
+    {
+      "name": "AppUser",
+      "path": "back-end/ShipRight.Server/Modules/Identity/AppUser.cs",
+      "requirements": ["R2", "R4", "R5", "R8"]
+    },
+    {
+      "name": "IdentityRepository",
+      "path": "back-end/ShipRight.Server/Modules/Identity/IdentityRepository.cs",
+      "requirements": ["R1", "R2", "R3", "R4", "R6", "R7", "R8", "R10"]
+    },
+    {
+      "name": "DapperUserStore",
+      "path": "back-end/ShipRight.Server/Modules/Identity/DapperUserStore.cs",
+      "requirements": ["R1", "R2", "R3", "R4", "R5", "R8", "R10"]
+    },
+    {
+      "name": "LegacyAwarePasswordHasher",
+      "path": "back-end/ShipRight.Server/Modules/Identity/LegacyAwarePasswordHasher.cs",
+      "requirements": ["R1", "R12"]
+    },
+    {
+      "name": "AppClaimsPrincipalFactory",
+      "path": "back-end/ShipRight.Server/Modules/Identity/AppClaimsPrincipalFactory.cs",
+      "requirements": ["R4", "R5"]
+    },
+    {
+      "name": "CompanyContext",
+      "path": "back-end/ShipRight.Server/Shared/Tenancy/CompanyContext.cs",
+      "requirements": ["R4", "R11"]
+    },
+    {
+      "name": "TenantScopedMariaDbStores",
+      "path": "back-end/ShipRight.Server/Modules/Projects/MariadbProjectStore.cs; Servers/MariadbServerStore.cs; Builds/MariadbBuildStore.cs; Resources/Stores/Mariadb*.cs; Scheduler/MariadbBackupHistoryStore.cs; WatchBranch/MariadbWatchBranchHistoryStore.cs",
+      "requirements": ["R1", "R4"]
+    },
+    {
+      "name": "RoleAccessRules",
+      "path": "back-end/ShipRight.Server/Modules/Identity/RoleAccessRules.cs",
+      "requirements": ["R5"]
+    },
+    {
+      "name": "RoleAuthorizationHandler",
+      "path": "back-end/ShipRight.Server/Modules/Identity/RoleAuthorizationHandler.cs",
+      "requirements": ["R5", "R11"]
+    },
+    {
+      "name": "AuthEndpoints",
+      "path": "back-end/ShipRight.Server/Modules/Identity/AuthEndpoints.cs",
+      "requirements": ["R2", "R3", "R10", "R12"]
+    },
+    {
+      "name": "GoogleSignIn",
+      "path": "back-end/ShipRight.Server/Modules/Identity/GoogleSignIn.cs",
+      "requirements": ["R3", "R13"]
+    },
+    {
+      "name": "RegistrationService",
+      "path": "back-end/ShipRight.Server/Modules/Identity/RegistrationService.cs",
+      "requirements": ["R2", "R3", "R4"]
+    },
+    {
+      "name": "TeamEndpoints",
+      "path": "back-end/ShipRight.Server/Modules/Identity/TeamEndpoints.cs",
+      "requirements": ["R6", "R7", "R8", "R9"]
+    },
+    {
+      "name": "TeamRepository",
+      "path": "back-end/ShipRight.Server/Modules/Identity/TeamRepository.cs",
+      "requirements": ["R4", "R6", "R7", "R8", "R9"]
+    },
+    {
+      "name": "IdentityDtos",
+      "path": "back-end/ShipRight.Server/Modules/Identity/IdentityDtos.cs",
+      "requirements": ["R2", "R6", "R7", "R8", "R9", "R10"]
+    },
+    {
+      "name": "PasswordResetEmailSender",
+      "path": "back-end/ShipRight.Server/Modules/Auth/Services/PasswordResetEmail.cs",
+      "requirements": ["R10", "R13"]
+    },
+    {
+      "name": "RemovedLegacyAuth",
+      "path": "back-end/ShipRight.Server/Modules/Auth/ (AuthRouter, Middleware/JwtMiddleware, Services/JwtService|TokenService|SetupService|PasswordHelper, Models/RefreshToken|ResetToken|User)",
+      "requirements": ["R12", "R13"]
+    },
+    {
+      "name": "CloudWiring",
+      "path": "back-end/ShipRight.Server/Program.cs; CloudDiRegistrar.cs; CloudConfiguration.cs; ShipRight.Server.csproj",
+      "requirements": ["R2", "R3", "R5", "R10", "R11", "R12", "R13"]
+    },
+    {
+      "name": "SettingsFiles",
+      "path": "docker-compose.yml; .env.example; SETUP.md",
+      "requirements": ["R13"]
+    },
+    {
+      "name": "IdentityIntegrationTests",
+      "path": "back-end/ShipRight.Tests/Modules/Identity/**",
+      "requirements": ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "R10", "R11", "R12", "R13"]
+    },
+    {
+      "name": "FrontendAuthClient",
+      "path": "front-end/src/shared/ApiService.ts; front-end/src/shared/auth/AuthApi.ts; AuthStore.ts; AuthGuard.tsx; index.ts",
+      "requirements": ["R1", "R2", "R3", "R10", "R11", "R12"]
+    },
+    {
+      "name": "AuthPages",
+      "path": "front-end/src/pages/login.tsx; signup.tsx; forgot-password.tsx; reset-password.tsx; change-password.tsx; _app.tsx",
+      "requirements": ["R2", "R3", "R10", "R12"]
+    },
+    {
+      "name": "TeamPage",
+      "path": "front-end/src/pages/team.tsx; front-end/src/modules/Team/**",
+      "requirements": ["R6", "R7", "R8", "R9"]
+    },
+    {
+      "name": "AppShellRoleAware",
+      "path": "front-end/src/modules/AppShell/AppShell.tsx",
+      "requirements": ["R5", "R9", "R10", "R11"]
+    },
+    {
+      "name": "FrontendAuthTests",
+      "path": "front-end/src/shared/auth/__tests__/**; front-end/src/modules/Team/__tests__/**",
+      "requirements": ["R2", "R3", "R6", "R7", "R8", "R9", "R10", "R12"]
+    }
+  ]
+}

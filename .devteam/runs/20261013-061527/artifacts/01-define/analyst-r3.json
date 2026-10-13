@@ -1,0 +1,28 @@
+{
+  "summary": "Replace ShipRight's hand-built sign-in (own JWT, refresh tokens, password reset, Company/User tables, IsAdmin flag) with ASP.NET Core Identity backed by the existing Dapper-style data access (no EF Core), add roles, Google sign-in, and per-company (tenant, CompanyId) scoping of users, logins and roles. Decided: existing accounts and passwords keep working; roles are Admin, Operator and Viewer; desktop/local mode needs no sign-in and must switch over transparently with no loss of data or projects. Still open: how a first-time Google sign-in joins or creates a company.",
+  "requirements": [],
+  "questions": [],
+  "ask": {
+    "text": "When someone signs in with Google for the first time and has no ShipRight account yet, what should happen?",
+    "why": "It decides whether Google can create new companies, whether admins must invite people first, and what the tests check for an unknown Google email.",
+    "topic": "users",
+    "options": [
+      { "label": "Only people already in a company (same email) or invited by an Admin can use Google", "consequence": "An unknown Google email is refused with a clear message. An existing account with the same email is linked automatically. Safest: no stray companies appear.", "recommended": true },
+      { "label": "Anyone can sign in with Google and a new company is created for them as its Admin", "consequence": "Same as today's sign-up, but with Google. Easy to start, but anyone with a Google account can create a company." },
+      { "label": "Google sign-in only for existing accounts; no invites, no new companies", "consequence": "Google is just another way to log in for people who already have a password account. Smallest to build, but new teammates must be created another way." }
+    ]
+  },
+  "coverage": [
+    { "topic": "users", "status": "open", "note": "Roles decided (Admin, Operator, Viewer); desktop mode needs no auth; Google first-time sign-in behaviour still to confirm." },
+    { "topic": "data", "status": "open", "note": "Existing User/Company tables (email, PBKDF2 hash, CompanyId, IsAdmin) must stay valid; Google link data depends on the open answer." },
+    { "topic": "permissions", "status": "open", "note": "Operator vs Viewer rights follow from roles answer; to be written once Google/invite answer is in." },
+    { "topic": "validation", "status": "open", "note": "Password and email rules to assume once flows are settled." },
+    { "topic": "states", "status": "open", "note": "Login/signup screens exist; Google button and error states depend on the open answer." },
+    { "topic": "duplicates", "status": "open", "note": "Email is globally unique today (login uses email only); assume this stays unless the Google answer changes it." },
+    { "topic": "volume", "status": "open", "note": "Will assume small teams per company and a paged user list." },
+    { "topic": "deletion", "status": "open", "note": "Removing users and sessions; will assume default." },
+    { "topic": "privacy", "status": "open", "note": "Email and Google profile data stored; will assume minimal." },
+    { "topic": "quality", "status": "open", "note": "Lockout, session lifetime; will assume defaults." }
+  ],
+  "assumptions": []
+}

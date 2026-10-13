@@ -1,0 +1,763 @@
+{
+  "at": "2026-10-13T16:45:55.2531493+00:00",
+  "entries": [
+    {
+      "kind": "dll",
+      "name": "Avalonia",
+      "version": "12.0.4.0",
+      "key": "39bcf7a5c834c9340531f66e",
+      "own": false,
+      "source": "nuget:Avalonia/12.0.4",
+      "size": 4096,
+      "ticks": 639155683660000000
+    },
+    {
+      "kind": "dll",
+      "name": "Avalonia.Desktop",
+      "version": "12.0.4.0",
+      "key": "dda1c182629f407374d43c22",
+      "own": false,
+      "source": "nuget:Avalonia.Desktop/12.0.4",
+      "size": 15360,
+      "ticks": 639155683680000000
+    },
+    {
+      "kind": "dll",
+      "name": "Avalonia.Themes.Fluent",
+      "version": "12.0.4.0",
+      "key": "6672d70c22336e6c238c6006",
+      "own": false,
+      "source": "nuget:Avalonia.Themes.Fluent/12.0.4",
+      "size": 714240,
+      "ticks": 639155683680000000
+    },
+    {
+      "kind": "dll",
+      "name": "Avalonia.Controls.WebView",
+      "version": "12.0.1.0",
+      "key": "affe14c7d2238890e89fd6bb",
+      "own": false,
+      "source": "nuget:Avalonia.Controls.WebView/12.0.1",
+      "size": 1363968,
+      "ticks": 639142600840000000
+    },
+    {
+      "kind": "dll",
+      "name": "Microsoft.Toolkit.Uwp.Notifications",
+      "version": "7.1.0.0",
+      "key": "3576c5b774ea545a55cf97b1",
+      "own": false,
+      "source": "nuget:Microsoft.Toolkit.Uwp.Notifications/7.1.3",
+      "size": 133264,
+      "ticks": 638029207720000000
+    },
+    {
+      "kind": "dll",
+      "name": "Serilog",
+      "version": "4.2.0.0",
+      "key": "ba73b4bf7c8ef54303ad3ce5",
+      "own": false,
+      "source": "nuget:Serilog/4.2.0",
+      "size": 161280,
+      "ticks": 638690551120000000
+    },
+    {
+      "kind": "dll",
+      "name": "Serilog.Sinks.Console",
+      "version": "6.1.1.0",
+      "key": "dc88002ddd9f5fd0ffec9a65",
+      "own": false,
+      "source": "nuget:Serilog.Sinks.Console/6.1.1",
+      "size": 38400,
+      "ticks": 638977140000000000
+    },
+    {
+      "kind": "dll",
+      "name": "Serilog.Sinks.File",
+      "version": "7.0.0.0",
+      "key": "4f4282671c2ac68284b4dc99",
+      "own": false,
+      "source": "nuget:Serilog.Sinks.File/7.0.0",
+      "size": 36864,
+      "ticks": 638813975220000000
+    },
+    {
+      "kind": "dll",
+      "name": "ShipRight.Desktop",
+      "version": "1.0.0.0",
+      "key": "f3918f999e2029db3149f90c",
+      "own": true,
+      "source": "own:back-end/ShipRight.Desktop/bin/Debug/net10.0-windows10.0.17763.0/ShipRight.Desktop.dll",
+      "size": 109568,
+      "ticks": 639274484833494572
+    },
+    {
+      "kind": "dll",
+      "name": "ShipRight.RuntimeConfig",
+      "version": "1.0.0.0",
+      "key": "d4071c91ac0a9b91432c1699",
+      "own": true,
+      "source": "own:back-end/ShipRight.RuntimeConfig/bin/Debug/net10.0/ShipRight.RuntimeConfig.dll",
+      "size": 9728,
+      "ticks": 639274484544549868
+    },
+    {
+      "kind": "dll",
+      "name": "Dapper.Contrib",
+      "version": "2.0.0.0",
+      "key": "bf16d62342c44c5a35cd224b",
+      "own": false,
+      "source": "nuget:Dapper.Contrib/2.0.78",
+      "size": 62976,
+      "ticks": 637412039440000000
+    },
+    {
+      "kind": "dll",
+      "name": "Jattac.Libs.Tempo",
+      "version": "1.3.0.0",
+      "key": "f5d5649340afb9c0e6a7ffeb",
+      "own": false,
+      "source": "nuget:Jattac.Libs.Tempo/1.3.0",
+      "size": 132608,
+      "ticks": 639235935220000000
+    },
+    {
+      "kind": "dll",
+      "name": "Jattac.Libraries.QBuilder",
+      "version": "9.2.2.0",
+      "key": "8c0f91a509beae8110e07bcd",
+      "own": false,
+      "source": "nuget:Jattac.Libraries.QBuilder/9.2.3",
+      "size": 82944,
+      "ticks": 639175359460000000
+    },
+    {
+      "kind": "dll",
+      "name": "MySql.Data",
+      "version": "9.1.0.0",
+      "key": "8941b756ae4e61778113fe03",
+      "own": false,
+      "source": "nuget:MySql.Data/9.1.0",
+      "size": 1186816,
+      "ticks": 638628866260000000
+    },
+    {
+      "kind": "dll",
+      "name": "Newtonsoft.Json",
+      "version": "13.0.0.0",
+      "key": "a28c251dfe36d881e9e2462e",
+      "own": false,
+      "source": "nuget:Newtonsoft.Json/13.0.4",
+      "size": 723368,
+      "ticks": 638936066640000000
+    },
+    {
+      "kind": "dll",
+      "name": "Rocket.Libraries.DatabaseIntegrator",
+      "version": "1.8.3.0",
+      "key": "098e7d09fad856fc2e488209",
+      "own": false,
+      "source": "nuget:Rocket.Libraries.DatabaseIntegrator/1.8.3",
+      "size": 30208,
+      "ticks": 638392675580000000
+    },
+    {
+      "kind": "dll",
+      "name": "Serilog.AspNetCore",
+      "version": "10.0.0.0",
+      "key": "a550c57df7a04edbed00da03",
+      "own": false,
+      "source": "nuget:Serilog.AspNetCore/10.0.0",
+      "size": 17920,
+      "ticks": 638999106800000000
+    },
+    {
+      "kind": "dll",
+      "name": "Renci.SshNet",
+      "version": "2026.0.0.1",
+      "key": "1eea433e249e328d60512b72",
+      "own": false,
+      "source": "nuget:SSH.NET/2026.0.0",
+      "size": 544256,
+      "ticks": 639218964820000000
+    },
+    {
+      "kind": "dll",
+      "name": "ShipRight.Server",
+      "version": "1.0.0.0",
+      "key": "d62165a70c81629e45d821ff",
+      "own": true,
+      "source": "own:back-end/ShipRight.Server/bin/Debug/net10.0/ShipRight.Server.dll",
+      "size": 1621504,
+      "ticks": 639275065595935250
+    },
+    {
+      "kind": "dll",
+      "name": "Microsoft.AspNetCore.Mvc.Testing",
+      "version": "10.0.0.0",
+      "key": "a66d95feda1188e350427485",
+      "own": false,
+      "source": "nuget:Microsoft.AspNetCore.Mvc.Testing/10.0.0",
+      "size": 67344,
+      "ticks": 638968650160000000
+    },
+    {
+      "kind": "dll",
+      "name": "Microsoft.Extensions.Configuration",
+      "version": "10.0.0.0",
+      "key": "94c3981084f713a51ad3d266",
+      "own": false,
+      "source": "nuget:Microsoft.Extensions.Configuration/10.0.0",
+      "size": 45320,
+      "ticks": 638968619000000000
+    },
+    {
+      "kind": "dll",
+      "name": "Microsoft.Extensions.DependencyInjection",
+      "version": "10.0.0.0",
+      "key": "d646a5cca5e8116ae46b4371",
+      "own": false,
+      "source": "nuget:Microsoft.Extensions.DependencyInjection/10.0.0",
+      "size": 96008,
+      "ticks": 638968617540000000
+    },
+    {
+      "kind": "dll",
+      "name": "Microsoft.Extensions.Logging",
+      "version": "10.0.0.0",
+      "key": "2c034725abd90afe30a1426e",
+      "own": false,
+      "source": "nuget:Microsoft.Extensions.Logging/10.0.0",
+      "size": 52016,
+      "ticks": 638968618140000000
+    },
+    {
+      "kind": "dll",
+      "name": "Microsoft.Extensions.Options",
+      "version": "10.0.0.0",
+      "key": "58048d710cf2a88d3dea7c93",
+      "own": false,
+      "source": "nuget:Microsoft.Extensions.Options/10.0.0",
+      "size": 65848,
+      "ticks": 638968615960000000
+    },
+    {
+      "kind": "dll",
+      "name": "Microsoft.VisualStudio.TestPlatform.TestFramework",
+      "version": "14.0.0.0",
+      "key": "adaf761d4599361f4e143a0c",
+      "own": false,
+      "source": "nuget:MSTest.TestFramework/3.6.3",
+      "size": 277064,
+      "ticks": 638670184860000000
+    },
+    {
+      "kind": "dll",
+      "name": "ShipRight.Tests",
+      "version": "1.0.0.0",
+      "key": "2325dad4ff6977510b8d9382",
+      "own": true,
+      "source": "own:back-end/ShipRight.Tests/bin/Debug/net10.0-windows10.0.17763.0/ShipRight.Tests.dll",
+      "size": 1075200,
+      "ticks": 639275065627464145
+    },
+    {
+      "kind": "npm",
+      "name": "@opencode-ai/plugin",
+      "version": "1.14.33",
+      "key": "cfc08dea6c68a3e61a9dcc85",
+      "own": false,
+      "source": "npm:@opencode-ai/plugin@1.14.33",
+      "size": 1124,
+      "ticks": 639173776870984798
+    },
+    {
+      "kind": "npm",
+      "name": "@dnd-kit/core",
+      "version": "6.3.1",
+      "key": "635c9b486c8d63c1899ff981",
+      "own": false,
+      "source": "npm:@dnd-kit/core@6.3.1",
+      "size": 1030,
+      "ticks": 639192879728350974
+    },
+    {
+      "kind": "npm",
+      "name": "@dnd-kit/sortable",
+      "version": "10.0.0",
+      "key": "3678b7f09b51916f751bfb4e",
+      "own": false,
+      "source": "npm:@dnd-kit/sortable@10.0.0",
+      "size": 1007,
+      "ticks": 639192879727945009
+    },
+    {
+      "kind": "npm",
+      "name": "@dnd-kit/utilities",
+      "version": "3.2.2",
+      "key": "90af83ea7679b8e686945cec",
+      "own": false,
+      "source": "npm:@dnd-kit/utilities@3.2.2",
+      "size": 896,
+      "ticks": 639192879727934966
+    },
+    {
+      "kind": "npm",
+      "name": "@microsoft/signalr",
+      "version": "10.0.0",
+      "key": "6324d028d932eaa43909b96e",
+      "own": false,
+      "source": "npm:@microsoft/signalr@10.0.0",
+      "size": 1878,
+      "ticks": 639161790460810856
+    },
+    {
+      "kind": "npm",
+      "name": "@types/react-syntax-highlighter",
+      "version": "15.5.13",
+      "key": "4cc6beb228a64c9b44230d82",
+      "own": false,
+      "source": "npm:@types/react-syntax-highlighter@15.5.13",
+      "size": 1479,
+      "ticks": 639164105739041957
+    },
+    {
+      "kind": "npm",
+      "name": "canvas-confetti",
+      "version": "1.9.4",
+      "key": "a6a30a4de45b8b0cfb3575a7",
+      "own": false,
+      "source": "npm:canvas-confetti@1.9.4",
+      "size": 1655,
+      "ticks": 639164587374992326
+    },
+    {
+      "kind": "npm",
+      "name": "framer-motion",
+      "version": "12.40.0",
+      "key": "bf054bcb84458d49d187725f",
+      "own": false,
+      "source": "npm:framer-motion@12.40.0",
+      "size": 4698,
+      "ticks": 639161790434140190
+    },
+    {
+      "kind": "npm",
+      "name": "jattac-web-poller",
+      "version": "1.0.0",
+      "key": "602b0d3242625bac6a9c7c88",
+      "own": false,
+      "source": "npm:jattac-web-poller@1.0.0",
+      "size": 961,
+      "ticks": 639185753808489733
+    },
+    {
+      "kind": "npm",
+      "name": "jattac.libs.web.overflow-menu",
+      "version": "0.0.35",
+      "key": "b6d2b10c9ed0056e7778ae5e",
+      "own": false,
+      "source": "npm:jattac.libs.web.overflow-menu@0.0.35",
+      "size": 3097,
+      "ticks": 639161790428295781
+    },
+    {
+      "kind": "npm",
+      "name": "jattac.libs.web.responsive-table",
+      "version": "0.16.0",
+      "key": "043b8aad8e95be0fb3ee8f3e",
+      "own": false,
+      "source": "npm:jattac.libs.web.responsive-table@0.16.0",
+      "size": 3566,
+      "ticks": 639165459809246844
+    },
+    {
+      "kind": "npm",
+      "name": "jattac.libs.web.zest-button",
+      "version": "1.3.0",
+      "key": "649be817d0264f5fc870993c",
+      "own": false,
+      "source": "npm:jattac.libs.web.zest-button@1.3.0",
+      "size": 1866,
+      "ticks": 639161790414440979
+    },
+    {
+      "kind": "npm",
+      "name": "jattac.libs.web.zest-responsive-layout",
+      "version": "2.6.0",
+      "key": "471ea3e71f179f00917859cc",
+      "own": false,
+      "source": "npm:jattac.libs.web.zest-responsive-layout@2.6.0",
+      "size": 2353,
+      "ticks": 639161790413747222
+    },
+    {
+      "kind": "npm",
+      "name": "jattac.libs.web.zest-sidekick-menu",
+      "version": "1.5.3",
+      "key": "c671c7ef4d2020af5267060d",
+      "own": false,
+      "source": "npm:jattac.libs.web.zest-sidekick-menu@1.5.3",
+      "size": 1327,
+      "ticks": 639264460046326167
+    },
+    {
+      "kind": "npm",
+      "name": "jattac.libs.web.zest-tabs",
+      "version": "0.2.0",
+      "key": "8b9860a63d4b1e04ba1e4ee0",
+      "own": false,
+      "source": "npm:jattac.libs.web.zest-tabs@0.2.0",
+      "size": 1479,
+      "ticks": 639165426167466859
+    },
+    {
+      "kind": "npm",
+      "name": "jattac.libs.web.zest-textbox",
+      "version": "0.5.5",
+      "key": "63aa2245b352b55a4477eb35",
+      "own": false,
+      "source": "npm:jattac.libs.web.zest-textbox@0.5.5",
+      "size": 1798,
+      "ticks": 639161790414290335
+    },
+    {
+      "kind": "npm",
+      "name": "lodash",
+      "version": "4.18.1",
+      "key": "5ef0a453b679125b155af19e",
+      "own": false,
+      "source": "npm:lodash@4.18.1",
+      "size": 583,
+      "ticks": 639161790468069627
+    },
+    {
+      "kind": "npm",
+      "name": "module-state-manager",
+      "version": "0.2.1",
+      "key": "69f702a832f9e4f103467aee",
+      "own": false,
+      "source": "npm:module-state-manager@0.2.1",
+      "size": 711,
+      "ticks": 639161790454057192
+    },
+    {
+      "kind": "npm",
+      "name": "next",
+      "version": "15.5.24",
+      "key": "fce329d3735c2b01f703db33",
+      "own": false,
+      "source": "npm:next@15.5.24",
+      "size": 3186,
+      "ticks": 639235976681338698
+    },
+    {
+      "kind": "npm",
+      "name": "react",
+      "version": "18.3.1",
+      "key": "d4e68a5c96babb20cad1daaf",
+      "own": false,
+      "source": "npm:react@18.3.1",
+      "size": 999,
+      "ticks": 639161789289375245
+    },
+    {
+      "kind": "npm",
+      "name": "react-datepicker",
+      "version": "9.1.0",
+      "key": "f4e9ae01d3b1290bb969eb93",
+      "own": false,
+      "source": "npm:react-datepicker@9.1.0",
+      "size": 5434,
+      "ticks": 639161790458578408
+    },
+    {
+      "kind": "npm",
+      "name": "react-dom",
+      "version": "18.3.1",
+      "key": "d2f29e31bd48b833e48cd7bb",
+      "own": false,
+      "source": "npm:react-dom@18.3.1",
+      "size": 1353,
+      "ticks": 639161789290919043
+    },
+    {
+      "kind": "npm",
+      "name": "react-hot-toast",
+      "version": "2.6.0",
+      "key": "1625c6e089149ff46dd8e318",
+      "own": false,
+      "source": "npm:react-hot-toast@2.6.0",
+      "size": 2393,
+      "ticks": 639161790414145335
+    },
+    {
+      "kind": "npm",
+      "name": "react-icons",
+      "version": "5.6.0",
+      "key": "07970a5cc398bf2c7f0e06f7",
+      "own": false,
+      "source": "npm:react-icons@5.6.0",
+      "size": 5865,
+      "ticks": 639161790450418531
+    },
+    {
+      "kind": "npm",
+      "name": "react-select",
+      "version": "5.10.2",
+      "key": "cba00ad3dc3981e686c3bd51",
+      "own": false,
+      "source": "npm:react-select@5.10.2",
+      "size": 2876,
+      "ticks": 639161790451620412
+    },
+    {
+      "kind": "npm",
+      "name": "react-syntax-highlighter",
+      "version": "16.1.1",
+      "key": "41c826d7b0e9a8c160f056a5",
+      "own": false,
+      "source": "npm:react-syntax-highlighter@16.1.1",
+      "size": 4537,
+      "ticks": 639164105797043720
+    },
+    {
+      "kind": "npm",
+      "name": "react-tabs",
+      "version": "6.1.1",
+      "key": "b49550e3ca3d00415f60b0bb",
+      "own": false,
+      "source": "npm:react-tabs@6.1.1",
+      "size": 2953,
+      "ticks": 639161790454462177
+    },
+    {
+      "kind": "npm",
+      "name": "timeago-react",
+      "version": "3.0.7",
+      "key": "427de1773f3ec28431295776",
+      "own": false,
+      "source": "npm:timeago-react@3.0.7",
+      "size": 3215,
+      "ticks": 639161790456716573
+    },
+    {
+      "kind": "npm",
+      "name": "vaul",
+      "version": "1.1.2",
+      "key": "637595e600757d6c94a8e607",
+      "own": false,
+      "source": "npm:vaul@1.1.2",
+      "size": 1747,
+      "ticks": 639161790450171145
+    },
+    {
+      "kind": "npm",
+      "name": "zustand",
+      "version": "5.0.14",
+      "key": "601f051580c734fe8a883798",
+      "own": false,
+      "source": "npm:zustand@5.0.14",
+      "size": 2139,
+      "ticks": 639161790449660902
+    },
+    {
+      "kind": "npm",
+      "name": "@swc/jest",
+      "version": "0.2.39",
+      "key": "8fbe7207daa6c654f48e4362",
+      "own": false,
+      "source": "npm:@swc/jest@0.2.39",
+      "size": 1133,
+      "ticks": 639235986241262682
+    },
+    {
+      "kind": "npm",
+      "name": "@testing-library/jest-dom",
+      "version": "6.9.1",
+      "key": "0ed3e43d21b123f833fe61cf",
+      "own": false,
+      "source": "npm:@testing-library/jest-dom@6.9.1",
+      "size": 3906,
+      "ticks": 639235986252306862
+    },
+    {
+      "kind": "npm",
+      "name": "@testing-library/react",
+      "version": "16.3.2",
+      "key": "34271d7fc14245fd291f0871",
+      "own": false,
+      "source": "npm:@testing-library/react@16.3.2",
+      "size": 3387,
+      "ticks": 639235986257421205
+    },
+    {
+      "kind": "npm",
+      "name": "@testing-library/user-event",
+      "version": "14.6.1",
+      "key": "2d835ae194230136f7f1f425",
+      "own": false,
+      "source": "npm:@testing-library/user-event@14.6.1",
+      "size": 3260,
+      "ticks": 639235986289165672
+    },
+    {
+      "kind": "npm",
+      "name": "@types/canvas-confetti",
+      "version": "1.9.0",
+      "key": "2cd1d1fb1a07f1ce23c49907",
+      "own": false,
+      "source": "npm:@types/canvas-confetti@1.9.0",
+      "size": 998,
+      "ticks": 639235986243216643
+    },
+    {
+      "kind": "npm",
+      "name": "@types/jest",
+      "version": "30.0.0",
+      "key": "16da06dba7c026be907f63e6",
+      "own": false,
+      "source": "npm:@types/jest@30.0.0",
+      "size": 4473,
+      "ticks": 639235986245047413
+    },
+    {
+      "kind": "npm",
+      "name": "@types/lodash",
+      "version": "4.17.24",
+      "key": "a9d3cf1ba7d34015203e54f7",
+      "own": false,
+      "source": "npm:@types/lodash@4.17.24",
+      "size": 1691,
+      "ticks": 639235986283825153
+    },
+    {
+      "kind": "npm",
+      "name": "@types/node",
+      "version": "20.19.41",
+      "key": "1dad65e1eaffa2648bc697ce",
+      "own": false,
+      "source": "npm:@types/node@20.19.41",
+      "size": 4128,
+      "ticks": 639235986264523872
+    },
+    {
+      "kind": "npm",
+      "name": "@types/react",
+      "version": "18.3.30",
+      "key": "8773985b9ccaa8469ec404e6",
+      "own": false,
+      "source": "npm:@types/react@18.3.30",
+      "size": 6010,
+      "ticks": 639161789292450912
+    },
+    {
+      "kind": "npm",
+      "name": "@types/react-datepicker",
+      "version": "6.2.0",
+      "key": "6b40036f1468e4adbc20e65e",
+      "own": false,
+      "source": "npm:@types/react-datepicker@6.2.0",
+      "size": 2546,
+      "ticks": 639235986243683729
+    },
+    {
+      "kind": "npm",
+      "name": "@types/react-dom",
+      "version": "18.3.7",
+      "key": "1778b1158a968692bcd66e71",
+      "own": false,
+      "source": "npm:@types/react-dom@18.3.7",
+      "size": 2399,
+      "ticks": 639161789288488059
+    },
+    {
+      "kind": "npm",
+      "name": "eslint",
+      "version": "8.57.0",
+      "key": "7c354cfb2211b63abede2f64",
+      "own": false,
+      "source": "npm:eslint@8.57.0",
+      "size": 5566,
+      "ticks": 639235986296390569
+    },
+    {
+      "kind": "npm",
+      "name": "eslint-config-next",
+      "version": "15.5.24",
+      "key": "a3f67a4bef67543f109e3b30",
+      "own": false,
+      "source": "npm:eslint-config-next@15.5.24",
+      "size": 1033,
+      "ticks": 639235998155391170
+    },
+    {
+      "kind": "npm",
+      "name": "jest",
+      "version": "30.4.2",
+      "key": "5525d6a8fc4f45de0b9beb6c",
+      "own": false,
+      "source": "npm:jest@30.4.2",
+      "size": 1467,
+      "ticks": 639235986243933162
+    },
+    {
+      "kind": "npm",
+      "name": "jest-environment-jsdom",
+      "version": "30.4.1",
+      "key": "c0df22aea711fbfd64c01894",
+      "own": false,
+      "source": "npm:jest-environment-jsdom@30.4.1",
+      "size": 1018,
+      "ticks": 639235986241607122
+    },
+    {
+      "kind": "npm",
+      "name": "postcss",
+      "version": "8.5.26",
+      "key": "0dd86764c2b8282210891fa3",
+      "own": false,
+      "source": "npm:postcss@8.5.26",
+      "size": 2497,
+      "ticks": 639235995104626250
+    },
+    {
+      "kind": "npm",
+      "name": "sharp",
+      "version": "0.35.4",
+      "key": "2a9a52f28241a95f74511d88",
+      "own": false,
+      "source": "npm:sharp@0.35.4",
+      "size": 8115,
+      "ticks": 639235986264128948
+    },
+    {
+      "kind": "npm",
+      "name": "ts-jest",
+      "version": "29.4.11",
+      "key": "9af4305daf1672a8ba71451d",
+      "own": false,
+      "source": "npm:ts-jest@29.4.11",
+      "size": 4485,
+      "ticks": 639235986267736524
+    },
+    {
+      "kind": "npm",
+      "name": "typescript",
+      "version": "5.9.3",
+      "key": "822ef7ca6452205657b6288b",
+      "own": false,
+      "source": "npm:typescript@5.9.3",
+      "size": 3620,
+      "ticks": 639235986291266309
+    }
+  ],
+  "missing": [
+    "nuget:Microsoft.Data.Sqlite/10.0.11 (not restored on this computer)",
+    "nuget:Swashbuckle.AspNetCore/10.2.1 (not restored on this computer)",
+    "nuget:Microsoft.NET.Test.Sdk/17.11.1 (not restored on this computer)",
+    "nuget:MSTest.TestAdapter/3.6.3 (not restored on this computer)"
+  ],
+  "incomplete": false,
+  "newlyRead": 2
+}

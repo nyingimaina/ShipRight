@@ -62,16 +62,7 @@ This file is called `.env`. The dot at the start just makes it a hidden file —
    This makes a copy of the template so you can fill in your own details.
    **What you should see:** nothing. That's fine — it worked.
 
-2. Let the computer generate the secret "key" for you. Type this and press Enter:
-
-   ```bash
-   sed -i "s/CHANGE-ME-TO-A-RANDOM-64-CHAR-HEX-STRING/$(openssl rand -hex 32)/" .env
-   ```
-
-   This is a long random string that keeps logins safe. You never need to see or remember it.
-   **What you should see:** nothing. Fine.
-
-3. Now open the settings file in the built-in text editor:
+2. Now open the settings file in the built-in text editor:
 
    ```bash
    nano .env
@@ -83,17 +74,21 @@ This file is called `.env`. The dot at the start just makes it a hidden file —
 
    | Line you will find             | What to type instead                                              |
    | ------------------------------ | ----------------------------------------------------------------- |
-   | `SHIPRIGHT__ADMIN_EMAIL=`      | Your email address (this is your login)                           |
-   | `SHIPRIGHT__ADMIN_PASSWORD=`   | A password you choose (at least 8 characters)                     |
-   | `MYSQL_ROOT_PASSWORD=`         | Another password you choose — any password                        |
-| `MYSQL_PASSWORD=`              | Another password you choose — must be different from the one above |
-| `SHIPRIGHT__PUBLIC_URL=`       | The HTTPS address where users access ShipRight                    |
-| `SHIPRIGHT__SMTP_*`            | SMTP settings used to send password-reset links                  |
+   | `MYSQL_ROOT_PASSWORD=`         | A password you choose — any password                              |
+   | `MYSQL_PASSWORD=`              | Another password you choose — must be different from the one above |
+   | `SHIPRIGHT__DB_CONNECTION=`    | Change only the `Password=` part to the same password as `MYSQL_PASSWORD` |
+   | `SHIPRIGHT__CORS_ORIGINS=`     | The HTTPS address where users open ShipRight                      |
+   | `SHIPRIGHT__PUBLIC_URL=`       | The same HTTPS address                                            |
+   | `SHIPRIGHT__SMTP_*`            | SMTP settings used to send password-reset links                   |
 
-   Do **not** change any other line. In particular, leave the line starting with
-   `SHIPRIGHT__DB_CONNECTION` exactly as it is.
+   `SHIPRIGHT__GOOGLE_CLIENT_ID` and `SHIPRIGHT__GOOGLE_CLIENT_SECRET` are optional. Leave them
+   empty and the "Sign in with Google" button is simply not shown; email sign-in works either way.
+   There is no admin email or password to set: the first person to register becomes the Admin of
+   their own company (Step 4).
 
-4. Saving and exiting the editor is the part people forget. Do it in this exact order:
+   Do **not** change any other line.
+
+3. Saving and exiting the editor is the part people forget. Do it in this exact order:
    1. Press **Ctrl+O** (the letter O, not zero) — it asks "File Name to Write".
    2. Press **Enter** to confirm.
    3. Press **Ctrl+X** to exit back to the terminal.
@@ -145,15 +140,13 @@ parts the app needs and builds it. This can take **several minutes** — that's 
 
    **What you should see** (look for these lines):
    - `Starting in CLOUD mode`
-   - `Created admin user your@email.com with company ...`
-
-   The second line means your login was created. 
+   - `Applying database migration ...` (only the first time, or after an update)
 
 2. When you've seen those lines, press **Ctrl+C** to stop watching the log and return to
    the terminal prompt.
 
-   If instead you see `JWT signing key is required`, see [Troubleshooting](#troubleshooting)
-   entry **C**.
+   If instead you see a message ending in `is required in cloud mode`, see
+   [Troubleshooting](#troubleshooting) entry **C**.
 
 ---
 
@@ -164,8 +157,13 @@ parts the app needs and builds it. This can take **several minutes** — that's 
 
    **What you should see:** the ShipRight screen with a login form.
 
-3. Log in with the **email** and **password** you set in Step 1.
+3. Click **Create an account**, enter your name, email and a password (at least 8 characters),
+   and register. You become the **Admin** of a new company and are signed in.
    **What you should see:** the main ShipRight screen (no error message).
+
+   As Admin you can add teammates from the **Team** page and give each of them a role:
+   **Admin** (everything), **Operator** (build and deploy, but not change settings or servers)
+   or **Viewer** (look only).
 
    If the page never loads, see [Troubleshooting](#troubleshooting) entry **D**.
 
@@ -198,9 +196,8 @@ Here are the few commands you'll ever need. All of them go in the Ubuntu termina
 | Start fresh and erase all test data     | `docker compose down -v`           |
 
 **Careful with the last one:** `docker compose down -v` deletes everything — your projects,
-builds, and the admin login. You'd have to log in with the same admin email/password from
-Step 1 again (the app re-creates it automatically on next start). Only use it if you want a
-completely clean slate.
+builds, and every account. You would register again from scratch (Step 4). Only use it if
+you want a completely clean slate.
 
 ---
 
@@ -210,13 +207,13 @@ completely clean slate.
 | -- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A  | `fatal:` or `error:` when cloning (Step 0)     | Probably a typo or no internet. Re-paste the whole block and try again. If it still fails, double-check you're online.                                          |
 | B  | `Exited` or `unhealthy` in `docker compose ps` | Something didn't start. Look at the messages: `docker compose logs app` (and `docker compose logs db`). If a message says the port is busy, see entry E.         |
-| C  | `JWT signing key is required`                  | The secret key step didn't take effect. In the terminal, run `sed -i "s/CHANGE-ME-TO-A-RANDOM-64-CHAR-HEX-STRING/$(openssl rand -hex 32)/" .env`, then `docker compose up -d --force-recreate` to start again. |
+| C  | `SHIPRIGHT__... is required in cloud mode`     | A setting in `.env` is empty or still a placeholder (the message names which one, never its value). Edit `.env` (Step 1), then run `docker compose up -d --force-recreate`. |
 | D  | The browser can't open localhost:5200          | The app may not be running. In the terminal run `docker compose ps` — if a row is `Exited`, run `docker compose up -d` and wait a minute.                        |
 | E  | `port is already allocated` / `5200` busy      | Another program is using the same port. Stop that program, or reset everything with `docker compose down` and try `docker compose up -d` again.                 |
-| F  | Login says "wrong password"                    | You mistyped the password in Step 1, or the editor didn't save. Edit `.env` again (`nano .env`), save with Ctrl+O, Enter, Ctrl+X, then start fresh with `docker compose down -v` followed by `docker compose up -d`. |
+| F  | Login says "Invalid email or password"         | Check the email and password you registered with. Five wrong tries in a row lock the account for 5 minutes. Forgotten? Use "Forgot password" on the login screen. |
 | G  | A build step failed halfway through            | Usually a momentary internet hiccup. Simply run `docker compose up --build -d` again — it continues where it left off.                                           |
 | H  | `docker: command not found`                    | Docker isn't installed in your Ubuntu terminal. Get it working first, then come back to Step 0.                                                                 |
-| I  | "Created admin user" never appears in logs     | Your admin login wasn't set in `.env`. Edit `.env` (Step 1), save it, then start fresh with `docker compose down -v` and `docker compose up -d`.                 |
+| I  | The "Sign in with Google" button is missing    | Google is optional. Set `SHIPRIGHT__GOOGLE_CLIENT_ID` and `SHIPRIGHT__GOOGLE_CLIENT_SECRET` in `.env` (both), then `docker compose up -d --force-recreate`. |
 | J  | App keeps restarting with `exec ./ShipRight.Server: no such file or directory` | The container's base image was wrong in an older version of the code. Update the code (`git pull`), then rebuild with `docker compose up --build -d`.              |
 
 Still stuck? The most common fix is a clean start: `docker compose down -v`, wait a moment,

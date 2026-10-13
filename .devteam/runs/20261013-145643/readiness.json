@@ -1,0 +1,50 @@
+{
+  "overall": 2,
+  "headline": "Not fully proven: some parts could not be checked, so they are not counted as passed.",
+  "items": [
+    {
+      "id": "boot",
+      "title": "The app starts and works as set up",
+      "status": 2,
+      "evidence": "Nothing starts this app and looks at it yet. DevTeam can set that up: run  devteam adopt doctor."
+    },
+    {
+      "id": "tests",
+      "title": "Automated tests and checks pass",
+      "status": 0,
+      "evidence": "16 of 16 checks passed. 911 tests ran (76 skipped), all passed."
+    },
+    {
+      "id": "requirements",
+      "title": "Every requirement has a test that names it",
+      "status": 0,
+      "evidence": "13 of 13 requirements have a test."
+    },
+    {
+      "id": "findings",
+      "title": "No problems left open by review, QA or security",
+      "status": 0,
+      "evidence": "None open. 7 fixed along the way, 22 note(s) recorded."
+    },
+    {
+      "id": "coverage",
+      "title": "The tests run the code",
+      "status": 2,
+      "evidence": "No coverage report was produced, so nobody knows how much of the code the tests run."
+    },
+    {
+      "id": "skipped",
+      "title": "Nothing was skipped",
+      "status": 0,
+      "evidence": "Every check that applies was run."
+    }
+  ],
+  "notes": [
+    {
+      "id": "browser",
+      "title": "Real browser journeys",
+      "status": 2,
+      "evidence": "Not run: this stack has no browser journeys. Not counted for or against the verdict."
+    }
+  ]
+}

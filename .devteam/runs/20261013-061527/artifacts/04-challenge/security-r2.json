@@ -1,0 +1,29 @@
+{
+  "findings": [
+    {
+      "cites": "",
+      "severity": "advisory",
+      "file": "back-end/ShipRight.Server/Modules/Identity/IdentityRegistration.cs",
+      "line": 72,
+      "evidence": "The move from per-request Authorization: Bearer JWTs (old ApiService set no cookie; the browser never attached credentials cross-site) to a session cookie (same-site requests only) was not paired with antiforgery tokens. Zero matches for Antiforgery/ValidateAntiForgeryToken/X-CSRF anywhere in ShipRight.Server or front-end/src/shared/ApiService.ts. The only defense is SameSite=Lax (IdentityRegistration.cs:72). All state-changing /api verbs are POST/PUT/DELETE and Lax blocks cross-site on those, but a few signed-in GETs perform side effects that a Lax cookie now attaches on top-level cross-site navigation where the old header scheme did not: DatabaseRouter.cs:245 /api/projects/{id}/db/backups/open-folder and ServerRouter.cs:373 /api/servers/{id}/db/backups/open-folder.",
+      "description": "CSRF protection rests on SameSite=Lax alone; no antiforgery token is issued or checked. ISolated state-changing GET endpoints (db/backups/open-folder) became reachable cross-site under the new cookie scheme. Recommend SameSite=Strict for the auth cookie and/or server-side antiforgery validation, and move actions that mutate host state off GET."
+    },
+    {
+      "cites": "",
+      "severity": "advisory",
+      "file": "back-end/ShipRight.Server/CloudDiRegistrar.cs",
+      "line": 48,
+      "evidence": "Every rate limiter partitions on context.Connection.RemoteIpAddress (CloudDiRegistrar.cs:48-74). Program.cs (lines 151-168) never calls UseForwardedHeaders or KnownProxies, so behind a TLS-terminating reverse proxy all requests appear from the proxy IP. The partitions then collapse to one shared bucket per deployment: the global 100 req/min, the 30 auth-attempts/min (AuthAttemptsLimiter) and the 5 password-reset-emails/hour (PasswordResetLimiter) become site-wide budgets that a single attacker can exhaust, blocking password resets and login for every tenant.",
+      "description": "Availability: IP-partitioned rate limits (including the R10 reset limiter) are not forwarded-header aware, so behind the reverse proxy common in a cloud deployment they degrade to a shared site-wide budget that one attacker can starve. Configure trusted-proxy forwarding (X-Forwarded-For) or partition on a subnet/account basis instead."
+    },
+    {
+      "cites": "",
+      "severity": "advisory",
+      "file": "back-end/ShipRight.Server/Modules/Identity/IdentityRegistration.cs",
+      "line": 73,
+      "evidence": "options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest (IdentityRegistration.cs:73) and there is no UseHttpsRedirection or UseForwardedHeaders in Program.cs. If the app is published where TLS terminates outside the app environment (the standard docker-compose.py / reverse-proxy setup) without the forwarding step, requests arrive as plain HTTP and the 7-day persistent session cookie (isPersistent:true, SessionLength 7 days) is sent in cleartext, exposing the session to any on-path observer.",
+      "description": "The session cookie is only marked Secure when the app itself observes an HTTPS request. In a TLS-terminating-proxy deployment without forwarded-headers configuration the cookie is transmitted in the clear over the local hop. Enforce Secure for the auth cookie in cloud mode (or set ForwardedHeaders/KnownProxies) before production."
+    }
+  ],
+  "verifications": []
+}

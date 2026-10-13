@@ -1,0 +1,28 @@
+{
+  "summary": "",
+  "requirements": [],
+  "questions": [],
+  "ask": {
+    "text": "You asked to remove the emailing code if we are not using it yet. Today the only thing ShipRight emails is the 'forgot password' link. If that goes, how should someone who forgets their password get back in? Example: Priya forgets her password.",
+    "why": "It decides whether the forgot-password email (and its mail-server settings) stays or is removed, and whether an Admin needs a 'set a new temporary password' action on the team screen.",
+    "topic": "users",
+    "options": [
+      { "label": "Remove email. The Admin sets a new temporary password for a teammate; Google sign-in is the fallback", "consequence": "No mail settings are needed anywhere. A forgotten password is fixed by the Admin on the team screen, and the person then chooses a new one at next sign-in. A lone Admin who forgets their password and has no Google link has no self-service way back.", "recommended": true },
+      { "label": "Keep the forgot-password email", "consequence": "The mail-server settings stay in the app, docker-compose and .env.example, and only they are kept; everyone can reset their own password by email." },
+      { "label": "Remove email and give no recovery for now", "consequence": "Smallest build, but a forgotten password means a locked-out person until someone fixes it directly in the database." }
+    ]
+  },
+  "coverage": [
+    { "topic": "users", "status": "open", "note": "Roles settled; how a person recovers a forgotten password once email is removed is the one open point." },
+    { "topic": "data", "status": "answered", "note": "Existing accounts, companies and passwords stay valid; email unique regardless of capitals; one company and one role per person." },
+    { "topic": "permissions", "status": "answered", "note": "Admin all; Operator build and deploy but not settings or servers; Viewer read-only; everything scoped by CompanyId." },
+    { "topic": "validation", "status": "assumed", "note": "Email format, password minimum 8 characters, names up to 200 characters; messages beside the field." },
+    { "topic": "states", "status": "assumed", "note": "Loading, empty, error and success states on sign-in, register, Google and team screens." },
+    { "topic": "duplicates", "status": "answered", "note": "Email unique regardless of capitals; double submit creates one account or company." },
+    { "topic": "volume", "status": "not-applicable", "note": "Teams are small (about 50 people at most); the team list is still paged per API-005." },
+    { "topic": "deletion", "status": "answered", "note": "Teammates are switched off, not deleted, and can be switched back on." },
+    { "topic": "privacy", "status": "answered", "note": "Only email, name, role and password hash (or Google link) are stored; secrets never logged or shown." },
+    { "topic": "quality", "status": "assumed", "note": "Lockout 5 attempts per 5 minutes, 7-day sessions, sign-in under 1 second; env vars trimmed to only those in use, with characterization tests first." }
+  ],
+  "assumptions": []
+}

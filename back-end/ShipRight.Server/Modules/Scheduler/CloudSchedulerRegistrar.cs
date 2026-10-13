@@ -6,6 +6,7 @@ using Serilog;
 using ShipRight.Modules.Database;
 using ShipRight.Modules.Projects;
 using ShipRight.Shared.Store;
+using ShipRight.Shared.Tenancy;
 
 namespace ShipRight.Modules.Scheduler;
 
@@ -18,6 +19,8 @@ public static class CloudSchedulerRegistrar
 
         services.AddSingleton<TempoQueue<TempoScheduledWork<BackupJob>>>(sp =>
         {
+            // Background work belongs to no signed-in person: it runs as system work across companies.
+            using var systemScope = sp.GetService<ICompanyContext>()?.BeginSystemScope();
             var processor = new BackupJobProcessor(
                 sp.GetRequiredService<IProjectStore>(),
                 sp.GetRequiredService<DatabaseOrchestrator>());
@@ -69,6 +72,7 @@ public static class CloudSchedulerRegistrar
 
         services.AddSingleton<TempoScheduler<BackupJob>>(sp =>
         {
+            using var systemScope = sp.GetService<ICompanyContext>()?.BeginSystemScope();
             var timeZone = TempoTimeZoneResolver.ResolveConfigured();
             var scheduler = new TempoScheduler<BackupJob>(
                 sp.GetRequiredService<TempoQueue<TempoScheduledWork<BackupJob>>>(),

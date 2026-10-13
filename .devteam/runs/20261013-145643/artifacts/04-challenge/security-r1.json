@@ -1,0 +1,77 @@
+{
+  "findings": [
+    {
+      "cites": "API-004",
+      "severity": "blocking",
+      "file": "back-end/ShipRight.Server/Modules/Resources/ResourceRouter.cs",
+      "line": 14,
+      "evidence": "MapGet(\"/api/resources/registries\") returns store.GetAllAsync() (and /{id} at line 20), so every DockerRegistryResource crosses the HTTP boundary including its plaintext Password field (Models/DockerRegistryResource.cs:15). RoleAccessRules.cs:28 assigns any other GET under /api/resources only AppRoles.Viewer, so an Operator or Viewer in the same company receives the registry password in the JSON response. Only GET /api/resources/credentials is Admin-restricted (RoleAccessRules.cs:26) even though registries carry the same class of secret; writes are Admin (RoleAccessRules.cs:29) but reads are not.",
+      "description": "A read-only Viewer (or Operator) can fetch the company's Docker registry credentials, including the plaintext password, by calling GET /api/resources/registries or /api/resources/registries/{id}. Sensitive columns must not be returned; the server (not the UI) is the authority per R5. Return a DTO without Password (as team/password responses do) and/or raise the read rule to Admin like credentials."
+    },
+    {
+      "cites": "API-004",
+      "severity": "blocking",
+      "file": "back-end/ShipRight.Server/Modules/Resources/ResourceRouter.cs",
+      "line": 192,
+      "evidence": "MapGet(\"/api/resources/aws-profiles\") returns store.GetAllAsync() (and /{id} at line 218), so every AwsProfileResource crosses the HTTP boundary including SecretAccessKey and SessionToken (Models/AwsProfileResource.cs:15-16). RoleAccessRules.cs:28 assigns this GET only AppRoles.Viewer. The nearby GET /api/resources/aws-profiles/available is deliberately Admin-only (RoleAccessRules.cs:27), which shows secret-bearing AWS reads are meant to be Admin; the list and detail endpoints were missed.",
+      "description": "A Viewer or Operator can read the company's AWS secret access keys and session tokens from GET /api/resources/aws-profiles and /api/resources/aws-profiles/{id}. This exposes usable long-lived cloud credentials to the lowest role. Exclude SecretAccessKey/SessionToken from the response (return a DTO) and restrict the read to Admin, or mark the fields write-only."
+    },
+    {
+      "cites": "API-004",
+      "severity": "advisory",
+      "file": "back-end/ShipRight.Server/Modules/Resources/ResourceRouter.cs",
+      "line": 74,
+      "evidence": "GET /api/resources/scripts (line 74) and GET /api/resources/pipelines (PipelineRouter.cs:13) return ScriptResource/PipelineResource directly, including the Variables dictionary (Models/ScriptResource.cs:13, Models/PipelineResource.cs:12) which holds arbitrary environment values that frequently contain tokens/secrets. Both are Viewer-readable under RoleAccessRules.cs:28.",
+      "description": "Same root cause as the registry and AWS findings: whole resource records (with their Variables maps) are returned to any signed-in role. If Variables can hold secrets, scrub them from read responses or require Admin."
+    },
+    {
+      "cites": "R10",
+      "severity": "advisory",
+      "file": "back-end/ShipRight.Server/Modules/Identity/IdentityRegistration.cs",
+      "line": 73,
+      "evidence": "options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest with isPersistent:true and a 7-day ExpireTimeSpan (IdentityRegistration.cs:74). Program.cs calls neither UseForwardedHeaders nor UseHttpsRedirection (Program.cs:151-168), so a TLS-terminating proxy that forwards plain HTTP yields a session cookie with no Secure attribute.",
+      "description": "In the standard docker-compose / reverse-proxy deployment the 7-day session cookie can be sent over the local hop in cleartext. Set CookieSecurePolicy.Always in cloud mode (or configure forwarded headers before production)."
+    },
+    {
+      "cites": "R10",
+      "severity": "advisory",
+      "file": "back-end/ShipRight.Server/Modules/Identity/IdentityRegistration.cs",
+      "line": 72,
+      "evidence": "SameSite=Lax is the only anti-CSRF defence; there is no antiforgery token anywhere in ShipRight.Server or front-end/src/shared (grep for antiforgery/csrf/xsrf/X-CSRF finds nothing). State-changing GETs exist: DatabaseRouter.cs:245 and ServerRouter.cs:373 /db/backups/open-folder perform a host-side action, and SameSite=Lax attaches the cookie on a top-level cross-site navigation to them.",
+      "description": "The switch from bearer headers to a cookie session adds CSRF exposure that no token check covers. SameSite=Strict for the auth cookie and/or antiforgery validation on /api mutations would close it, and mutating GETs should not be GET."
+    },
+    {
+      "cites": "R10",
+      "severity": "advisory",
+      "file": "back-end/ShipRight.Server/CloudDiRegistrar.cs",
+      "line": 48,
+      "evidence": "Every limiter partitions on context.Connection.RemoteIpAddress (lines 48-74), and no forwarded-header middleware runs (Program.cs:151-168). Behind a reverse proxy all requests share the proxy IP, collapsing the global 100/min, the 30/min AuthAttempts and the 5/hour PasswordReset partitions into one site-wide bucket.",
+      "description": "A single client can exhaust the shared reset/login budget and block sign-in and password resets for every tenant, weakening R10's reset-rate limit. Configure trusted forwarded headers (X-Forwarded-For) or partition on a stable client identity."
+    },
+    {
+      "cites": "R5",
+      "severity": "advisory",
+      "file": "back-end/ShipRight.Server/Modules/Identity/RoleAccessRules.cs",
+      "line": 37,
+      "evidence": "POST /api/servers/{serverId}/deploy (ServerBootstrapRouter.cs:27) is not in the Operator allow-list (RoleAccessRules.cs:35) and falls through to the Admin catch-all at line 37, whereas POST /api/builds/{id}/deploy requires only Operator. R5 says an Operator can build and deploy.",
+      "description": "Server-targeted deploy is Admin-only while build deploy is Operator. If standalone-server deploy counts as 'deploy' per R5 the role table is wrong; if it is intended to be Admin it should be an explicit, commented rule rather than an accidental catch-all. Over-restriction, so advisory rather than a vulnerability."
+    },
+    {
+      "cites": "",
+      "severity": "advisory",
+      "file": "back-end/ShipRight.Server/Modules/System/HealthRouter.cs",
+      "line": 83,
+      "evidence": "Public GET /api/health returns DataDirectory (absolute server path), ProjectCount, BuildCount, server/web versions and StartedAt (HealthPayload lines 12-21). RoleAccessRules.cs:63 keeps it anonymous so the smoke runner can probe it.",
+      "description": "Unauthenticated information disclosure of the host data-directory path and record counts. Low impact and required by R11's readiness probe, but consider dropping the path/counts from the public payload."
+    },
+    {
+      "cites": "",
+      "severity": "advisory",
+      "file": "scripts/smoke/run.mjs",
+      "line": 251,
+      "evidence": "The capture handler pushes every stdout/stderr line into the unbounded `output` array (lines 251-259) with no cap, while only the last 20 are printed. A server that logs heavily during the up-to-60s readiness wait can grow this without limit.",
+      "description": "Minor unbounded-work risk in the new smoke runner: cap the captured buffer (ring buffer / max N lines) the way `tail` already caps what is printed. Not reachable by an attacker, so advisory."
+    }
+  ],
+  "verifications": []
+}

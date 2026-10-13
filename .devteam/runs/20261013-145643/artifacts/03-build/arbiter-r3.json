@@ -1,0 +1,6 @@
+{
+  "ruling": "allow",
+  "reason": "ProjectRouter.cs is exactly where GET /api/projects (lines 16-17) and GET /api/projects/{id} (lines 33-39) return ProjectConfig whole, secrets included, and it is the only place that knows the caller's role, so it is the file that lets a Viewer still list projects (R5) while the plaintext DockerPassword (ProjectConfig.cs:48) and database RootPassword (ProjectConfig.cs:18) stop reaching non-Admin callers (SEC-10, API-004). Adding it serves R5, it is a Projects feature file (already represented in scope by MariadbProjectStore.cs), not shared code other features depend on, and no house rule forbids it. The in-scope alternatives are ruled out: raising the /api/projects GET rule to Admin in RoleAccessRules.cs would stop a Viewer listing projects, breaking R5 and RoleAccessRulesTests.cs:31, and redacting inside CompanyScopedProjectStore would break the internal consumers that need the credentials (BuildOrchestrator.cs:755/1130, ResourceResolutionService.cs:39) and the credential-preserving save path.",
+  "whyNotAutomatic": "",
+  "recommended": "allow"
+}

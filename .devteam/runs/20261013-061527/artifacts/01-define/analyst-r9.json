@@ -1,0 +1,329 @@
+{
+  "summary": "Replace ShipRight's hand-built sign-in (own tokens, refresh tokens, password reset, IsAdmin flag) with ASP.NET Core Identity running on the project's existing SQL data access, without EF Core. Every person belongs to exactly one company (CompanyId) and has exactly one role: Admin, Operator or Viewer. Existing accounts keep working with their current email and password. Anyone can also sign in with Google; a first-time Google person gets a brand-new company and becomes its Admin. An Admin can add teammates by typing the teammate's email, a temporary password and a role, change a teammate's role, and switch a teammate off (and back on). The server enforces the permissions: Admin does everything; Operator can build and deploy but not change settings or servers; Viewer is read-only. Desktop/local mode needs no sign-in and switches over silently with all data and projects intact. All data stays scoped to the person's company.",
+  "roles": [
+    "Admin: does everything in their company, including adding teammates, changing roles, and switching teammates off or on",
+    "Operator: can build and deploy, but cannot change settings or servers",
+    "Viewer: read-only; can see projects, builds and deploys but cannot start or change anything",
+    "Desktop/local user: uses ShipRight on their own machine with no sign-in and full access to their own data"
+  ],
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "People who already have a ShipRight account can sign in with their current email and password after the switch, and see the same company, projects and data as before.",
+      "rationale": "The builder decided existing accounts and passwords must keep working; forcing a reset would lock people out of their deployments.",
+      "acceptance": [
+        "An account created before the switch signs in with its old email and old password without any reset",
+        "After signing in, the person sees the same company's projects and data as before the switch",
+        "A wrong password shows one generic message that does not reveal whether the email exists"
+      ],
+      "edgeCases": [
+        "An old account whose email differs from another only in capital letters still signs in with either spelling",
+        "An old account that was an admin becomes an Admin; an old non-admin account keeps working with a role that does not remove access it had before",
+        "Five wrong passwords in a row lock the account for 5 minutes, and the message says to try again later without exposing technical details"
+      ],
+      "pitfalls": [
+        "Passwords and password hashes must never appear in logs, errors or responses",
+        "The switch must not require anyone to re-register or create a second account"
+      ],
+      "rules": ["API-003", "API-001"]
+    },
+    {
+      "id": "R2",
+      "text": "A person can register with email and password, which creates a new company with that person as its Admin.",
+      "rationale": "Today every sign-up creates a company with its first person as admin; this must continue.",
+      "acceptance": [
+        "Registering with a valid email, name and password creates one company and one Admin account and signs the person in",
+        "Registering with an email already in use (any capitalisation) is refused with a message next to the email field",
+        "Passwords shorter than 8 characters, an invalid email, or names over 200 characters are refused with a message next to the field saying what to fix"
+      ],
+      "edgeCases": [
+        "Pressing Register twice quickly creates only one company and one account",
+        "Two people registering the same email at the same moment results in exactly one account",
+        "Empty or whitespace-only fields are treated as missing"
+      ],
+      "pitfalls": [
+        "A failed registration must not leave a half-created company without a person, or a person without a company"
+      ],
+      "rules": ["API-003", "DB-002", "UX-002"]
+    },
+    {
+      "id": "R3",
+      "text": "A person can sign in with Google. If no ShipRight account exists for that Google email, a new company is created for them with them as its Admin; if one exists, they are signed in to it.",
+      "rationale": "The builder decided anyone can sign in with Google and a first-timer gets their own company as Admin.",
+      "acceptance": [
+        "A first-time Google person ends up signed in as the Admin of a new company named from their Google display name",
+        "A person who already has an account with the same email is signed in to that existing account and company, and no second company is created",
+        "If Google sign-in is cancelled or fails, the person returns to the sign-in screen with a plain message and can still use email and password"
+      ],
+      "edgeCases": [
+        "Doing the Google sign-in twice in quick succession creates only one company",
+        "Google sign-in is not available when Google is not configured on the server: the Google button is hidden or disabled with a clear explanation, and email sign-in still works",
+        "A Google person whose email is not verified by Google is refused"
+      ],
+      "pitfalls": [
+        "Google tokens and secrets must not appear in logs, responses or error messages",
+        "A failed Google sign-in must not leave a company without an Admin"
+      ],
+      "rules": ["API-003", "UX-001"]
+    },
+    {
+      "id": "R4",
+      "text": "Every person has exactly one company and exactly one role (Admin, Operator or Viewer), and every query for company data is limited to their own company.",
+      "rationale": "Tenancy is by CompanyId; one person seeing another company's data is the worst failure this system can have.",
+      "acceptance": [
+        "A person in company A requesting a project, build, server or team member that belongs to company B receives the same not-found response as for something that does not exist",
+        "The company is taken from the signed-in person's account, not from anything the browser sends such as a header or subdomain",
+        "List endpoints only ever return the person's own company's records"
+      ],
+      "edgeCases": [
+        "Changing an id in a URL to another company's id reveals nothing",
+        "Sending a different company id in a request body or header is ignored"
+      ],
+      "pitfalls": [
+        "Company checks happen inside the data query, not after loading the record",
+        "A record owned by another company must look exactly like one that does not exist"
+      ],
+      "rules": ["API-002", "API-001"]
+    },
+    {
+      "id": "R5",
+      "text": "The server enforces roles: Admin can do everything; Operator can build and deploy but cannot change settings or servers; Viewer can only read.",
+      "rationale": "The builder defined the three permission levels; hiding buttons alone is not security, so the server must refuse.",
+      "acceptance": [
+        "A Viewer who tries to start a build, deploy, or change anything receives a clear 'not allowed' response and nothing changes",
+        "An Operator can start builds and deploys but receives 'not allowed' when changing settings or adding, editing or removing servers",
+        "An Admin can do all of the above",
+        "Not signed in receives a 'sign in required' response for every endpoint except sign-in, registration, Google sign-in and password reset"
+      ],
+      "edgeCases": [
+        "A person's role is changed while they are signed in: the new role applies on their next request, or at most within a few minutes",
+        "A person switched off while signed in loses access on their next request or within a few minutes"
+      ],
+      "pitfalls": [
+        "Every endpoint requires sign-in unless explicitly marked public with a reason",
+        "Buttons the person is not allowed to use are hidden or disabled in the screens, but the server remains the authority"
+      ],
+      "rules": ["API-001", "API-002"]
+    },
+    {
+      "id": "R6",
+      "text": "An Admin can add a teammate to their company by typing the teammate's email, a temporary password and choosing a role (Admin, Operator or Viewer).",
+      "rationale": "The builder decided Admins create teammate accounts directly; there are no invitation emails.",
+      "acceptance": [
+        "After saving, the teammate appears in the company's team list with their email, name, role and active status",
+        "The teammate can sign in with the temporary password and is asked to choose a new password before continuing",
+        "Creating a teammate with an email that is already in use anywhere (any capitalisation) is refused with a message next to the email field",
+        "A temporary password shorter than 8 characters, an invalid email, or no role chosen is refused with a message next to the field",
+        "Operators and Viewers cannot see or use the team screen or its endpoints"
+      ],
+      "edgeCases": [
+        "Pressing Save twice quickly creates only one teammate",
+        "The temporary password is shown only while typing and never again afterwards"
+      ],
+      "pitfalls": [
+        "A failed save must not leave a half-created account",
+        "The temporary password must never be logged or returned by any endpoint",
+        "A teammate is always created in the Admin's own company; the Admin cannot choose another company"
+      ],
+      "rules": ["API-002", "API-003", "DB-002", "UX-001", "UX-002", "USR-001"]
+    },
+    {
+      "id": "R7",
+      "text": "An Admin can change a teammate's role.",
+      "rationale": "Roles only matter if the Admin can set them after creation, for example promoting an Operator.",
+      "acceptance": [
+        "Changing a teammate's role shows the new role in the team list and applies to what they can do",
+        "An Admin cannot change a role of someone in another company; the response is not-found"
+      ],
+      "edgeCases": [
+        "The last active Admin of a company cannot be demoted; the Admin sees a message explaining why",
+        "Two Admins changing the same teammate at once leave a valid single role, and the later save is not silently lost without notice"
+      ],
+      "pitfalls": [
+        "A company must never end up with no active Admin"
+      ],
+      "rules": ["API-002", "API-003", "UX-002"]
+    },
+    {
+      "id": "R8",
+      "text": "An Admin can switch a teammate off, which stops them signing in while keeping their account and history, and can switch them back on.",
+      "rationale": "The builder decided that removing someone is reversible and history (who started which build) must stay intact.",
+      "acceptance": [
+        "A switched-off person cannot sign in and sees a message that their account is switched off and to contact their Admin",
+        "A switched-off person who is already signed in loses access on their next request or within a few minutes",
+        "Builds and deploys they started still show their name",
+        "The Admin can switch the person back on and they can sign in again with their existing password",
+        "A switched-off person's email stays taken and cannot be used to create another account",
+        "The Admin sees a confirmation step before switching someone off"
+      ],
+      "edgeCases": [
+        "The last active Admin cannot be switched off, and an Admin cannot switch off their own account if they are the last one",
+        "Switching off someone already switched off, or on someone already on, does nothing and shows no error",
+        "A switched-off person trying Google sign-in with the same email is also refused"
+      ],
+      "pitfalls": [
+        "Switching off must not delete anything",
+        "An Admin must not be able to switch off a person who belongs to another company"
+      ],
+      "rules": ["API-002", "UX-001", "UX-002"]
+    },
+    {
+      "id": "R9",
+      "text": "A team screen lists the company's people with email, name, role and active/switched-off status, and offers add, change role, and switch off or on to Admins.",
+      "rationale": "Admins need one place to manage teammates; the builder expanded scope to include it.",
+      "acceptance": [
+        "The list shows loading, empty, error-with-retry and success states",
+        "The list is paged with a server-side maximum page size and shows the total count; default order is by name",
+        "Every action works with the keyboard only, and every field has a visible label",
+        "The screen works at phone width and uses the project's required component libraries"
+      ],
+      "edgeCases": [
+        "A company with only its Admin shows that person, not an empty state",
+        "A very long name or email does not break the layout"
+      ],
+      "pitfalls": [
+        "Submit buttons are disabled while saving to prevent double submit"
+      ],
+      "rules": ["API-005", "UX-001", "UX-002", "USR-001", "PERF-001"]
+    },
+    {
+      "id": "R10",
+      "text": "A person can sign out, stay signed in for 7 days, and reset a forgotten password by email; a teammate with a temporary password must choose a new one at first sign-in.",
+      "rationale": "These are the existing sign-in behaviours that must survive the replacement.",
+      "acceptance": [
+        "Signing out ends access immediately",
+        "Asking for a password reset always shows the same message whether or not the email exists",
+        "A reset link works once and expires after a limited time; a used or expired link shows a clear message",
+        "A teammate signing in with a temporary password cannot do anything else until a new password is set"
+      ],
+      "edgeCases": [
+        "Requesting a reset many times in a row is limited and does not flood the person's inbox",
+        "Resetting a password for a switched-off account does not switch it on"
+      ],
+      "pitfalls": [
+        "Reset links and passwords must not appear in logs"
+      ],
+      "rules": ["API-003", "UX-002"]
+    },
+    {
+      "id": "R11",
+      "text": "In desktop/local mode no sign-in is required, and switching to the new system keeps all existing data and projects accessible with no action from the user.",
+      "rationale": "The builder required the desktop switch-over to be frictionless and transparent, with no loss of access.",
+      "acceptance": [
+        "Opening the desktop app after the upgrade goes straight to the person's projects with no sign-in or setup screen",
+        "All projects, builds, servers and settings that existed before the upgrade are still visible and usable",
+        "Local mode behaves as a full-access user for its own data",
+        "Starting the app in desktop/local mode and opening the home page and reading data succeeds"
+      ],
+      "edgeCases": [
+        "A machine that previously had a sign-in account set up in local mode is not asked to sign in",
+        "Upgrading twice, or restarting during the upgrade, leaves data intact"
+      ],
+      "pitfalls": [
+        "The upgrade of existing data must not lose or orphan any record; a failed upgrade must leave the previous data usable",
+        "Local mode must not become reachable without sign-in from other machines when the app runs as a shared server"
+      ],
+      "rules": ["BOOT-001", "API-001", "API-002"]
+    },
+    {
+      "id": "R12",
+      "text": "The old sign-in pieces (own tokens, refresh tokens, IsAdmin flag, hand-built password reset) are removed and replaced; the existing sign-in, register and reset screens keep working against the new system.",
+      "rationale": "The builder asked to strip out the existing auth and replace it, not run two systems side by side.",
+      "acceptance": [
+        "No endpoint or screen depends on the old tokens or the IsAdmin flag",
+        "Existing automated tests for sign-in are updated to the new behaviour and all tests pass",
+        "The sign-in, register, reset and Google screens show loading, error and success states"
+      ],
+      "edgeCases": [
+        "A person who was signed in with an old token at the time of the switch is sent to the sign-in screen with a plain message, not an error page"
+      ],
+      "pitfalls": [
+        "Database changes to existing accounts must not lose any account or company"
+      ],
+      "rules": ["API-001", "BOOT-001", "UX-001", "USR-001"]
+    }
+  ],
+  "outOfScope": [
+    "Invitation emails or invite links; teammates are created directly by an Admin",
+    "Permanently deleting a person's account",
+    "A person belonging to more than one company",
+    "Sign-in providers other than Google",
+    "Two-factor authentication",
+    "Custom roles beyond Admin, Operator and Viewer",
+    "Choosing the company from a header or subdomain"
+  ],
+  "nonFunctional": [
+    {
+      "area": "security",
+      "statement": "Passwords are stored only as hashes, and passwords, temporary passwords, reset links and Google tokens never appear in logs, error messages or responses.",
+      "acceptance": "Review of logs and responses from registration, sign-in, reset, teammate creation and Google sign-in shows none of these values."
+    },
+    {
+      "area": "security",
+      "statement": "Every endpoint requires sign-in except sign-in, registration, Google sign-in and password reset, each marked public with a reason. In desktop/local mode, this is satisfied without a sign-in screen.",
+      "acceptance": "An automated test calls each endpoint without credentials and gets 'sign in required' except the listed public ones."
+    },
+    {
+      "area": "security",
+      "statement": "Accounts lock for 5 minutes after 5 wrong passwords.",
+      "acceptance": "A test shows the sixth attempt within 5 minutes is refused even with the correct password."
+    },
+    {
+      "area": "performance",
+      "statement": "Sign-in completes in under 1 second, and the team list opens in under 1 second for up to 50 people.",
+      "acceptance": "A timing test with 50 people in a company meets both limits."
+    },
+    {
+      "area": "reliability",
+      "statement": "A failed registration, Google first sign-in or teammate creation leaves no partial records.",
+      "acceptance": "Tests that force a failure mid-way find no company without a person and no person without a company."
+    },
+    {
+      "area": "accessibility",
+      "statement": "Sign-in, register, reset, Google and team screens are fully keyboard-operable, have visible labels, and show field errors beside the field.",
+      "acceptance": "A keyboard-only walkthrough completes each flow, and component tests check labels and error placement."
+    },
+    {
+      "area": "reliability",
+      "statement": "The app starts and its home page loads in both desktop/local mode and signed-in server mode.",
+      "acceptance": "A start-and-look check opens the home page and reads data successfully in both modes."
+    }
+  ],
+  "risks": [
+    "Existing password hashes must be accepted by the new system; if the old format is not recognised, people would be locked out.",
+    "Upgrading existing accounts that were previously admin or non-admin to the three roles must not remove access anyone had.",
+    "Desktop/local mode being reachable from other machines would expose data without sign-in.",
+    "Removing the old sign-in touches many tests and screens at once."
+  ],
+  "glossary": [
+    "Company: the group of people and data that belong together; identified by CompanyId.",
+    "Admin: a person who can do everything in their company, including managing teammates.",
+    "Operator: a person who can build and deploy but not change settings or servers.",
+    "Viewer: a person who can only look.",
+    "Switched off: an account that cannot sign in but is kept, with its history, and can be switched back on.",
+    "Desktop/local mode: ShipRight running on one person's own computer with no sign-in."
+  ],
+  "questions": [],
+  "coverage": [
+    { "topic": "users", "status": "answered", "note": "Admin, Operator, Viewer plus desktop/local user; Admin adds teammates directly." },
+    { "topic": "data", "status": "answered", "note": "Existing accounts, companies and passwords stay valid; email unique across the system regardless of capitals; one company and one role per person." },
+    { "topic": "permissions", "status": "answered", "note": "Admin all; Operator build and deploy but not settings or servers; Viewer read-only; everything scoped by CompanyId." },
+    { "topic": "validation", "status": "assumed", "note": "Email format, password minimum 8 characters, names up to 200 characters; messages beside the field." },
+    { "topic": "states", "status": "assumed", "note": "Loading, empty, error and success states on sign-in, register, reset, Google and team screens." },
+    { "topic": "duplicates", "status": "answered", "note": "Email unique regardless of capitals; double submit creates one account or company; duplicate teammate email refused with a message." },
+    { "topic": "volume", "status": "not-applicable", "note": "Teams are small (about 50 people at most); the team list is still paged with a server-side maximum per house rule API-005." },
+    { "topic": "deletion", "status": "answered", "note": "Teammates are switched off, not deleted: they cannot sign in, account and history stay, and the Admin can switch them back on." },
+    { "topic": "privacy", "status": "answered", "note": "Only email, name, role and password hash (or Google link) are stored; secrets never logged or shown." },
+    { "topic": "quality", "status": "assumed", "note": "Lockout 5 attempts per 5 minutes, 7-day sessions, sign-in under 1 second." }
+  ],
+  "assumptions": [
+    "Passwords must be at least 8 characters; names and company names up to 200 characters; emails compared without regard to capitals.",
+    "A Google-created company is named from the person's Google display name.",
+    "Accounts lock for 5 minutes after 5 wrong passwords; sessions last 7 days.",
+    "Only an Admin can create teammates, change roles, or switch people off and on.",
+    "A teammate given a temporary password must choose a new one at first sign-in.",
+    "Company scoping comes from the person's account, not from a header or subdomain.",
+    "A company must always keep at least one active Admin.",
+    "The team list shows 20 people per page, ordered by name."
+  ]
+}

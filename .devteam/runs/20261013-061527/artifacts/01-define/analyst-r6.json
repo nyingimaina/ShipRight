@@ -1,0 +1,204 @@
+{
+  "summary": "Replace ShipRight's hand-built sign-in (own tokens, refresh tokens, password reset, IsAdmin flag) with ASP.NET Core Identity running on the project's existing SQL data access (no EF Core). Every person belongs to exactly one company (CompanyId) and has one role: Admin, Operator or Viewer. Existing accounts keep working with their current email and password. Anyone can also sign in with Google; a first-time Google person gets a brand-new company and becomes its Admin. Desktop/local mode needs no sign-in and switches over silently with all data and projects intact. There are no teammates for now, so every company has one person (its Admin) and no invite or user-management screen is built; Operator and Viewer are enforced by the server but cannot yet be given to anyone. Permissions: Admin does everything; Operator can build and deploy but not change settings or servers; Viewer is read-only.",
+  "roles": [
+    "Admin: does everything in their company, including project, server, secret and account settings; the person who signed up or first signed in with Google",
+    "Operator: can build, deploy and run backups but cannot change settings or servers (cannot be assigned yet)",
+    "Viewer: read-only, can look at projects, builds and servers but cannot act (cannot be assigned yet)",
+    "Desktop user: runs ShipRight locally with no sign-in and full access"
+  ],
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "A person can register with email, password, name and company name; this creates the company and makes that person its Admin.",
+      "rationale": "Registration is how every company starts today; it must keep working on the new sign-in system, with the Admin role replacing the old admin flag.",
+      "acceptance": [
+        "Registering with valid details creates one company and one account with the Admin role, and the person is signed in",
+        "Registering with an email that is already used (any capitalisation) is refused with a message next to the email field and creates nothing",
+        "Missing or too-long fields show a message next to the field saying what to fix (RFC 7807 field errors)"
+      ],
+      "edgeCases": [
+        "Pressing Register twice quickly creates only one company and one account",
+        "If creating the account fails, no empty company is left behind",
+        "Two people registering the same email at the same moment: exactly one succeeds"
+      ],
+      "pitfalls": [
+        "Passwords must never appear in logs or error messages"
+      ],
+      "rules": ["API-003", "DB-002", "UX-002"]
+    },
+    {
+      "id": "R2",
+      "text": "A person can sign in with email and password, and everyone who has an account today can sign in with their current email and password, with no reset needed.",
+      "rationale": "Builder decided existing accounts and passwords must keep working; forcing a reset would lock out current users.",
+      "acceptance": [
+        "An account created before the change signs in with the same email and password and lands in the same company with the same data",
+        "A wrong password or unknown email shows the same message 'Invalid email or password'",
+        "Every existing account who was an admin is an Admin; every existing account is in the same company as before",
+        "After signing in the person stays signed in across page reloads and can sign out; signing out ends the session"
+      ],
+      "edgeCases": [
+        "Email capitalisation does not matter when signing in",
+        "After 5 wrong passwords in a row the account is locked for 5 minutes and the message says to try again later without confirming the account exists",
+        "An old session from before the switch is asked to sign in again rather than failing with a technical error"
+      ],
+      "pitfalls": [
+        "Old password hashes must be accepted without the person noticing; a successful sign-in must not corrupt the stored password",
+        "Failed sign-ins must not reveal whether the email exists"
+      ],
+      "rules": ["API-001", "API-003", "UX-002"]
+    },
+    {
+      "id": "R3",
+      "text": "A person can sign in with Google. If no account exists for their Google email, a new company is created and they become its Admin; if an account with that email already exists, they are signed in to that account.",
+      "rationale": "Builder decided anyone may sign in with Google and gets their own new company, so Google sign-in is both login and registration.",
+      "acceptance": [
+        "A 'Sign in with Google' button is shown next to the email/password form on the sign-in page",
+        "First Google sign-in with an unknown email creates one company (named from the person's Google name) and one Admin account, then signs them in",
+        "Google sign-in with an email already registered signs in to that existing account and company and creates no second company",
+        "If Google sign-in is cancelled or fails, the person returns to the sign-in page with a plain message and nothing is created",
+        "If Google sign-in is not configured on this server, the Google button is not shown"
+      ],
+      "edgeCases": [
+        "Two Google sign-ins for the same new email at the same moment create only one company",
+        "A Google account whose email Google reports as not verified is refused",
+        "A person who registered with a password can later use Google with the same email and reaches the same account"
+      ],
+      "pitfalls": [
+        "Google client credentials must never be sent to the browser or written to logs",
+        "A failed Google sign-in must not leave a half-created company"
+      ],
+      "rules": ["API-001", "API-003", "UX-001"]
+    },
+    {
+      "id": "R4",
+      "text": "Forgot-password and reset-password keep working: a person asks for a reset email and can set a new password with the emailed link.",
+      "rationale": "Existing functionality must not be lost when the old sign-in code is removed.",
+      "acceptance": [
+        "Requesting a reset for any email shows the same confirmation message whether or not the account exists",
+        "A valid link lets the person set a new password; they can then sign in with it and the old password no longer works",
+        "An expired (after 1 hour), already-used or tampered link is refused with a message to request a new one"
+      ],
+      "edgeCases": [
+        "Using the same link twice: the second use is refused",
+        "Resetting a password ends the person's other active sessions"
+      ],
+      "pitfalls": ["Reset links and tokens must never be logged"],
+      "rules": ["API-001", "API-003", "UX-002"]
+    },
+    {
+      "id": "R5",
+      "text": "Every person has exactly one role in their company (Admin, Operator or Viewer), and the server refuses actions the role does not allow: Admin does everything; Operator can build, deploy and run backups but not change project, server, secret or account settings; Viewer can only read.",
+      "rationale": "Builder decided the role levels. The rules must be enforced and tested now so that assigning roles later needs no further security work, even though nobody can be given Operator or Viewer yet.",
+      "acceptance": [
+        "A Viewer calling any create, change, delete, build, deploy or backup action is refused with a 403 and nothing changes",
+        "An Operator can start builds, deploys and backups but is refused (403) when changing project, server, secret or account settings",
+        "An Admin can do all of them",
+        "The screens hide or disable actions the signed-in role cannot perform",
+        "No screen or endpoint offers a way to give someone Operator or Viewer"
+      ],
+      "edgeCases": [
+        "A person with no role is treated as having no access, never as Admin",
+        "A role change takes effect on the person's next request, not only after signing in again"
+      ],
+      "pitfalls": [
+        "Hiding a button is not enough: the server must refuse the action even when the request is sent directly",
+        "A refused action must not partly run before being refused"
+      ],
+      "rules": ["API-001", "API-002", "UX-001"]
+    },
+    {
+      "id": "R6",
+      "text": "Every sign-in, account and role lookup, and every existing data query, stays scoped to the person's own company; one company can never see, sign in as, or change another company's people or data.",
+      "rationale": "Multi-tenancy by company (CompanyId) is how ShipRight keeps customers apart; the replacement must not weaken it.",
+      "acceptance": [
+        "A signed-in person's company is taken from their sign-in, never from a value they send in the request",
+        "Requesting another company's record returns exactly what a non-existent record returns (not-found)",
+        "Role checks apply only within the person's own company"
+      ],
+      "edgeCases": [
+        "Changing a company id or tenant header in a request does not change which company's data is returned",
+        "The same email cannot exist in two companies (email stays unique across the whole system)"
+      ],
+      "pitfalls": ["Company scoping is applied inside the query, not after loading the rows"],
+      "rules": ["API-001", "API-002", "DB-002"]
+    },
+    {
+      "id": "R7",
+      "text": "In desktop/local mode no sign-in is required: the app opens straight to the person's existing projects and data, with full Admin access, and the switch to the new system needs no action from the user.",
+      "rationale": "Builder decided local users must not lose access to their data and the switch must be frictionless and transparent.",
+      "acceptance": [
+        "Updating a desktop install and opening it shows the projects page directly, with no sign-in or registration screen",
+        "All projects, builds, servers, secrets and settings that existed before the update are present and unchanged",
+        "Server (hosted) mode still requires sign-in for every endpoint except sign-in, registration, Google sign-in and password reset"
+      ],
+      "edgeCases": [
+        "A desktop install that was previously used in sign-in mode keeps its data and does not ask for a password",
+        "Starting the app twice or restarting mid-update does not duplicate or lose data"
+      ],
+      "pitfalls": [
+        "The switch must never delete, recreate or re-key existing company-scoped data",
+        "No-auth behaviour must not become reachable in hosted/server mode"
+      ],
+      "rules": ["BOOT-001", "API-001", "PERF-001"]
+    },
+    {
+      "id": "R8",
+      "text": "The old sign-in code (own token handling, refresh tokens, old admin flag) is removed and replaced by the new system, and the front-end sign-in, registration and reset pages keep working.",
+      "rationale": "The request is to strip the old authentication out and replace it, not to run two systems side by side.",
+      "acceptance": [
+        "No endpoint or screen depends on the removed old sign-in code",
+        "Sign-in, registration, forgot-password and reset-password pages show loading, error and success states and work by keyboard with visible labels",
+        "Existing automated tests for sign-in are updated to the new behaviour and the full suite passes"
+      ],
+      "edgeCases": [
+        "A person with the sign-in page open during the update gets a clear message and can sign in again"
+      ],
+      "pitfalls": ["Removing old code must not remove the desktop no-sign-in behaviour"],
+      "rules": ["BOOT-001", "UX-001", "UX-002", "USR-001"]
+    }
+  ],
+  "outOfScope": [
+    "Adding teammates, invites, or any screen to assign Operator or Viewer",
+    "Removing or deleting users or companies",
+    "Other external sign-in providers besides Google",
+    "Two-factor authentication",
+    "Subdomain- or header-based company selection (the company comes from the person's account)",
+    "Changing the desktop app beyond removing its sign-in requirement"
+  ],
+  "nonFunctional": [
+    { "area": "security", "statement": "Passwords are stored only as hashes, never shown or logged; sessions last 7 days and can be ended by signing out; accounts lock for 5 minutes after 5 failed attempts.", "acceptance": "Tests show no plaintext password in logs or responses, a signed-out session is refused, and the 6th wrong attempt is refused even with the right password." },
+    { "area": "security", "statement": "Every endpoint requires sign-in except sign-in, registration, Google sign-in, forgot/reset password and the public home/health page, each marked with a reason.", "acceptance": "A test lists all endpoints and fails if any unmarked endpoint answers 200 without sign-in in hosted mode." },
+    { "area": "performance", "statement": "Sign-in and role checks add no more than one account lookup per request and no work proportional to the number of users or companies; sign-in completes in under 1 second.", "acceptance": "A test with 10,000 accounts signs in in under 1 second and issues a bounded number of queries." },
+    { "area": "reliability", "statement": "The data switch for existing accounts is safe to run twice and leaves no account without a company or role.", "acceptance": "Running the switch twice on a copy of production-like data gives identical results and every account has one company and one role." },
+    { "area": "accessibility", "statement": "Sign-in, registration and reset forms have visible labels, field errors beside the field, submit disabled while saving, and full keyboard use.", "acceptance": "Front-end tests find labels, error text and disabled submit; the Google button is reachable by Tab." }
+  ],
+  "risks": [
+    "Existing password hashes must be accepted unchanged, or current users get locked out.",
+    "Desktop mode could accidentally become no-auth in hosted mode, or vice versa.",
+    "Nothing in the project starts the app and checks it (no smoke script), so boot behaviour is only proven by tests."
+  ],
+  "glossary": [
+    "Company: a customer's isolated space; all data is scoped to it by CompanyId.",
+    "Admin / Operator / Viewer: the three roles inside a company.",
+    "Desktop/local mode: ShipRight running on one person's own computer with no sign-in."
+  ],
+  "questions": [],
+  "coverage": [
+    { "topic": "users", "status": "answered", "note": "Roles Admin, Operator, Viewer; desktop no auth; Google creates new company as Admin; no teammates." },
+    { "topic": "data", "status": "answered", "note": "Existing accounts, companies and password hashes stay valid; email unique system-wide." },
+    { "topic": "permissions", "status": "answered", "note": "Admin all; Operator build/deploy but not settings/servers; Viewer read-only; scoped by CompanyId." },
+    { "topic": "validation", "status": "assumed", "note": "Email format, password minimum 8 characters, names up to 200 characters; messages beside the field." },
+    { "topic": "states", "status": "assumed", "note": "Loading, error and success on sign-in, register, reset pages; Google button hidden when unconfigured." },
+    { "topic": "duplicates", "status": "answered", "note": "Email unique regardless of capitals; double submit and simultaneous registration create one company (R1, R3)." },
+    { "topic": "volume", "status": "not-applicable", "note": "No teammates, so no user lists to page, search or sort." },
+    { "topic": "deletion", "status": "not-applicable", "note": "No removal of users or companies in this change." },
+    { "topic": "privacy", "status": "answered", "note": "Only email, name and password hash (or Google link) stored; passwords and tokens never logged." },
+    { "topic": "quality", "status": "assumed", "note": "Lockout 5 attempts/5 minutes, 7-day sessions, sign-in under 1 second." }
+  ],
+  "assumptions": [
+    "Passwords must be at least 8 characters; names and company names up to 200 characters; emails compared without regard to capitals.",
+    "A Google-created company is named from the person's Google display name.",
+    "Accounts lock for 5 minutes after 5 wrong passwords; sessions last 7 days.",
+    "Company scoping comes from the person's account, not from a header or subdomain, since there are no teammates and no per-company web addresses."
+  ]
+}

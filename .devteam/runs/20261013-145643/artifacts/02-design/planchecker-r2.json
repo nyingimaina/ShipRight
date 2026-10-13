@@ -1,0 +1,13 @@
+{
+  "summary": "One blocking conflict remains: R11 and the design assert that adding scripts/smoke/run.mjs enables and passes the app-boots check, but app-boots is a fixed command check that the feature cannot switch on, so BOOT-001 stays unproven.",
+  "conflicts": [
+    {
+      "requirement": "R11",
+      "against": "app-boots",
+      "kind": "check",
+      "owner": "requirements",
+      "why": "R11 acceptance requires the project's start-up check (app-boots) to be enabled so that it runs scripts/smoke/run.mjs and to pass for this feature, and the design states that creating scripts/smoke/run.mjs is what switches app-boots on. But app-boots is a fixed command check (kind: command) that only echoes 'Not set up in this project ... no scripts/smoke/run.mjs' and exits 78; it never invokes the runner and does no file detection. The engine itself reports it as 'could not run (not set up in this project yet: devteam adopt doctor can set it up)', and the adoption baseline says enabling it needs a separate 'devteam run ...' plus 'devteam adopt refresh'. Adding the file from inside the feature therefore does not enable the check, and enabling it is outside the design's scope (SCOPE-001) and the pack guidance even says not to create the harness. The acceptance line can never be met as written, so BOOT-001 remains unproven; either the requirement must drop the claim that app-boots runs the runner and passes (accept it relaxed/unproven), or the builder must enable the check separately.",
+      "evidence": "R11 acceptance: 'The project's start-up check (app-boots) is enabled so that it runs this smoke runner, and it passes for this feature'. Design summary: 'Its presence is what switches on the project's app-boots check (BOOT-001)'. .devteam/pack/pack.json check: {\"id\":\"app-boots\",\"kind\":\"command\",\"command\":\"echo Not set up in this project: Nothing starts the app and looks at it  no scripts/smoke/run.mjs , so nothing proves the app starts and works yet. && exit 78\",\"rules\":[\"BOOT-001\"],\"tier\":\"full\"}. driver.log: 'Check \\'The app starts and works as set up\\' could not run in 0.1s (not set up in this project yet: devteam adopt doctor can set it up)'. .devteam/adoption/baseline.md: 'If you want it: devteam run \"Add a start-up check that starts the app and requests its home page\" ... After you have done any of these, run `devteam adopt refresh`'. .devteam/pack/guidance/developer.md: 'This project has no `scripts/smoke` harness, so do not create one or add probe files'. state.json baseline: app-boots passed=false, notRun=true, output 'Not set up in this project: Nothing starts the app and looks at it  no scripts/smoke/run.mjs , so nothing proves the app starts and works yet.'"
+    }
+  ]
+}

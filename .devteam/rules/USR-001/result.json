@@ -1,0 +1,37 @@
+{
+  "checks": [
+    {
+      "name": "No native button (use zest-button)",
+      "kind": "pattern",
+      "files": ["front-end/src/**/*.tsx", "front-end/app/**/*.tsx", "front-end/components/**/*.tsx"],
+      "forbid": "<button[\\s>]"
+    },
+    {
+      "name": "No native text input or textarea (use zest-textbox)",
+      "kind": "pattern",
+      "files": ["front-end/src/**/*.tsx", "front-end/app/**/*.tsx", "front-end/components/**/*.tsx"],
+      "forbid": "<(input|textarea)[\\s>/]"
+    },
+    {
+      "name": "No native table (use responsive-table)",
+      "kind": "pattern",
+      "files": ["front-end/src/**/*.tsx", "front-end/app/**/*.tsx", "front-end/components/**/*.tsx"],
+      "forbid": "<table[\\s>]"
+    },
+    {
+      "name": "No react-tabs (use zest-tabs)",
+      "kind": "pattern",
+      "files": ["front-end/src/**/*.ts", "front-end/src/**/*.tsx", "front-end/app/**/*.ts", "front-end/app/**/*.tsx", "front-end/components/**/*.ts", "front-end/components/**/*.tsx"],
+      "forbid": "from\\s+['\"]react-tabs['\"]"
+    },
+    {
+      "name": "No hand-rolled setInterval polling (use jattac-web-poller)",
+      "kind": "pattern",
+      "files": ["front-end/src/**/*.ts", "front-end/src/**/*.tsx", "front-end/app/**/*.ts", "front-end/app/**/*.tsx", "front-end/components/**/*.ts", "front-end/components/**/*.tsx"],
+      "forbid": "\\bsetInterval\\s*\\("
+    }
+  ],
+  "good": "import ZestButton from 'jattac.libs.web.zest-button';\nimport ZestTextbox from 'jattac.libs.web.zest-textbox';\n\nexport function Form() {\n  return (\n    <div>\n      <ZestTextbox label=\"Name\" />\n      <ZestButton>Save</ZestButton>\n    </div>\n  );\n}",
+  "bad": "export function Form() {\n  return (\n    <div>\n      <input type=\"text\" />\n      <button onClick={save}>Save</button>\n    </div>\n  );\n}",
+  "cannotTest": "A reviewer must judge: whether a library component exists for a given need and was used in preference to other third-party or custom components (e.g. dropdown menus vs overflow-menu, side navigation vs zest-sidekick-menu, page layout vs zest-responsive-layout, file uploads via <input type=file> vs zest-file-upload, and polling done through fetch loops or setTimeout instead of jattac-web-poller). Also that the packages are installed (they are currently listed in front-end/package.json, except jattac.libs.web.zest-file-upload, which is missing)."
+}

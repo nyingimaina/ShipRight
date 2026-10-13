@@ -1,0 +1,69 @@
+{
+  "findings": [
+    {
+      "cites": "R9",
+      "severity": "blocking",
+      "file": "front-end/src/modules/Team/__tests__/TeamPage.test.tsx",
+      "line": 88,
+      "evidence": "The 7 team tests only ever use name 'Ali' and email 'a@b.c' (line 73); no test renders a very long name or email. TeamPage.tsx:140,145 guard those cells with styles.cellText (TeamPage.module.css:114-118, word-break/overflow-wrap), but nothing would fail if that rule were removed.",
+      "description": "R9 edge case 'A very long name or email does not break the layout' has no test."
+    },
+    {
+      "cites": "R11",
+      "severity": "blocking",
+      "file": "scripts/smoke/__tests__/run.test.mjs",
+      "line": 147,
+      "evidence": "The runner tests assert only the exit code and log text for the pass and four failure modes; none checks the child server process is gone after the runner exits or that no real data/project file changed. run.mjs:286-290 (finally: stopServer + rmSync) is exercised but never asserted.",
+      "description": "R11 edge case 'The smoke runner leaves no app process running and changes no real data or project files, whether it passes or fails' is uncovered."
+    },
+    {
+      "cites": "R3",
+      "severity": "advisory",
+      "file": "back-end/ShipRight.Server/Modules/Identity/GoogleSignIn.cs",
+      "line": 61,
+      "evidence": "The OnRemoteFailure handler redirecting to CancelledRedirect (line 63) and the CancelledRedirect constant (line 23) are never driven by a test. CloudApiPipelineTests.cs:645 only covers the not-configured branch returning google_failed.",
+      "description": "R3 acceptance 'If Google sign-in is cancelled or fails, the person returns to the sign-in screen with a plain message and can still use email and password' is only half-proven (failure branch yes, cancellation/return path no)."
+    },
+    {
+      "cites": "R9",
+      "severity": "advisory",
+      "file": "front-end/src/modules/Team/__tests__/TeamPage.test.tsx",
+      "line": 82,
+      "evidence": "getMock.mockResolvedValue always returns one member; no test rejects (error-with-retry branch, TeamPage.tsx:267-278) or returns total:0 (empty branch, 280-282). Only the success state is asserted.",
+      "description": "R9 acceptance 'The list shows loading, empty, error-with-retry and success states' is proven for success only; the other states are a stronger-coverage gap."
+    },
+    {
+      "cites": "R9",
+      "severity": "advisory",
+      "file": "front-end/src/modules/Team/__tests__/TeamPage.test.tsx",
+      "line": 108,
+      "evidence": "Inputs are found by placeholder text (lines 108-110); there is no getByLabelText assertion and no keyboard (tab/Enter) interaction in any team test, and LoginPage.test.tsx:74 does the same. No test checks the phone-width layout either.",
+      "description": "R9 acceptance 'Every action works with the keyboard only, and every field has a visible label' (and the phone-width line) has no test; UX-002 coverage is partial."
+    },
+    {
+      "cites": "R12",
+      "severity": "advisory",
+      "file": "front-end/src/pages/signup.tsx",
+      "line": 1,
+      "evidence": "No component test exists for signup.tsx, forgot-password.tsx, reset-password.tsx or change-password.tsx; front-end/src/shared/auth/__tests__ contains only AuthApi, AuthGuard and LoginPage tests.",
+      "description": "R12 acceptance 'The sign-in, register, reset and Google screens show loading, error and success states' is proven only for sign-in; the register/reset screens have no component tests."
+    },
+    {
+      "cites": "R6",
+      "severity": "advisory",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/GoogleSignInTests.cs",
+      "line": 47,
+      "evidence": "Only registration has a forced-failure proof (CloudApiIdentityTests.cs:102, 'leaves no company without a person'). No test forces a failure mid-way through Google first sign-in (GoogleSignIn.cs:98-110) or teammate creation (RegistrationService.CreateTeammateAsync) and then checks for no company without a person and no person without a company.",
+      "description": "The reliability non-functional check 'A failed registration, Google first sign-in or teammate creation leaves no partial records' is proven for registration only."
+    },
+    {
+      "cites": "R11",
+      "severity": "advisory",
+      "file": "scripts/smoke/__tests__/run.test.mjs",
+      "line": 1,
+      "evidence": "There is no root package.json and .github/workflows/ci.yml runs only front-end jest and dotnet test; the engine's checks ('Web app tests pass', 'API builds and all tests pass') do not execute node --test, so these R11 tests are never run by any check.",
+      "description": "The smoke runner's tests name R11 and I confirmed all 10 pass (node --test), but nothing in the project or CI runs them, so a future regression here would not be caught automatically."
+    }
+  ],
+  "verifications": []
+}

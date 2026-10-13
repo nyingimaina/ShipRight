@@ -1,7 +1,9 @@
 using System.Runtime.InteropServices;
+using System.Security.Claims;
 using System.Text.RegularExpressions;
 using Serilog;
 using ShipRight.Modules.Builds;
+using ShipRight.Modules.Identity;
 using ShipRight.Modules.VersionFiles;
 
 namespace ShipRight.Modules.Projects;
@@ -13,8 +15,8 @@ public static class ProjectRouter
 
     public static void MapProjectRoutes(this WebApplication app)
     {
-        app.MapGet("/api/projects", async (IProjectStore store) =>
-            Results.Ok(await store.GetAllAsync()));
+        app.MapGet("/api/projects", async (IProjectStore store, ClaimsPrincipal user) =>
+            Results.Ok((await store.GetAllAsync()).Select(p => RedactCredentialsFor(user, p))));
 
         app.MapPost("/api/projects/detect", (DetectRequest req) =>
         {
@@ -30,12 +32,12 @@ public static class ProjectRouter
             return Results.Ok(result);
         });
 
-        app.MapGet("/api/projects/{id}", async (string id, IProjectStore store) =>
+        app.MapGet("/api/projects/{id}", async (string id, IProjectStore store, ClaimsPrincipal user) =>
         {
             var project = await store.GetByIdAsync(id);
             return project is null
                 ? Results.NotFound(Error($"Project '{id}' not found."))
-                : Results.Ok(project);
+                : Results.Ok(RedactCredentialsFor(user, project));
         });
 
         app.MapPost("/api/projects", async (ProjectConfig input, IProjectStore store) =>
@@ -161,6 +163,22 @@ public static class ProjectRouter
     }
 
     record CreateVersionFileRequest(string ServiceName, string Version);
+
+    // API-004 / SEC-10: a non-Admin may still list and open projects (R5), but the stored credentials are
+    // blanked before the response. Desktop/local mode has no sign-in and no roles, so the local owner
+    // (unauthenticated) keeps everything; the company-scoped store is left untouched for internal use.
+    internal static ProjectConfig RedactCredentialsFor(ClaimsPrincipal user, ProjectConfig project)
+    {
+        if (user.Identity?.IsAuthenticated != true) return project;
+        if (user.IsInRole(AppRoles.Admin)) return project;
+        return project with
+        {
+            Services = project.Services
+                .Select(s => s with { DockerPassword = string.Empty })
+                .ToList(),
+            Database = project.Database is null ? null : project.Database with { RootPassword = string.Empty },
+        };
+    }
 
     internal static object Error(string message, string? field = null) =>
         field is null

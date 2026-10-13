@@ -11,11 +11,11 @@ import {
   RiHeartPulseLine,
   RiBox3Line,
   RiListCheck,
+  RiTeamLine,
   RiLogoutCircleLine,
 } from "react-icons/ri";
 import ThemeToggle from "@/shared/theme/ThemeToggle";
-import { useAuthStore } from "@/shared/auth";
-import { setAccessToken } from "@/shared/ApiService";
+import { authApi, useAuthStore } from "@/shared/auth";
 import styles from "./Styles/AppShell.module.css";
 import packageJson from "../../../package.json";
 
@@ -26,10 +26,17 @@ interface Props {
 export default function AppShell({ children }: Props) {
   const router = useRouter();
   const clearAuth = useAuthStore((s) => s.clearAuth);
+  const role = useAuthStore((s) => s.user?.role);
+  const isAdmin = role === 'Admin';
 
   const handleLogout = async () => {
+    // Desktop mode has no sign-in endpoints; the call fails harmlessly and we clear anyway.
+    try {
+      await authApi.logout();
+    } catch {
+      // The cookie may already be gone; sign the person out locally regardless.
+    }
     clearAuth();
-    setAccessToken(null);
     router.push("/login");
   };
 
@@ -40,6 +47,13 @@ export default function AppShell({ children }: Props) {
       icon: <RiStackLine size={18} />,
       searchTerms: "projects",
       onClick: () => router.push("/projects"),
+    },
+    {
+      id: "team",
+      label: "Team",
+      icon: <RiTeamLine size={18} />,
+      searchTerms: "team people teammates",
+      onClick: () => router.push("/team"),
     },
     {
       id: "servers",
@@ -109,7 +123,7 @@ export default function AppShell({ children }: Props) {
   return (
     <>
       <SidekickMenu
-        items={menuItems}
+        items={isAdmin ? menuItems : menuItems.filter((item) => item.id !== "team")}
         searchEnabled={false}
         favouritesEnabled
         favouritesOptions={{ maxItems: 8, minToShowTab: 3, windowDays: 30 }} // all optional

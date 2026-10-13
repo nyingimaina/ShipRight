@@ -1,0 +1,881 @@
+{
+  "runId": "20261013-061527",
+  "options": {
+    "browser": "end",
+    "visible": false,
+    "document": false
+  },
+  "isVerification": false,
+  "stageSeconds": {
+    "define": 510.8014349,
+    "design": 155.0994771,
+    "build": 15049.273230499999,
+    "challenge": 2619.079046
+  },
+  "timeCapExtensions": {
+    "build": 3
+  },
+  "featureRequest": "Refactor the authentication setup in my ASP.NET Core project. Strip out all existing auth code and replace it with Microsoft.AspNetCore.Identity. Requirements: 1. Pure .NET Core Identity: Do NOT use Entity Framework Core (EF Core) or AddEntityFrameworkStores. I use custom SQL/Dapper for data access, so implement or wire up a minimal custom IUserStore / IUserRoleStore or lightweight custom handlers.\n2. Roles Support: Include support for Role-based authorization using RoleManager / IUserRoleStore or claims. 3. Multi-Tenancy: Support multi-tenancy. Explain and implement the cleanest way to scope user authentication, logins, and roles by TenantId (e.g., extracting TenantId from request headers/subdomain and passing it through the identity queries or claim assertions).\n4. External Auth: Include setup for Google OAuth alongside local password authentication. 5. Code Structure: Provide the complete Program.cs configuration, necessary Dapper/SQL query models, and example controller endpoints for Login, Register, and Role-based Tenant-scoped Authorization. Keep code concise and ready to drop in.",
+  "packId": "nextjs-csharp-mariadb",
+  "status": "stopped",
+  "currentStage": "build",
+  "stages": {
+    "define": "done",
+    "design": "done",
+    "build": "blocked",
+    "challenge": "pending",
+    "prove": "pending"
+  },
+  "defineRound": 12,
+  "designRound": 1,
+  "buildRound": 4,
+  "revisionsUsed": 3,
+  "requirementKickbacks": 0,
+  "specialists": [
+    {
+      "id": "database",
+      "name": "Database",
+      "owns": [
+        "src/Shared/Db/Migrations/**",
+        "src/Features/**/*Repository.cs"
+      ],
+      "checks": [
+        "api-build",
+        "api-build-test",
+        "no-select-star",
+        "no-sql-leading-wildcard",
+        "no-raw-sql-interpolation"
+      ]
+    }
+  ],
+  "specialistsDone": [],
+  "specialistCallbacks": 0,
+  "specialistHashes": {},
+  "ran": [
+    "define",
+    "design",
+    "build",
+    "challenge"
+  ],
+  "accepted": {
+    "define/analyst": "artifacts/01-define/analyst-r11.json",
+    "design/architect": "artifacts/02-design/architect-r1.json",
+    "build/developer": "artifacts/03-build/developer-r3.json",
+    "challenge/qa": "artifacts/04-challenge/qa-r2.json",
+    "challenge/security": "artifacts/04-challenge/security-r2.json",
+    "challenge/reviewer": "artifacts/04-challenge/reviewer-r2.json"
+  },
+  "extraRounds": 1,
+  "reviewPasses": 1,
+  "costUsd": 12.745426799999997,
+  "budgetUsd": 20,
+  "agentCalls": 23,
+  "modelCalls": {
+    "claude-sonnet-5-5": 13,
+    "opencode/big-pickle": 8
+  },
+  "startedAt": "2026-10-13T06:15:27.3435473+00:00",
+  "updatedAt": "2026-10-13T11:52:32.9087225+00:00",
+  "completedAt": "2026-10-13T11:52:31.8476087+00:00",
+  "findings": [
+    {
+      "id": "CHK-app-boots",
+      "source": "check:app-boots",
+      "cites": "BOOT-001",
+      "severity": "advisory",
+      "description": "Check \u0027The app starts and works as set up\u0027 is failing.",
+      "file": "",
+      "evidence": "Not set up in this project: Nothing starts the app and looks at it  no scripts/smoke/run.mjs , so nothing proves the app starts and works yet.",
+      "status": "advisory",
+      "raisedRound": 1,
+      "note": "It could not be run, so nothing was checked here; it does not block this feature.",
+      "repeats": 0
+    },
+    {
+      "id": "CHK-rule-USR-001-1",
+      "source": "check:rule-USR-001-1",
+      "cites": "USR-001",
+      "severity": "blocking",
+      "description": "Automated check \u0027No native button (use zest-button)\u0027 failed.",
+      "file": "",
+      "evidence": "4 match(es):\nfront-end/src/modules/Team/TeamPage.tsx:270: \u003Cbutton className={styles.retry} onClick={() =\u003E load(page)}\u003ETry again\u003C/button\u003E\r\nfront-end/src/modules/Team/__tests__/TeamPage.test.tsx:28: \u003Cbutton type={type} disabled={disabled} onClick={onClick}\u003E{children}\u003C/button\u003E\r\nfront-end/src/modules/Team/__tests__/TeamPage.test.tsx:35: \u003C\u003E{items.map((item: any, index: number) =\u003E \u003Cbutton key={index} onClick={item.onClick}\u003E{item.content}\u003C/button\u003E)}\u003C/\u003E\r\nfront-end/src/shared/auth/__tests__/LoginPage.test.tsx:22: \u003Cbutton type={type} disabled={disabled} onClick={onClick} data-semantic={zest?.semanticType}\u003E\r\n\r\nAlso found in 7 file(s) this change did not touch (not counted against it): front-end/src/pages/history.tsx, front-end/src/pages/pipelines.tsx, front-end/src/pages/resources.tsx, front-end/src/pages/servers.tsx, front-end/src/modules/BuildWizard/LogViewer.tsx, \u2026.",
+      "status": "fixed",
+      "raisedRound": 1,
+      "fixedRound": 2,
+      "note": "check now passes",
+      "repeats": 0
+    },
+    {
+      "id": "CHK-rule-USR-001-2",
+      "source": "check:rule-USR-001-2",
+      "cites": "USR-001",
+      "severity": "blocking",
+      "description": "Automated check \u0027No native text input or textarea (use zest-textbox)\u0027 failed.",
+      "file": "",
+      "evidence": "2 match(es):\nfront-end/src/modules/Team/__tests__/TeamPage.test.tsx:21: \u003Cinput id={id} value={value} onChange={onChange} placeholder={placeholder} type={type} /\u003E\r\nfront-end/src/shared/auth/__tests__/LoginPage.test.tsx:15: \u003Cinput id={id} value={value} onChange={onChange} placeholder={placeholder} type={type} /\u003E\r\n\r\nAlso found in 11 file(s) this change did not touch (not counted against it): front-end/src/pages/databases.tsx, front-end/src/modules/ProjectConfig/ProjectConfigForm.tsx, front-end/src/modules/ServerDeploy/ServerDeploySection.tsx, front-end/src/tests/modules/BrowsePathField.test.tsx, front-end/src/tests/modules/ComposeRepoCard.test.tsx, \u2026.",
+      "status": "fixed",
+      "raisedRound": 1,
+      "fixedRound": 2,
+      "note": "check now passes",
+      "repeats": 0
+    },
+    {
+      "id": "CHK-rule-USR-001-3",
+      "source": "check:rule-USR-001-3",
+      "cites": "USR-001",
+      "severity": "blocking",
+      "description": "Automated check \u0027No native table (use responsive-table)\u0027 failed.",
+      "file": "",
+      "evidence": "1 match(es):\nfront-end/src/modules/Team/__tests__/TeamPage.test.tsx:42: \u003Ctable data-testid=\u0022team-table\u0022\u003E\r\n\r\nAlso found in 5 file(s) this change did not touch (not counted against it): front-end/src/pages/backups.tsx, front-end/src/pages/databases.tsx, front-end/src/pages/monitoring.tsx, front-end/src/pages/watch-branch.tsx, front-end/src/modules/ProjectConfig/ProjectConfigForm.tsx.",
+      "status": "fixed",
+      "raisedRound": 1,
+      "fixedRound": 2,
+      "note": "check now passes",
+      "repeats": 0
+    },
+    {
+      "id": "QA-1",
+      "source": "qa",
+      "cites": "R8",
+      "severity": "blocking",
+      "description": "R8 acceptance line \u0027Builds and deploys they started still show their name\u0027 has no test (and no build field carries the initiator), so history retention for switched-off people is unproven.",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "line": 563,
+      "evidence": "SwitchingOff_StopsSignInAndAnOpenSession_KeepsEverything_AndCanBeUndone asserts only that the account row survives (COUNT(*) = 1) and can be re-activated; no test starts a build or deploy as a teammate, switches them off, then checks the build/history still shows that person\u0027s name. BuildRecord (back-end/ShipRight.Server/Modules/Builds/BuildRecord.cs:31) has no initiator field either.",
+      "status": "open",
+      "raisedRound": 2,
+      "repeats": 0
+    },
+    {
+      "id": "QA-2",
+      "source": "qa",
+      "cites": "R8",
+      "severity": "blocking",
+      "description": "R8 edge \u0027A switched-off person trying Google sign-in with the same email is also refused\u0027 is enforced only by an untested endpoint branch; the guard could break without any test failing.",
+      "file": "back-end/ShipRight.Server/Modules/Identity/GoogleSignIn.cs",
+      "line": 113,
+      "evidence": "CompleteAsync returns Redirect(SwitchedOffRedirect) when !user.IsActive; nothing calls CompleteAsync with an inactive user. The only related test, GoogleSignInTests.cs:108 ASwitchedOffPerson_IsStillFlaggedOff_SoTheSignInIsRefused, calls ResolveUserAsync directly and asserts the returned user is inactive, so it still passes if line 113 is deleted.",
+      "status": "open",
+      "raisedRound": 2,
+      "repeats": 0
+    },
+    {
+      "id": "QA-3",
+      "source": "qa",
+      "cites": "R3",
+      "severity": "advisory",
+      "description": "R3 acceptance \u0027If Google sign-in is cancelled or fails, the person returns to the sign-in screen with a plain message and can still use email and password\u0027 is only half-proven (failure via not-configured branch; cancellation and the return path untested).",
+      "file": "back-end/ShipRight.Server/Modules/Identity/GoogleSignIn.cs",
+      "line": 23,
+      "evidence": "CancelledRedirect (\u0027/login?error=google_cancelled\u0027) and the OnRemoteFailure handler (line 61) are never asserted; CloudApiPipelineTests.cs:643-645 only covers the \u0027not configured\u0027 branch returning google_failed, and no test drives a cancelled remote failure or checks the sign-in screen then shows a plain message while email/password still work.",
+      "status": "advisory",
+      "raisedRound": 2,
+      "repeats": 0
+    },
+    {
+      "id": "QA-4",
+      "source": "qa",
+      "cites": "R9",
+      "severity": "advisory",
+      "description": "R9 acceptance \u0027The list shows loading, empty, error-with-retry and success states\u0027 is covered only for the success state.",
+      "file": "front-end/src/modules/Team/TeamPage.tsx",
+      "line": 265,
+      "evidence": "TeamPage renders loading (line 265), error-with-retry (267-278), empty (280-282) and success (284) states, but TeamPage.test.tsx only exercises success (\u0027loads and lists the team for an Admin\u0027, line 88); the mocked getMock always resolves with one member.",
+      "status": "advisory",
+      "raisedRound": 2,
+      "repeats": 0
+    },
+    {
+      "id": "QA-5",
+      "source": "qa",
+      "cites": "UX-002",
+      "severity": "advisory",
+      "description": "Keyboard operability and visible-label requirements are untested on the team and sign-in forms (R9 acceptance \u0027Every action works with the keyboard only, and every field has a visible label\u0027).",
+      "file": "front-end/src/modules/Team/__tests__/TeamPage.test.tsx",
+      "line": 88,
+      "evidence": "No test performs an action with the keyboard only (all interactions use fireEvent.click/change) and none asserts a visible label via getByLabelText; the sign-in form (LoginPage.test.tsx) is the same. UX-002 requires visible labels and full keyboard accessibility.",
+      "status": "advisory",
+      "raisedRound": 2,
+      "repeats": 0
+    },
+    {
+      "id": "QA-6",
+      "source": "qa",
+      "cites": "R12",
+      "severity": "advisory",
+      "description": "R12 acceptance \u0027The sign-in, register, reset and Google screens show loading, error and success states\u0027 is proven only for the sign-in screen; register/reset screens have no component tests.",
+      "file": "front-end/src/pages/signup.tsx",
+      "line": 1,
+      "evidence": "No component test exists for signup.tsx, forgot-password.tsx, reset-password.tsx or change-password.tsx; the auth test tree has only LoginPage.test.tsx, AuthGuard.test.tsx, AuthApi.test.ts and ApiService.test.ts.",
+      "status": "advisory",
+      "raisedRound": 2,
+      "repeats": 0
+    },
+    {
+      "id": "QA-7",
+      "source": "qa",
+      "cites": "R6",
+      "severity": "advisory",
+      "description": "The reliability check for a failed teammate creation / Google first sign-in (no company without a person, no person without a company) is not proven by a forced-failure test.",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "line": 489,
+      "evidence": "Teammate_SavedTwiceAtOnce_IsCreatedOnce and the invalid-field tests never force a failure mid-write; registration has such a proof (Register_WithATakenEmail..._AndLeavesNoCompany, line 102) but teammate creation and Google first sign-in (GoogleSignIn.cs:98-110) have no forced-failure test for the reliability NFR \u0027leaves no partial records\u0027.",
+      "status": "advisory",
+      "raisedRound": 2,
+      "repeats": 0
+    },
+    {
+      "id": "QA-8",
+      "source": "qa",
+      "cites": "BOOT-001",
+      "severity": "advisory",
+      "description": "The feature\u0027s new read addresses have not been looked at by a running-app probe.",
+      "file": "",
+      "line": 0,
+      "evidence": "The app-boots check is not set up in this project (no scripts/smoke/run.mjs), so no start-and-look probe opens the new routes (/api/team, /api/auth/providers, /api/auth/google/start) or reads data through the new cookie sign-in. state.json already records this as the advisory CHK-app-boots finding.",
+      "status": "advisory",
+      "raisedRound": 2,
+      "repeats": 0
+    },
+    {
+      "id": "SEC-1",
+      "source": "security",
+      "cites": "",
+      "severity": "advisory",
+      "description": "CSRF protection rests on SameSite=Lax alone; no antiforgery token is issued or checked. ISolated state-changing GET endpoints (db/backups/open-folder) became reachable cross-site under the new cookie scheme. Recommend SameSite=Strict for the auth cookie and/or server-side antiforgery validation, and move actions that mutate host state off GET.",
+      "file": "back-end/ShipRight.Server/Modules/Identity/IdentityRegistration.cs",
+      "line": 72,
+      "evidence": "The move from per-request Authorization: Bearer JWTs (old ApiService set no cookie; the browser never attached credentials cross-site) to a session cookie (same-site requests only) was not paired with antiforgery tokens. Zero matches for Antiforgery/ValidateAntiForgeryToken/X-CSRF anywhere in ShipRight.Server or front-end/src/shared/ApiService.ts. The only defense is SameSite=Lax (IdentityRegistration.cs:72). All state-changing /api verbs are POST/PUT/DELETE and Lax blocks cross-site on those, but a few signed-in GETs perform side effects that a Lax cookie now attaches on top-level cross-site navigation where the old header scheme did not: DatabaseRouter.cs:245 /api/projects/{id}/db/backups/open-folder and ServerRouter.cs:373 /api/servers/{id}/db/backups/open-folder.",
+      "status": "advisory",
+      "raisedRound": 2,
+      "repeats": 0
+    },
+    {
+      "id": "SEC-2",
+      "source": "security",
+      "cites": "",
+      "severity": "advisory",
+      "description": "Availability: IP-partitioned rate limits (including the R10 reset limiter) are not forwarded-header aware, so behind the reverse proxy common in a cloud deployment they degrade to a shared site-wide budget that one attacker can starve. Configure trusted-proxy forwarding (X-Forwarded-For) or partition on a subnet/account basis instead.",
+      "file": "back-end/ShipRight.Server/CloudDiRegistrar.cs",
+      "line": 48,
+      "evidence": "Every rate limiter partitions on context.Connection.RemoteIpAddress (CloudDiRegistrar.cs:48-74). Program.cs (lines 151-168) never calls UseForwardedHeaders or KnownProxies, so behind a TLS-terminating reverse proxy all requests appear from the proxy IP. The partitions then collapse to one shared bucket per deployment: the global 100 req/min, the 30 auth-attempts/min (AuthAttemptsLimiter) and the 5 password-reset-emails/hour (PasswordResetLimiter) become site-wide budgets that a single attacker can exhaust, blocking password resets and login for every tenant.",
+      "status": "advisory",
+      "raisedRound": 2,
+      "repeats": 0
+    },
+    {
+      "id": "SEC-3",
+      "source": "security",
+      "cites": "",
+      "severity": "advisory",
+      "description": "The session cookie is only marked Secure when the app itself observes an HTTPS request. In a TLS-terminating-proxy deployment without forwarded-headers configuration the cookie is transmitted in the clear over the local hop. Enforce Secure for the auth cookie in cloud mode (or set ForwardedHeaders/KnownProxies) before production.",
+      "file": "back-end/ShipRight.Server/Modules/Identity/IdentityRegistration.cs",
+      "line": 73,
+      "evidence": "options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest (IdentityRegistration.cs:73) and there is no UseHttpsRedirection or UseForwardedHeaders in Program.cs. If the app is published where TLS terminates outside the app environment (the standard docker-compose.py / reverse-proxy setup) without the forwarding step, requests arrive as plain HTTP and the 7-day persistent session cookie (isPersistent:true, SessionLength 7 days) is sent in cleartext, exposing the session to any on-path observer.",
+      "status": "advisory",
+      "raisedRound": 2,
+      "repeats": 0
+    },
+    {
+      "id": "SCOPE",
+      "source": "engine",
+      "cites": "SCOPE-001",
+      "severity": "blocking",
+      "description": "Files outside the design\u0027s declared scope were changed. Revert them or keep changes inside scope.",
+      "file": "",
+      "evidence": "Changed outside the design scope:\nback-end/ShipRight.Server/Modules/Builds/BuildOrchestrator.cs\nback-end/ShipRight.Server/Modules/Builds/BuildRecord.cs\nback-end/ShipRight.Server/Modules/Builds/BuildRouter.cs\nfront-end/src/shared/types/IBuildRecord.ts\nIf a file above is generated by a build or test tool (for example next-env.d.ts), it is not your change: leave it, don\u0027t delete it, and say so in your report.",
+      "status": "open",
+      "raisedRound": 3,
+      "repeats": 0
+    }
+  ],
+  "lastChecks": [
+    {
+      "id": "app-boots",
+      "name": "The app starts and works as set up",
+      "passed": false,
+      "seconds": 0.0969507,
+      "notRun": true,
+      "flaky": false,
+      "tier": "fast",
+      "output": "Not set up in this project: Nothing starts the app and looks at it  no scripts/smoke/run.mjs , so nothing proves the app starts and works yet.",
+      "rules": [
+        "BOOT-001"
+      ]
+    },
+    {
+      "id": "no-secrets-code",
+      "name": "No secrets in code",
+      "passed": true,
+      "seconds": 0.1727723,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern found.",
+      "rules": [
+        "SEC-001"
+      ]
+    },
+    {
+      "id": "no-secrets-config",
+      "name": "No secrets in committed config",
+      "passed": true,
+      "seconds": 0.040044,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern found.",
+      "rules": [
+        "SEC-001"
+      ]
+    },
+    {
+      "id": "no-raw-sql-interpolation",
+      "name": "No interpolated or concatenated SQL",
+      "passed": true,
+      "seconds": 0.0724524,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern found.",
+      "rules": [
+        "SEC-002"
+      ]
+    },
+    {
+      "id": "no-select-star",
+      "name": "No SELECT * (read only the columns the screen needs)",
+      "passed": true,
+      "seconds": 0.0470832,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern found.",
+      "rules": [
+        "DB-003"
+      ]
+    },
+    {
+      "id": "no-sql-leading-wildcard",
+      "name": "No search that starts with a wildcard",
+      "passed": true,
+      "seconds": 0.0521959,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern found.",
+      "rules": [
+        "DB-004"
+      ]
+    },
+    {
+      "id": "no-debug-leftovers-api",
+      "name": "No debugging leftovers (API)",
+      "passed": true,
+      "seconds": 0.040746,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern found.",
+      "rules": [
+        "QUAL-001"
+      ]
+    },
+    {
+      "id": "no-debug-leftovers-web",
+      "name": "No debugging leftovers (web)",
+      "passed": true,
+      "seconds": 0.0518502,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern in the files this change touched.\r\nAlso found in 1 file(s) this change did not touch (not counted against it): front-end/src/modules/ProjectDetail/ComposeRepoCard.tsx.",
+      "rules": [
+        "QUAL-001"
+      ]
+    },
+    {
+      "id": "api-build",
+      "name": "API compiles",
+      "passed": true,
+      "seconds": 6.0186518,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "Determining projects to restore...\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Desktop\\ShipRight.Desktop.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj [D:\\work\\nyingi\\code\\systems\\ShipRight\\ShipRight.sln]\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Tests\\ShipRight.Tests.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj [D:\\work\\nyingi\\code\\systems\\ShipRight\\ShipRight.sln]\r\n  All projects are up-to-date for restore.\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Desktop\\ShipRight.Desktop.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Tests\\ShipRight.Tests.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj\r\n  ShipRight.RuntimeConfig -\u003E D:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.RuntimeConfig\\bin\\Debug\\net10.0\\ShipRight.RuntimeConfig.dll\r\n  ShipRight.Desktop -\u003E D:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Desktop\\bin\\Debug\\net10.0-windows10.0.17763.0\\ShipRight.Desktop.dll\r\n  ShipRight.Server -\u003E D:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Server\\bin\\Debug\\net10.0\\ShipRight.Server.dll\r\n  ShipRight.Tests -\u003E D:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Tests\\bin\\Debug\\net10.0-windows10.0.17763.0\\ShipRight.Tests.dll\r\n\r\nBuild succeeded.\r\n\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Desktop\\ShipRight.Desktop.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj [D:\\work\\nyingi\\code\\systems\\ShipRight\\ShipRight.sln]\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Tests\\ShipRight.Tests.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj [D:\\work\\nyingi\\code\\systems\\ShipRight\\ShipRight.sln]\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Desktop\\ShipRight.Desktop.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Tests\\ShipRight.Tests.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj\r\n    4 Warning(s)\r\n    0 Error(s)\r\n\r\nTime Elapsed 00:00:05.39",
+      "rules": [
+        "BUILD-001"
+      ]
+    },
+    {
+      "id": "web-tests",
+      "name": "Web app tests pass",
+      "passed": true,
+      "seconds": 10.5573009,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "\u2026\n    \u001B[0m \u001B[90m 30 |\u001B[39m     authApi\u001B[33m.\u001B[39mproviders()\u001B[33m.\u001B[39mthen((p) \u001B[33m=\u003E\u001B[39m {\r\n     \u001B[90m 31 |\u001B[39m       \u001B[36mif\u001B[39m (\u001B[36mtypeof\u001B[39m window \u001B[33m!==\u001B[39m \u001B[32m\u0027undefined\u0027\u001B[39m \u001B[33m\u0026\u0026\u001B[39m \u001B[33m!\u001B[39mp\u001B[33m.\u001B[39mgoogle) {\r\n    \u001B[31m\u001B[1m\u003E\u001B[22m\u001B[39m\u001B[90m 32 |\u001B[39m         setError(\u001B[32m\u0027Google sign-in is not set up on this server. Sign in with email instead.\u0027\u001B[39m)\u001B[33m;\u001B[39m\r\n     \u001B[90m    |\u001B[39m         \u001B[31m\u001B[1m^\u001B[22m\u001B[39m\r\n     \u001B[90m 33 |\u001B[39m       }\r\n     \u001B[90m 34 |\u001B[39m       setGoogleAvailable(p\u001B[33m.\u001B[39mgoogle)\u001B[33m;\u001B[39m\r\n     \u001B[90m 35 |\u001B[39m     })\u001B[33m.\u001B[39m\u001B[36mcatch\u001B[39m(() \u001B[33m=\u003E\u001B[39m setGoogleAvailable(\u001B[36mfalse\u001B[39m))\u001B[33m;\u001B[39m\u001B[0m\r\n\r\n      at printWarning (node_modules/react-dom/cjs/react-dom.development.js:86:30)\r\n      at error (node_modules/react-dom/cjs/react-dom.development.js:60:7)\r\n      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-dom/cjs/react-dom.development.js:27628:9)\r\n      at scheduleUpdateOnFiber (node_modules/react-dom/cjs/react-dom.development.js:25547:5)\r\n      at dispatchSetState (node_modules/react-dom/cjs/react-dom.development.js:16708:7)\r\n      at setError (src/pages/login.tsx:32:9)\r\n\r\n    console.error\r\n      Warning: An update to LoginPage inside a test was not wrapped in act(...).\r\n      \r\n      When testing, code that causes React state updates should be wrapped into act(...):\r\n      \r\n      act(() =\u003E {\r\n        /* fire events that update state */\r\n      });\r\n      /* assert on the output */\r\n      \r\n      This ensures that you\u0027re testing the behavior the user would see in the browser. Learn more at https://reactjs.org/link/wrap-tests-with-act\r\n          at LoginPage (D:\\work\\nyingi\\code\\systems\\ShipRight\\front-end\\src\\pages\\login.tsx:14:31)\r\n\r\n    \u001B[0m \u001B[90m 32 |\u001B[39m         setError(\u001B[32m\u0027Google sign-in is not set up on this server. Sign in with email instead.\u0027\u001B[39m)\u001B[33m;\u001B[39m\r\n     \u001B[90m 33 |\u001B[39m       }\r\n    \u001B[31m\u001B[1m\u003E\u001B[22m\u001B[39m\u001B[90m 34 |\u001B[39m       setGoogleAvailable(p\u001B[33m.\u001B[39mgoogle)\u001B[33m;\u001B[39m\r\n     \u001B[90m    |\u001B[39m       \u001B[31m\u001B[1m^\u001B[22m\u001B[39m\r\n     \u001B[90m 35 |\u001B[39m     })\u001B[33m.\u001B[39m\u001B[36mcatch\u001B[39m(() \u001B[33m=\u003E\u001B[39m setGoogleAvailable(\u001B[36mfalse\u001B[39m))\u001B[33m;\u001B[39m\r\n     \u001B[90m 36 |\u001B[39m   }\u001B[33m,\u001B[39m [mode\u001B[33m,\u001B[39m providersChecked])\u001B[33m;\u001B[39m\r\n     \u001B[90m 37 |\u001B[39m\u001B[0m\r\n\r\n      at printWarning (node_modules/react-dom/cjs/react-dom.development.js:86:30)\r\n      at error (node_modules/react-dom/cjs/react-dom.development.js:60:7)\r\n      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-dom/cjs/react-dom.development.js:27628:9)\r\n      at scheduleUpdateOnFiber (node_modules/react-dom/cjs/react-dom.development.js:25547:5)\r\n      at dispatchSetState (node_modules/react-dom/cjs/react-dom.development.js:16708:7)\r\n      at setGoogleAvailable (src/pages/login.tsx:34:7)\r\n\r\nPASS src/shared/__tests__/ApiService.test.ts\r\nPASS src/shared/__tests__/serverInfo.test.ts\r\nPASS src/shared/components/__tests__/HoverTip.test.tsx\r\nPASS src/modules/ProjectConfig/__tests__/SshKeySectionApiBase.test.tsx\r\nPASS src/shared/auth/__tests__/AuthApi.test.ts\r\nPASS src/shared/__tests__/awsGuided.test.ts\r\nPASS src/shared/notifications/__tests__/InAppToastNotificationProvider.test.ts\r\nPASS src/shared/notifications/__tests__/DesktopBridgeNotificationProvider.test.ts\r\nPASS src/shared/notifications/__tests__/BrowserNotificationProvider.test.ts\r\nPASS src/shared/notifications/__tests__/NotificationService.test.ts\r\nPASS src/shared/notifications/__tests__/CompositeNotificationProvider.test.ts\r\n\r\nTest Suites: 35 passed, 35 total\r\nTests:       248 passed, 248 total\r\nSnapshots:   0 total\r\nTime:        7.223 s\r\nRan all test suites.",
+      "rules": [
+        "TEST-003"
+      ]
+    },
+    {
+      "id": "web-typecheck",
+      "name": "Web app types are right",
+      "passed": true,
+      "seconds": 17.4461632,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "",
+      "rules": [
+        "BUILD-001"
+      ]
+    },
+    {
+      "id": "web-lint-build",
+      "name": "Web app lints and builds",
+      "passed": true,
+      "seconds": 73.7316391,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "\u2026\n \u2713 Compiled successfully in 5.0s\r\n   Collecting page data ...\r\n   Generating static pages (0/20) ...\r\n   Generating static pages (5/20) \r\n   Generating static pages (10/20) \r\n   Generating static pages (15/20) \r\n \u2713 Generating static pages (20/20)\r\n   Finalizing page optimization ...\r\n   Collecting build traces ...\r\n   Exporting (0/20) ...\r\n   Exporting (5/20) \r\n   Exporting (10/20) \r\n   Exporting (15/20) \r\n \u2713 Exporting (20/20)\r\n\r\nRoute (pages)                                Size  First Load JS\r\n\u250C \u25CB / (362 ms)                              289 B        88.6 kB\r\n\u251C   /_app                                     0 B        88.3 kB\r\n\u251C \u25CB /404                                  2.29 kB        90.6 kB\r\n\u251C \u25CB /backups (357 ms)                     4.14 kB         121 kB\r\n\u251C \u25CB /change-password                      1.48 kB         110 kB\r\n\u251C \u25CB /databases (625 ms)                   4.94 kB         200 kB\r\n\u251C   \u2514 css/0352aa14d20fd113.css            1.37 kB\r\n\u251C \u25CB /forgot-password (357 ms)              1.4 kB         110 kB\r\n\u251C \u25CB /history (625 ms)                     4.83 kB         223 kB\r\n\u251C   \u2514 css/a3e93c6f436ea74b.css             1.8 kB\r\n\u251C \u25CB /login                                1.72 kB         110 kB\r\n\u251C \u25CB /monitoring (360 ms)                  5.78 kB         115 kB\r\n\u251C   \u2514 css/e59c685cf6be5f77.css            1.74 kB\r\n\u251C \u25CB /pipelines                            21.5 kB         298 kB\r\n\u251C   \u2514 css/71de852433b38578.css            2.11 kB\r\n\u251C \u25CB /projects                             7.39 kB         290 kB\r\n\u251C   \u2514 css/f301fc038b13a5cb.css            1.46 kB\r\n\u251C \u25CF /projects/[id]                          340 B        88.6 kB\r\n\u251C \u25CF /projects/[id]/edit                     342 B        88.6 kB\r\n\u251C \u25CB /projects/new (357 ms)                  292 B        88.6 kB\r\n\u251C \u25CB /reset-password                       1.52 kB         110 kB\r\n\u251C \u25CB /resources (627 ms)                   14.7 kB         208 kB\r\n\u251C   \u2514 css/b6bd5b49bb530585.css            1.21 kB\r\n\u251C \u25CB /servers (627 ms)                       11 kB         209 kB\r\n\u251C   \u2514 css/5bc80050de4abe4e.css            2.39 kB\r\n\u251C \u25CB /signup (358 ms)                      1.75 kB         110 kB\r\n\u251C \u25CB /team (626 ms)                        4.22 kB         209 kB\r\n\u251C   \u2514 css/48a6e8251a340d6d.css            1.34 kB\r\n\u251C \u25CB /terminal (382 ms)                    4.29 kB         144 kB\r\n\u251C   \u2514 css/a5aefe90c590e99b.css              821 B\r\n\u2514 \u25CB /watch-branch (357 ms)                3.91 kB         113 kB\r\n\u002B First Load JS shared by all             90.2 kB\r\n  \u251C chunks/framework-f31701c9d93f12a4.js  44.8 kB\r\n  \u251C chunks/main-c010c2578b2e0e15.js       34.5 kB\r\n  \u2514 other shared chunks (total)           10.9 kB\r\n\r\n\u25CB  (Static)  prerendered as static content\r\n\u25CF  (SSG)     prerendered as static HTML (uses getStaticProps)\r\n\r\n\n\u0060next lint\u0060 is deprecated and will be removed in Next.js 16.\r\nFor new projects, use create-next-app to choose your preferred linter.\r\nFor existing projects, migrate to the ESLint CLI:\r\nnpx @next/codemod@canary next-lint-to-eslint-cli .",
+      "rules": [
+        "BUILD-001"
+      ]
+    },
+    {
+      "id": "rule-USR-001-1",
+      "name": "No native button (use zest-button)",
+      "passed": true,
+      "seconds": 0.0425331,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern in the files this change touched.\r\nAlso found in 7 file(s) this change did not touch (not counted against it): front-end/src/pages/history.tsx, front-end/src/pages/pipelines.tsx, front-end/src/pages/resources.tsx, front-end/src/pages/servers.tsx, front-end/src/modules/BuildWizard/LogViewer.tsx, \u2026.",
+      "rules": [
+        "USR-001"
+      ]
+    },
+    {
+      "id": "rule-USR-001-2",
+      "name": "No native text input or textarea (use zest-textbox)",
+      "passed": true,
+      "seconds": 0.0382077,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern in the files this change touched.\r\nAlso found in 11 file(s) this change did not touch (not counted against it): front-end/src/pages/databases.tsx, front-end/src/modules/ProjectConfig/ProjectConfigForm.tsx, front-end/src/modules/ServerDeploy/ServerDeploySection.tsx, front-end/src/tests/modules/BrowsePathField.test.tsx, front-end/src/tests/modules/ComposeRepoCard.test.tsx, \u2026.",
+      "rules": [
+        "USR-001"
+      ]
+    },
+    {
+      "id": "rule-USR-001-3",
+      "name": "No native table (use responsive-table)",
+      "passed": true,
+      "seconds": 0.0353545,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern in the files this change touched.\r\nAlso found in 5 file(s) this change did not touch (not counted against it): front-end/src/pages/backups.tsx, front-end/src/pages/databases.tsx, front-end/src/pages/monitoring.tsx, front-end/src/pages/watch-branch.tsx, front-end/src/modules/ProjectConfig/ProjectConfigForm.tsx.",
+      "rules": [
+        "USR-001"
+      ]
+    },
+    {
+      "id": "rule-USR-001-4",
+      "name": "No react-tabs (use zest-tabs)",
+      "passed": true,
+      "seconds": 0.0454078,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern in the files this change touched.\r\nAlso found in 1 file(s) this change did not touch (not counted against it): front-end/src/modules/ProjectConfig/ProjectConfigForm.tsx.",
+      "rules": [
+        "USR-001"
+      ]
+    },
+    {
+      "id": "rule-USR-001-5",
+      "name": "No hand-rolled setInterval polling (use jattac-web-poller)",
+      "passed": true,
+      "seconds": 0.0380207,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern in the files this change touched.\r\nAlso found in 4 file(s) this change did not touch (not counted against it): front-end/src/pages/watch-branch.tsx, front-end/src/modules/BuildWizard/BuildWizard.tsx, front-end/src/modules/Database/DbOperationsPanel.tsx, front-end/src/shared/hooks/useElapsedTimer.ts.",
+      "rules": [
+        "USR-001"
+      ]
+    },
+    {
+      "id": "api-build-test",
+      "name": "API builds and all tests pass",
+      "passed": true,
+      "seconds": 53.0712903,
+      "notRun": false,
+      "flaky": false,
+      "tier": "full",
+      "output": "\u2026\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022GET\u0022,\u0022/api/servers\u0022)\r\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022POST\u0022,\u0022/api/servers\u0022)\r\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022GET\u0022,\u0022/api/resources/scripts\u0022)\r\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022GET\u0022,\u0022/api/resources/credentials\u0022)\r\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022GET\u0022,\u0022/api/team\u0022)\r\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022POST\u0022,\u0022/api/team\u0022)\r\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022GET\u0022,\u0022/api/scheduler/history\u0022)\r\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022GET\u0022,\u0022/api/watch-branch/history\u0022)\r\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022GET\u0022,\u0022/api/fs/list\u0022)\r\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022GET\u0022,\u0022/api/auth/me\u0022)\r\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022POST\u0022,\u0022/api/auth/change-password\u0022)\r\n  Skipped EndpointsWithoutSignIn_AnswerSignInRequired (\u0022POST\u0022,\u0022/api/system/shutdown\u0022)\r\n  Skipped PublicEndpoints_NeedNoSignIn\r\n  Skipped OperatorCanReadAndOperate_ButNotChangeSettingsOrServers\r\n  Skipped ViewerCanOnlyRead_AndSeesNoChangeAllowed\r\n  Skipped AdminDoesEverything\r\n  Skipped ARoleChangeAppliesOnThePersonsNextRequest\r\n  Skipped AnotherCompanysProject_LooksExactlyLikeOneThatDoesNotExist\r\n  Skipped Lists_OnlyEverShowTheCallersOwnCompany\r\n  Skipped ChangingOrDeletingAnotherCompanysProject_ChangesNothing\r\n  Skipped ACompanyIdInAHeaderOrQuery_IsIgnored\r\n  Skipped AnotherCompanysTeamMember_IsNotFound_ForEveryTeamAction\r\n  Skipped Teammate_IsCreatedInTheAdminsCompany_AndNeverEchoesThePassword\r\n  Skipped Teammate_MustChooseANewPasswordFirst_ThenWorksNormally\r\n  Skipped Teammate_WithATakenEmail_IsRefusedBesideTheEmailField_EvenInAnotherCompany\r\n  Skipped Teammate_InvalidFields_AreReportedBesideTheField (\u0022bad\u0022,\u0022Name\u0022,\u0022temp-pass-123\u0022,\u0022Viewer\u0022,\u0022email\u0022)\r\n  Skipped Teammate_InvalidFields_AreReportedBesideTheField (\u0022ok@example.test\u0022,\u0022Name\u0022,\u0022short\u0022,\u0022Viewer\u0022,\u0022temporaryPassword\u0022)\r\n  Skipped Teammate_InvalidFields_AreReportedBesideTheField (\u0022ok@example.test\u0022,\u0022Name\u0022,\u0022temp-pass-123\u0022,\u0022\u0022,\u0022role\u0022)\r\n  Skipped Teammate_InvalidFields_AreReportedBesideTheField (\u0022ok@example.test\u0022,\u0022Name\u0022,\u0022temp-pass-123\u0022,\u0022Owner\u0022,\u0022role\u0022)\r\n  Skipped Teammate_SavedTwiceAtOnce_IsCreatedOnce\r\n  Skipped LastActiveAdmin_CannotBeDemotedOrSwitchedOff\r\n  Skipped OnceAnotherAdminExists_TheFirstCanStepDown\r\n  Skipped TwoAdminsStepDownAtOnce_LeaveTheCompanyWithAnAdmin\r\n  Skipped RoleChange_WhenSomeoneElseChangedItFirst_IsReportedNotSilentlyOverwritten\r\n  Skipped SwitchingOff_StopsSignInAndAnOpenSession_KeepsEverything_AndCanBeUndone\r\n  Skipped SwitchingOffOrOn_Twice_DoesNothingAndShowsNoError\r\n  Skipped TeamList_IsPaged_OrderedByName_WithATotal_AndAServerSideMaximum\r\n  Skipped CompanyWithOnlyItsAdmin_ListsThatPerson\r\n  Skipped TeamList_With50People_AndSignIn_AreEachUnderOneSecond\r\n  Skipped ForgotPassword_SaysTheSameThing_WhetherOrNotTheEmailExists_AndNeverShowsTheLink\r\n  Skipped ResetLink_WorksOnce_ThenSaysItIsUsedOrExpired\r\n  Skipped ResetLink_WithAGarbageToken_IsRefusedPlainly\r\n  Skipped ResettingForASwitchedOffAccount_NeitherWorksNorSwitchesItOn\r\n  Skipped ResetRequests_AreRateLimited\r\n  Skipped Google_WhenNotConfigured_IsOffAndEmailSignInStillWorks\r\n  Skipped OldCookieOrTokenFromBeforeTheSwitch_GetsAPlainSignInRequired_NotAnErrorPage\r\n  Skipped OldAuthEndpoints_AreGone\r\n  Skipped ErrorResponses_NeverContainSecrets\r\n  Skipped Upgrade_KeepsEveryAccountAndCompany_MakesThemAdmins_AndKeepsTheOldPasswordHash [22 ms]\r\n  Skipped Upgrade_GivesOrphanedRowsToTheOldestCompany_AndLosesNoProject [18 ms]\r\n  Skipped Upgrade_RunTwice_LeavesTheDataIntact [18 ms]\r\n  Skipped Upgrade_RerunningTheFirstScriptByHand_IsHarmless [20 ms]\r\n  Skipped Upgrade_DropsTheOldTokenTablesAndColumns_ButAddsIdentityTables [21 ms]\r\n  Skipped Upgrade_EnforcesUniqueEmailsRegardlessOfCapitals [21 ms]\r\n  Skipped FreshInstall_FromSchemaSql_NeedsNoMigration [\u003C 1 ms]\r\n  Skipped DownScripts_RestoreTheOldShape_WithoutLosingAccounts [18 ms]\r\nWARNING: Overwriting results file: D:\\work\\nyingi\\code\\systems\\ShipRight\\.coverage\\results.trx\r\nResults File: D:\\work\\nyingi\\code\\systems\\ShipRight\\.coverage\\results.trx\r\n\r\nPassed!  - Failed:     0, Passed:   903, Skipped:    75, Total:   978, Duration: 40 s - ShipRight.Tests.dll (net10.0)",
+      "rules": [
+        "BUILD-001",
+        "TEST-002"
+      ]
+    }
+  ],
+  "fullGreenHash": "1687E72E4086FFEE170803D039095539D42FA78271858E7FF38BB5F7F8E9275C",
+  "baseline": [
+    {
+      "id": "app-boots",
+      "name": "The app starts and works as set up",
+      "passed": false,
+      "seconds": 0.2024203,
+      "notRun": true,
+      "flaky": false,
+      "tier": "full",
+      "output": "Not set up in this project: Nothing starts the app and looks at it  no scripts/smoke/run.mjs , so nothing proves the app starts and works yet.",
+      "rules": [
+        "BOOT-001"
+      ]
+    },
+    {
+      "id": "no-secrets-code",
+      "name": "No secrets in code",
+      "passed": true,
+      "seconds": 0.1977772,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern found.",
+      "rules": [
+        "SEC-001"
+      ]
+    },
+    {
+      "id": "no-secrets-config",
+      "name": "No secrets in committed config",
+      "passed": true,
+      "seconds": 0.2474726,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern found.",
+      "rules": [
+        "SEC-001"
+      ]
+    },
+    {
+      "id": "no-raw-sql-interpolation",
+      "name": "No interpolated or concatenated SQL",
+      "passed": true,
+      "seconds": 0.1730724,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern found.",
+      "rules": [
+        "SEC-002"
+      ]
+    },
+    {
+      "id": "no-select-star",
+      "name": "No SELECT * (read only the columns the screen needs)",
+      "passed": true,
+      "seconds": 0.1051837,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern found.",
+      "rules": [
+        "DB-003"
+      ]
+    },
+    {
+      "id": "no-sql-leading-wildcard",
+      "name": "No search that starts with a wildcard",
+      "passed": true,
+      "seconds": 0.1213543,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern found.",
+      "rules": [
+        "DB-004"
+      ]
+    },
+    {
+      "id": "no-debug-leftovers-api",
+      "name": "No debugging leftovers (API)",
+      "passed": true,
+      "seconds": 0.101731,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern found.",
+      "rules": [
+        "QUAL-001"
+      ]
+    },
+    {
+      "id": "no-debug-leftovers-web",
+      "name": "No debugging leftovers (web)",
+      "passed": true,
+      "seconds": 0.137329,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern in the files this change touched.\r\nAlso found in 1 file(s) this change did not touch (not counted against it): front-end/src/modules/ProjectDetail/ComposeRepoCard.tsx.",
+      "rules": [
+        "QUAL-001"
+      ]
+    },
+    {
+      "id": "api-build",
+      "name": "API compiles",
+      "passed": true,
+      "seconds": 4.974215,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "Determining projects to restore...\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Desktop\\ShipRight.Desktop.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj [D:\\work\\nyingi\\code\\systems\\ShipRight\\ShipRight.sln]\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Tests\\ShipRight.Tests.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj [D:\\work\\nyingi\\code\\systems\\ShipRight\\ShipRight.sln]\r\n  All projects are up-to-date for restore.\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Desktop\\ShipRight.Desktop.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Tests\\ShipRight.Tests.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj\r\n  ShipRight.RuntimeConfig -\u003E D:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.RuntimeConfig\\bin\\Debug\\net10.0\\ShipRight.RuntimeConfig.dll\r\n  ShipRight.Desktop -\u003E D:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Desktop\\bin\\Debug\\net10.0-windows10.0.17763.0\\ShipRight.Desktop.dll\r\n  ShipRight.Server -\u003E D:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Server\\bin\\Debug\\net10.0\\ShipRight.Server.dll\r\n  ShipRight.Tests -\u003E D:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Tests\\bin\\Debug\\net10.0-windows10.0.17763.0\\ShipRight.Tests.dll\r\n\r\nBuild succeeded.\r\n\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Desktop\\ShipRight.Desktop.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj [D:\\work\\nyingi\\code\\systems\\ShipRight\\ShipRight.sln]\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Tests\\ShipRight.Tests.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj [D:\\work\\nyingi\\code\\systems\\ShipRight\\ShipRight.sln]\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Desktop\\ShipRight.Desktop.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Tests\\ShipRight.Tests.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj\r\n    4 Warning(s)\r\n    0 Error(s)\r\n\r\nTime Elapsed 00:00:04.22",
+      "rules": [
+        "BUILD-001"
+      ]
+    },
+    {
+      "id": "api-build-test",
+      "name": "API builds and all tests pass",
+      "passed": true,
+      "seconds": 34.2855982,
+      "notRun": false,
+      "flaky": false,
+      "tier": "full",
+      "output": "Determining projects to restore...\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Desktop\\ShipRight.Desktop.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj [D:\\work\\nyingi\\code\\systems\\ShipRight\\ShipRight.sln]\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Tests\\ShipRight.Tests.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj [D:\\work\\nyingi\\code\\systems\\ShipRight\\ShipRight.sln]\r\n  All projects are up-to-date for restore.\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Tests\\ShipRight.Tests.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj\r\nD:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Desktop\\ShipRight.Desktop.csproj : warning NU1904: Package \u0027System.Drawing.Common\u0027 4.7.0 has a known critical severity vulnerability, https://github.com/advisories/GHSA-rxg9-xrhp-64gj\r\n  ShipRight.RuntimeConfig -\u003E D:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.RuntimeConfig\\bin\\Debug\\net10.0\\ShipRight.RuntimeConfig.dll\r\n  ShipRight.Server -\u003E D:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Server\\bin\\Debug\\net10.0\\ShipRight.Server.dll\r\n  ShipRight.Desktop -\u003E D:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Desktop\\bin\\Debug\\net10.0-windows10.0.17763.0\\ShipRight.Desktop.dll\r\n  ShipRight.Tests -\u003E D:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Tests\\bin\\Debug\\net10.0-windows10.0.17763.0\\ShipRight.Tests.dll\r\nTest run for D:\\work\\nyingi\\code\\systems\\ShipRight\\back-end\\ShipRight.Tests\\bin\\Debug\\net10.0-windows10.0.17763.0\\ShipRight.Tests.dll (.NETCoreApp,Version=v10.0)\r\nA total of 1 test files matched the specified pattern.\r\nData collection : Unable to find a datacollector with friendly name \u0027XPlat Code Coverage\u0027.\r\nData collection : Could not find data collector \u0027XPlat Code Coverage\u0027\r\nWARNING: Overwriting results file: D:\\work\\nyingi\\code\\systems\\ShipRight\\.coverage\\results.trx\r\nResults File: D:\\work\\nyingi\\code\\systems\\ShipRight\\.coverage\\results.trx\r\n\r\nPassed!  - Failed:     0, Passed:   692, Skipped:     0, Total:   692, Duration: 23 s - ShipRight.Tests.dll (net10.0)",
+      "rules": [
+        "BUILD-001",
+        "TEST-002"
+      ]
+    },
+    {
+      "id": "web-tests",
+      "name": "Web app tests pass",
+      "passed": true,
+      "seconds": 58.7472129,
+      "notRun": false,
+      "flaky": false,
+      "tier": "full",
+      "output": "\u2026\n      When testing, code that causes React state updates should be wrapped into act(...):\r\n      \r\n      act(() =\u003E {\r\n        /* fire events that update state */\r\n      });\r\n      /* assert on the output */\r\n      \r\n      This ensures that you\u0027re testing the behavior the user would see in the browser. Learn more at https://reactjs.org/link/wrap-tests-with-act\r\n          at existing (D:\\work\\nyingi\\code\\systems\\ShipRight\\front-end\\src\\modules\\ProjectConfig\\ProjectSetupWizard.tsx:86:46)\r\n\r\n      at printWarning (node_modules/react-dom/cjs/react-dom.development.js:86:30)\r\n      at error (node_modules/react-dom/cjs/react-dom.development.js:60:7)\r\n      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-dom/cjs/react-dom.development.js:27628:9)\r\n      at scheduleUpdateOnFiber (node_modules/react-dom/cjs/react-dom.development.js:25547:5)\r\n      at dispatchSetState (node_modules/react-dom/cjs/react-dom.development.js:16708:7)\r\n\r\n    console.error\r\n      Warning: An update to ProjectSetupWizard inside a test was not wrapped in act(...).\r\n      \r\n      When testing, code that causes React state updates should be wrapped into act(...):\r\n      \r\n      act(() =\u003E {\r\n        /* fire events that update state */\r\n      });\r\n      /* assert on the output */\r\n      \r\n      This ensures that you\u0027re testing the behavior the user would see in the browser. Learn more at https://reactjs.org/link/wrap-tests-with-act\r\n          at existing (D:\\work\\nyingi\\code\\systems\\ShipRight\\front-end\\src\\modules\\ProjectConfig\\ProjectSetupWizard.tsx:86:46)\r\n\r\n      at printWarning (node_modules/react-dom/cjs/react-dom.development.js:86:30)\r\n      at error (node_modules/react-dom/cjs/react-dom.development.js:60:7)\r\n      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-dom/cjs/react-dom.development.js:27628:9)\r\n      at scheduleUpdateOnFiber (node_modules/react-dom/cjs/react-dom.development.js:25547:5)\r\n      at dispatchSetState (node_modules/react-dom/cjs/react-dom.development.js:16708:7)\r\n\r\n    console.error\r\n      Warning: An update to ProjectSetupWizard inside a test was not wrapped in act(...).\r\n      \r\n      When testing, code that causes React state updates should be wrapped into act(...):\r\n      \r\n      act(() =\u003E {\r\n        /* fire events that update state */\r\n      });\r\n      /* assert on the output */\r\n      \r\n      This ensures that you\u0027re testing the behavior the user would see in the browser. Learn more at https://reactjs.org/link/wrap-tests-with-act\r\n          at existing (D:\\work\\nyingi\\code\\systems\\ShipRight\\front-end\\src\\modules\\ProjectConfig\\ProjectSetupWizard.tsx:86:46)\r\n\r\n      at printWarning (node_modules/react-dom/cjs/react-dom.development.js:86:30)\r\n      at error (node_modules/react-dom/cjs/react-dom.development.js:60:7)\r\n      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-dom/cjs/react-dom.development.js:27628:9)\r\n      at scheduleUpdateOnFiber (node_modules/react-dom/cjs/react-dom.development.js:25547:5)\r\n      at dispatchSetState (node_modules/react-dom/cjs/react-dom.development.js:16708:7)\r\n\r\n\r\nTest Suites: 34 passed, 34 total\r\nTests:       235 passed, 235 total\r\nSnapshots:   0 total\r\nTime:        33.38 s\r\nRan all test suites.",
+      "rules": [
+        "TEST-003"
+      ]
+    },
+    {
+      "id": "web-typecheck",
+      "name": "Web app types are right",
+      "passed": true,
+      "seconds": 31.7107547,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "",
+      "rules": [
+        "BUILD-001"
+      ]
+    },
+    {
+      "id": "web-lint-build",
+      "name": "Web app lints and builds",
+      "passed": true,
+      "seconds": 136.4964295,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "\u2026\n\r\ninfo  - Need to disable some ESLint rules? Learn more here: https://nextjs.org/docs/app/api-reference/config/eslint#disabling-rules\r\n   Creating an optimized production build ...\r\n \u2713 Compiled successfully in 41s\r\n   Collecting page data ...\r\n   Generating static pages (0/18) ...\r\n   Generating static pages (4/18) \r\n   Generating static pages (8/18) \r\n   Generating static pages (13/18) \r\n \u2713 Generating static pages (18/18)\r\n   Finalizing page optimization ...\r\n   Collecting build traces ...\r\n   Exporting (0/18) ...\r\n   Exporting (4/18) \r\n   Exporting (8/18) \r\n   Exporting (13/18) \r\n \u2713 Exporting (18/18)\r\n\r\nRoute (pages)                                Size  First Load JS\r\n\u250C \u25CB / (349 ms)                              289 B        89.7 kB\r\n\u251C   /_app                                     0 B        89.5 kB\r\n\u251C \u25CB /404                                  2.29 kB        91.7 kB\r\n\u251C \u25CB /backups (342 ms)                     3.69 kB         122 kB\r\n\u251C \u25CB /databases (877 ms)                   4.48 kB         200 kB\r\n\u251C   \u2514 css/0352aa14d20fd113.css            1.37 kB\r\n\u251C \u25CB /forgot-password (350 ms)             2.32 kB        94.1 kB\r\n\u251C \u25CB /history (877 ms)                     16.3 kB         223 kB\r\n\u251C   \u2514 css/a3e93c6f436ea74b.css             1.8 kB\r\n\u251C \u25CB /login (348 ms)                       1.35 kB         111 kB\r\n\u251C \u25CB /monitoring (353 ms)                  5.33 kB         115 kB\r\n\u251C   \u2514 css/e59c685cf6be5f77.css            1.74 kB\r\n\u251C \u25CB /pipelines (878 ms)                   21.6 kB         298 kB\r\n\u251C   \u2514 css/71de852433b38578.css            2.11 kB\r\n\u251C \u25CB /projects (877 ms)                    7.39 kB         290 kB\r\n\u251C   \u2514 css/f301fc038b13a5cb.css            1.46 kB\r\n\u251C \u25CF /projects/[id]                          340 B        89.8 kB\r\n\u251C \u25CF /projects/[id]/edit                     342 B        89.8 kB\r\n\u251C \u25CB /projects/new (350 ms)                  292 B        89.7 kB\r\n\u251C \u25CB /reset-password (351 ms)              2.41 kB        94.2 kB\r\n\u251C \u25CB /resources (879 ms)                   11.5 kB         208 kB\r\n\u251C   \u2514 css/b6bd5b49bb530585.css            1.21 kB\r\n\u251C \u25CB /servers (879 ms)                     7.81 kB         209 kB\r\n\u251C   \u2514 css/5bc80050de4abe4e.css            2.39 kB\r\n\u251C \u25CB /signup (357 ms)                      2.51 kB        94.3 kB\r\n\u251C \u25CB /terminal (433 ms)                    3.84 kB         144 kB\r\n\u251C   \u2514 css/a5aefe90c590e99b.css              821 B\r\n\u2514 \u25CB /watch-branch (349 ms)                3.45 kB         114 kB\r\n\u002B First Load JS shared by all             91.3 kB\r\n  \u251C chunks/framework-f31701c9d93f12a4.js  44.8 kB\r\n  \u251C chunks/main-c010c2578b2e0e15.js       34.5 kB\r\n  \u2514 other shared chunks (total)           12.1 kB\r\n\r\n\u25CB  (Static)  prerendered as static content\r\n\u25CF  (SSG)     prerendered as static HTML (uses getStaticProps)\r\n\r\n\n\u0060next lint\u0060 is deprecated and will be removed in Next.js 16.\r\nFor new projects, use create-next-app to choose your preferred linter.\r\nFor existing projects, migrate to the ESLint CLI:\r\nnpx @next/codemod@canary next-lint-to-eslint-cli .",
+      "rules": [
+        "BUILD-001"
+      ]
+    },
+    {
+      "id": "rule-USR-001-1",
+      "name": "No native button (use zest-button)",
+      "passed": true,
+      "seconds": 0.1079514,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern in the files this change touched.\r\nAlso found in 9 file(s) this change did not touch (not counted against it): front-end/src/pages/forgot-password.tsx, front-end/src/pages/history.tsx, front-end/src/pages/pipelines.tsx, front-end/src/pages/reset-password.tsx, front-end/src/pages/resources.tsx, \u2026.",
+      "rules": [
+        "USR-001"
+      ]
+    },
+    {
+      "id": "rule-USR-001-2",
+      "name": "No native text input or textarea (use zest-textbox)",
+      "passed": true,
+      "seconds": 0.094836,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern in the files this change touched.\r\nAlso found in 11 file(s) this change did not touch (not counted against it): front-end/src/pages/databases.tsx, front-end/src/modules/ProjectConfig/ProjectConfigForm.tsx, front-end/src/modules/ServerDeploy/ServerDeploySection.tsx, front-end/src/tests/modules/BrowsePathField.test.tsx, front-end/src/tests/modules/ComposeRepoCard.test.tsx, \u2026.",
+      "rules": [
+        "USR-001"
+      ]
+    },
+    {
+      "id": "rule-USR-001-3",
+      "name": "No native table (use responsive-table)",
+      "passed": true,
+      "seconds": 0.1205864,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern in the files this change touched.\r\nAlso found in 5 file(s) this change did not touch (not counted against it): front-end/src/pages/backups.tsx, front-end/src/pages/databases.tsx, front-end/src/pages/monitoring.tsx, front-end/src/pages/watch-branch.tsx, front-end/src/modules/ProjectConfig/ProjectConfigForm.tsx.",
+      "rules": [
+        "USR-001"
+      ]
+    },
+    {
+      "id": "rule-USR-001-4",
+      "name": "No react-tabs (use zest-tabs)",
+      "passed": true,
+      "seconds": 0.1195656,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern in the files this change touched.\r\nAlso found in 1 file(s) this change did not touch (not counted against it): front-end/src/modules/ProjectConfig/ProjectConfigForm.tsx.",
+      "rules": [
+        "USR-001"
+      ]
+    },
+    {
+      "id": "rule-USR-001-5",
+      "name": "No hand-rolled setInterval polling (use jattac-web-poller)",
+      "passed": true,
+      "seconds": 0.1301023,
+      "notRun": false,
+      "flaky": false,
+      "tier": "fast",
+      "output": "No forbidden pattern in the files this change touched.\r\nAlso found in 4 file(s) this change did not touch (not counted against it): front-end/src/pages/watch-branch.tsx, front-end/src/modules/BuildWizard/BuildWizard.tsx, front-end/src/modules/Database/DbOperationsPanel.tsx, front-end/src/shared/hooks/useElapsedTimer.ts.",
+      "rules": [
+        "USR-001"
+      ]
+    }
+  ],
+  "checkPassedOn": {
+    "api-build": "304997A00A00C0D7F87A5169B61F218AB3E22B013F28214231C5DE584A899197",
+    "api-build-test": "2164E161D771F4F4498F599D64755A6B92ED45DDCD1343831F23C99963559222",
+    "web-tests": "263656ED88069B34CB6330F42E20C8A9B6868A9EEA0B8E4C0020AA7430B364C5",
+    "web-typecheck": "B165AA62B01C8910294538226A61BA1849F72C906E0327624C6360B92BC779AA",
+    "web-lint-build": "120CBE217E9EA3149A115EB4BC96082030066396150A36D3EC6793ACBCEE4423"
+  },
+  "generatedByChecks": [],
+  "preflightAnswered": false,
+  "analystQuestions": 8,
+  "analysisClosed": false,
+  "youDecided": 0,
+  "requirementsApproved": true,
+  "signOffRounds": 3,
+  "changedFiles": [
+    ".env.example",
+    "back-end/ShipRight.Server/CloudConfiguration.cs",
+    "back-end/ShipRight.Server/CloudDiRegistrar.cs",
+    "back-end/ShipRight.Server/Database/CloudDatabaseRegistrar.cs",
+    "back-end/ShipRight.Server/Database/MigrationRunner.cs",
+    "back-end/ShipRight.Server/Database/Migrations/0001_identity.down.sql",
+    "back-end/ShipRight.Server/Database/Migrations/0001_identity.up.sql",
+    "back-end/ShipRight.Server/Database/Migrations/0002_drop_legacy_auth.down.sql",
+    "back-end/ShipRight.Server/Database/Migrations/0002_drop_legacy_auth.up.sql",
+    "back-end/ShipRight.Server/Database/schema.sql",
+    "back-end/ShipRight.Server/Modules/Auth/AuthRouter.cs",
+    "back-end/ShipRight.Server/Modules/Auth/Middleware/JwtMiddleware.cs",
+    "back-end/ShipRight.Server/Modules/Auth/Models/RefreshToken.cs",
+    "back-end/ShipRight.Server/Modules/Auth/Models/ResetToken.cs",
+    "back-end/ShipRight.Server/Modules/Auth/Services/JwtService.cs",
+    "back-end/ShipRight.Server/Modules/Auth/Services/PasswordHelper.cs",
+    "back-end/ShipRight.Server/Modules/Auth/Services/SetupService.cs",
+    "back-end/ShipRight.Server/Modules/Auth/Services/TokenService.cs",
+    "back-end/ShipRight.Server/Modules/Builds/BuildOrchestrator.cs",
+    "back-end/ShipRight.Server/Modules/Builds/BuildRecord.cs",
+    "back-end/ShipRight.Server/Modules/Builds/BuildRouter.cs",
+    "back-end/ShipRight.Server/Modules/Builds/MariadbBuildStore.cs",
+    "back-end/ShipRight.Server/Modules/Identity/AppClaimsPrincipalFactory.cs",
+    "back-end/ShipRight.Server/Modules/Identity/AppUser.cs",
+    "back-end/ShipRight.Server/Modules/Identity/AuthEndpoints.cs",
+    "back-end/ShipRight.Server/Modules/Identity/DapperUserStore.cs",
+    "back-end/ShipRight.Server/Modules/Identity/GoogleSignIn.cs",
+    "back-end/ShipRight.Server/Modules/Identity/IdentityDtos.cs",
+    "back-end/ShipRight.Server/Modules/Identity/IdentityRegistration.cs",
+    "back-end/ShipRight.Server/Modules/Identity/IdentityRepository.cs",
+    "back-end/ShipRight.Server/Modules/Identity/LegacyAwarePasswordHasher.cs",
+    "back-end/ShipRight.Server/Modules/Identity/RegistrationService.cs",
+    "back-end/ShipRight.Server/Modules/Identity/RoleAccessRules.cs",
+    "back-end/ShipRight.Server/Modules/Identity/RoleAuthorizationHandler.cs",
+    "back-end/ShipRight.Server/Modules/Identity/TeamEndpoints.cs",
+    "back-end/ShipRight.Server/Modules/Identity/TeamRepository.cs",
+    "back-end/ShipRight.Server/Modules/Projects/MariadbProjectStore.cs",
+    "back-end/ShipRight.Server/Modules/Resources/Stores/MariadbCompanyScopedAwsProfileResourceStore.cs",
+    "back-end/ShipRight.Server/Modules/Resources/Stores/MariadbCompanyScopedCredentialResourceStore.cs",
+    "back-end/ShipRight.Server/Modules/Resources/Stores/MariadbCompanyScopedDockerRegistryResourceStore.cs",
+    "back-end/ShipRight.Server/Modules/Resources/Stores/MariadbCompanyScopedPipelineResourceStore.cs",
+    "back-end/ShipRight.Server/Modules/Resources/Stores/MariadbCompanyScopedScriptResourceStore.cs",
+    "back-end/ShipRight.Server/Modules/Scheduler/CloudSchedulerRegistrar.cs",
+    "back-end/ShipRight.Server/Modules/Scheduler/MariadbBackupHistoryStore.cs",
+    "back-end/ShipRight.Server/Modules/Servers/MariadbServerStore.cs",
+    "back-end/ShipRight.Server/Modules/WatchBranch/MariadbWatchBranchHistoryStore.cs",
+    "back-end/ShipRight.Server/Program.cs",
+    "back-end/ShipRight.Server/Shared/Tenancy/CompanyContext.cs",
+    "back-end/ShipRight.Server/Shared/Tenancy/CompanyScope.cs",
+    "back-end/ShipRight.Server/ShipRight.Server.csproj",
+    "back-end/ShipRight.Tests/Database/CloudDiRegistrarTests.cs",
+    "back-end/ShipRight.Tests/Database/MigrationScriptsTests.cs",
+    "back-end/ShipRight.Tests/Database/MigrationUpgradeTests.cs",
+    "back-end/ShipRight.Tests/Modules/Auth/AuthCharacterizationTests.cs",
+    "back-end/ShipRight.Tests/Modules/Auth/JwtMiddlewareTests.cs",
+    "back-end/ShipRight.Tests/Modules/Deployment/CloudConfigurationTests.cs",
+    "back-end/ShipRight.Tests/Modules/Identity/CloudApiFactory.cs",
+    "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+    "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+    "back-end/ShipRight.Tests/Modules/Identity/DesktopModeStartupTests.cs",
+    "back-end/ShipRight.Tests/Modules/Identity/GoogleSignInTests.cs",
+    "back-end/ShipRight.Tests/Modules/Identity/IdentityPipelineTests.cs",
+    "back-end/ShipRight.Tests/Modules/Identity/IdentityValidationTests.cs",
+    "back-end/ShipRight.Tests/Modules/Identity/InMemoryCloudFactory.cs",
+    "back-end/ShipRight.Tests/Modules/Identity/LegacyAwarePasswordHasherTests.cs",
+    "back-end/ShipRight.Tests/Modules/Identity/MariaDbTestDatabase.cs",
+    "back-end/ShipRight.Tests/Modules/Identity/RoleAccessRulesTests.cs",
+    "back-end/ShipRight.Tests/Modules/Identity/SettingsAgreementTests.cs",
+    "back-end/ShipRight.Tests/Modules/Identity/TeamRepositoryTests.cs",
+    "back-end/ShipRight.Tests/Modules/Tenancy/CompanyScopedStoreTests.cs",
+    "back-end/ShipRight.Tests/Modules/Tenancy/RecordingDatabaseHelper.cs",
+    "back-end/ShipRight.Tests/ShipRight.Tests.csproj",
+    "docker-compose.yml",
+    "front-end/src/modules/AppShell/AppShell.tsx",
+    "front-end/src/modules/Team/TeamPage.module.css",
+    "front-end/src/modules/Team/TeamPage.tsx",
+    "front-end/src/modules/Team/__tests__/TeamPage.test.tsx",
+    "front-end/src/pages/change-password.tsx",
+    "front-end/src/pages/forgot-password.tsx",
+    "front-end/src/pages/login.tsx",
+    "front-end/src/pages/reset-password.tsx",
+    "front-end/src/pages/signup.tsx",
+    "front-end/src/pages/Styles/Auth.module.css",
+    "front-end/src/pages/Styles/Team.module.css",
+    "front-end/src/pages/team.tsx",
+    "front-end/src/pages/_app.tsx",
+    "front-end/src/shared/ApiService.ts",
+    "front-end/src/shared/auth/AuthApi.ts",
+    "front-end/src/shared/auth/AuthGuard.tsx",
+    "front-end/src/shared/auth/AuthStore.ts",
+    "front-end/src/shared/auth/index.ts",
+    "front-end/src/shared/auth/__tests__/AuthApi.test.ts",
+    "front-end/src/shared/auth/__tests__/AuthGuard.test.tsx",
+    "front-end/src/shared/auth/__tests__/LoginPage.test.tsx",
+    "front-end/src/shared/types/IBuildRecord.ts",
+    "front-end/src/shared/__tests__/ApiService.test.ts",
+    "SETUP.md"
+  ],
+  "stopReason": "stopped by telegram:6096790972"
+}

@@ -1,0 +1,72 @@
+{
+  "role": "qa",
+  "round": 2,
+  "feature": "Replace hand-built JWT/refresh-token sign-in with ASP.NET Core Identity (Dapper/QBuilder IUserStore, cookie sessions, Google via generic AddOAuth); one person = one company + one role; desktop/local mode signs in nothing.",
+  "findings": [
+    {
+      "cites": "R8",
+      "severity": "blocking",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "line": 563,
+      "evidence": "SwitchingOff_StopsSignInAndAnOpenSession_KeepsEverything_AndCanBeUndone asserts only that the account row survives (COUNT(*) = 1) and can be re-activated; no test starts a build or deploy as a teammate, switches them off, then checks the build/history still shows that person's name. BuildRecord (back-end/ShipRight.Server/Modules/Builds/BuildRecord.cs:31) has no initiator field either.",
+      "description": "R8 acceptance line 'Builds and deploys they started still show their name' has no test (and no build field carries the initiator), so history retention for switched-off people is unproven."
+    },
+    {
+      "cites": "R8",
+      "severity": "blocking",
+      "file": "back-end/ShipRight.Server/Modules/Identity/GoogleSignIn.cs",
+      "line": 113,
+      "evidence": "CompleteAsync returns Redirect(SwitchedOffRedirect) when !user.IsActive; nothing calls CompleteAsync with an inactive user. The only related test, GoogleSignInTests.cs:108 ASwitchedOffPerson_IsStillFlaggedOff_SoTheSignInIsRefused, calls ResolveUserAsync directly and asserts the returned user is inactive, so it still passes if line 113 is deleted.",
+      "description": "R8 edge 'A switched-off person trying Google sign-in with the same email is also refused' is enforced only by an untested endpoint branch; the guard could break without any test failing."
+    },
+    {
+      "cites": "R3",
+      "severity": "advisory",
+      "file": "back-end/ShipRight.Server/Modules/Identity/GoogleSignIn.cs",
+      "line": 23,
+      "evidence": "CancelledRedirect ('/login?error=google_cancelled') and the OnRemoteFailure handler (line 61) are never asserted; CloudApiPipelineTests.cs:643-645 only covers the 'not configured' branch returning google_failed, and no test drives a cancelled remote failure or checks the sign-in screen then shows a plain message while email/password still work.",
+      "description": "R3 acceptance 'If Google sign-in is cancelled or fails, the person returns to the sign-in screen with a plain message and can still use email and password' is only half-proven (failure via not-configured branch; cancellation and the return path untested)."
+    },
+    {
+      "cites": "R9",
+      "severity": "advisory",
+      "file": "front-end/src/modules/Team/TeamPage.tsx",
+      "line": 265,
+      "evidence": "TeamPage renders loading (line 265), error-with-retry (267-278), empty (280-282) and success (284) states, but TeamPage.test.tsx only exercises success ('loads and lists the team for an Admin', line 88); the mocked getMock always resolves with one member.",
+      "description": "R9 acceptance 'The list shows loading, empty, error-with-retry and success states' is covered only for the success state."
+    },
+    {
+      "cites": "UX-002",
+      "severity": "advisory",
+      "file": "front-end/src/modules/Team/__tests__/TeamPage.test.tsx",
+      "line": 88,
+      "evidence": "No test performs an action with the keyboard only (all interactions use fireEvent.click/change) and none asserts a visible label via getByLabelText; the sign-in form (LoginPage.test.tsx) is the same. UX-002 requires visible labels and full keyboard accessibility.",
+      "description": "Keyboard operability and visible-label requirements are untested on the team and sign-in forms (R9 acceptance 'Every action works with the keyboard only, and every field has a visible label')."
+    },
+    {
+      "cites": "R12",
+      "severity": "advisory",
+      "file": "front-end/src/pages/signup.tsx",
+      "line": 1,
+      "evidence": "No component test exists for signup.tsx, forgot-password.tsx, reset-password.tsx or change-password.tsx; the auth test tree has only LoginPage.test.tsx, AuthGuard.test.tsx, AuthApi.test.ts and ApiService.test.ts.",
+      "description": "R12 acceptance 'The sign-in, register, reset and Google screens show loading, error and success states' is proven only for the sign-in screen; register/reset screens have no component tests."
+    },
+    {
+      "cites": "R6",
+      "severity": "advisory",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "line": 489,
+      "evidence": "Teammate_SavedTwiceAtOnce_IsCreatedOnce and the invalid-field tests never force a failure mid-write; registration has such a proof (Register_WithATakenEmail..._AndLeavesNoCompany, line 102) but teammate creation and Google first sign-in (GoogleSignIn.cs:98-110) have no forced-failure test for the reliability NFR 'leaves no partial records'.",
+      "description": "The reliability check for a failed teammate creation / Google first sign-in (no company without a person, no person without a company) is not proven by a forced-failure test."
+    },
+    {
+      "cites": "BOOT-001",
+      "severity": "advisory",
+      "file": "",
+      "line": 0,
+      "evidence": "The app-boots check is not set up in this project (no scripts/smoke/run.mjs), so no start-and-look probe opens the new routes (/api/team, /api/auth/providers, /api/auth/google/start) or reads data through the new cookie sign-in. state.json already records this as the advisory CHK-app-boots finding.",
+      "description": "The feature's new read addresses have not been looked at by a running-app probe."
+    }
+  ],
+  "verifications": []
+}

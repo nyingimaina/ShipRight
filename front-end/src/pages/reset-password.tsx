@@ -1,9 +1,11 @@
 import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { useState, FormEvent } from 'react';
+import { useEffect, useState, FormEvent } from 'react';
 import toast from 'react-hot-toast';
-import { authApi } from '@/shared/auth';
+import ZestTextbox from 'jattac.libs.web.zest-textbox';
+import ZestButton from 'jattac.libs.web.zest-button';
+import { authApi, type ApiError } from '@/shared/auth';
 import { useServerMode } from '@/shared/serverInfo';
 import styles from './Styles/Auth.module.css';
 
@@ -16,7 +18,12 @@ export default function ResetPasswordPage() {
   const [newPassword, setNewPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    if (typeof tokenParam === 'string') setToken(tokenParam);
+  }, [tokenParam]);
 
   if (mode === null) {
     return null;
@@ -30,13 +37,16 @@ export default function ResetPasswordPage() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
+    setFieldErrors({});
     setLoading(true);
     try {
       await authApi.resetPassword(token, newPassword);
       setDone(true);
       toast.success('Password reset successfully');
-    } catch (err: any) {
-      setError(err?.message ?? 'Reset failed');
+    } catch (err) {
+      const apiError = err as ApiError;
+      if (apiError?.errors) setFieldErrors(apiError.errors);
+      setError(apiError?.message ?? 'Reset failed');
     } finally {
       setLoading(false);
     }
@@ -62,41 +72,46 @@ export default function ResetPasswordPage() {
               </div>
             </>
           ) : (
-            <form className={styles.form} onSubmit={handleSubmit}>
-              {error && <div className={styles.error}>{error}</div>}
+            <form className={styles.form} onSubmit={handleSubmit} noValidate>
+              {error && <div className={styles.error} role="alert">{error}</div>}
 
               <div className={styles.field}>
                 <label className={styles.label} htmlFor="token">Reset Token</label>
-                <input
+                <ZestTextbox
                   id="token"
-                  className={styles.input}
                   type="text"
                   placeholder="Paste your reset token here"
                   value={token}
                   onChange={(e) => setToken(e.target.value)}
                   required
                   autoFocus
+                  zest={{ stretch: true }}
                 />
+                {fieldErrors.token && <div className={styles.fieldError} role="alert">{fieldErrors.token[0]}</div>}
               </div>
 
               <div className={styles.field}>
                 <label className={styles.label} htmlFor="newPassword">New Password</label>
-                <input
+                <ZestTextbox
                   id="newPassword"
-                  className={styles.input}
                   type="password"
                   placeholder="At least 8 characters"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   required
-                  minLength={8}
+                  zest={{ stretch: true }}
                 />
+                {fieldErrors.newPassword && <div className={styles.fieldError} role="alert">{fieldErrors.newPassword[0]}</div>}
               </div>
 
-              <button className={styles.submitBtn} type="submit" disabled={loading}>
+              <ZestButton
+                type="submit"
+                disabled={loading}
+                zest={{ semanticType: 'submit', visualOptions: { variant: 'standard', size: 'md', stretch: true } }}
+              >
                 {loading && <span className={styles.spinner} />}
                 {loading ? 'Resetting…' : 'Reset Password'}
-              </button>
+              </ZestButton>
             </form>
           )}
         </div>

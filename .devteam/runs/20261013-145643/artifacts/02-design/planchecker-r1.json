@@ -1,0 +1,13 @@
+{
+  "summary": "The plan is internally consistent except that its only boot proof cannot satisfy the blocking BOOT-001 check app-boots, which is a fixed 'not set up' command the plan explicitly declines to enable.",
+  "conflicts": [
+    {
+      "requirement": "R11",
+      "against": "app-boots",
+      "kind": "check",
+      "owner": "requirements",
+      "why": "R11 (and the reliability non-functional requirement) proves that the app starts only with in-process tests and forbids adding any start-up script or probe file, and the design's finishing step (4) follows this ('prove BOOT-001 with in-process tests only ... with no scripts/smoke runner or other start-up harness'). But BOOT-001 is a blocking rule whose only automated check, app-boots, is a fixed command that runs no project test: it always prints 'Not set up in this project ... no scripts/smoke/run.mjs' and exits 78. In-process tests cannot make it pass, and the requirement's out-of-scope ('Creating a start-up smoke runner (scripts/smoke) or enabling DevTeam's start-up check; that is a separate task') is exactly what the check requires. The baseline already records app-boots passed=false, notRun=true, so BOOT-001 stays unproven and the plan cannot pass it as written; either the requirement must change to allow the start-up check to be enabled, or the builder must decide to waive BOOT-001.",
+      "evidence": "R11 acceptance: 'Automated tests that start the app in-process in desktop/local mode request the home page and read projects data, and both succeed with no sign-in; no new start-up script or probe file is added to the project'. R11 edge: 'Proving start-up must not add files the project's own guidance forbids (no scripts/smoke runner); enabling the separate start-up check is outside this feature'. R11 outOfScope: 'Creating a start-up smoke runner (scripts/smoke) or enabling DevTeam's start-up check; that is a separate task'. Design summary step (4): 'prove BOOT-001 with in-process tests only (BootInProcessTests.cs ...) with no scripts/smoke runner or other start-up harness'. BOOT-001: 'The app must start and work as it was set up: its home page loads, sign-in behaves as configured (none when single-user), and reading data through the web app succeeds.' Check app-boots command: 'echo Not set up in this project: Nothing starts the app and looks at it  no scripts/smoke/run.mjs , so nothing proves the app starts and works yet. && exit 78'. Baseline record for this run: app-boots passed=false, notRun=true, output 'Not set up in this project: Nothing starts the app and looks at it  no scripts/smoke/run.mjs , so nothing proves the app starts and works yet.'"
+    }
+  ]
+}

@@ -1,0 +1,1764 @@
+{
+  "summary": "Round 2: fixed only the listed findings; nothing else was refactored. REV-1 (R11): desktop mode now registers every store with the resolved profile data directory. In Program.cs the build store, server store and the five SQLite resource stores take the resolved dataDir, and because AddSchedulerModule/AddWatchBranchModule still resolve DataDirectory.Resolve() (~/.shipright) their history and overflow stores are re-registered with dataDir right after those calls. A real run of scripts/smoke/run.mjs left the real ~/.shipright byte-identical (diffed the listing before and after). REV-2 (PERF-001): the smoke runner captures stdout/stderr in a fixed-size ring buffer (createLineBuffer) instead of an unbounded array. SEC-1/SEC-2 (API-004, R5): GET /api/resources/registries and GET /api/resources/aws-profiles (list and detail) now need Admin, exactly like credentials, so a Viewer or Operator can no longer receive a plaintext registry password or AWS secret access key/session token. Scripts stay Viewer-readable. This uses the finding's \"or raise the read rule to Admin\" option; the alternative DTO scrub lives in ResourceRouter.cs, which is outside the design scope. QA-1 (R9) and QA-2 (R11): added the missing tests (long name/email layout; runner leaves no process and deletes its temp data dir in both pass and failure modes). Verified: dotnet test 910 passed / 76 skipped / 0 failed; front-end tsc, lint, jest (249) and build pass; node --test on the runner 12/12; node scripts/smoke/run.mjs PASS exit 0 with no change to the real data directory.",
+  "tests": [
+    {
+      "name": "R11 pickFreePort returns a usable loopback port",
+      "file": "scripts/smoke/__tests__/run.test.mjs",
+      "requirements": [
+        "R11"
+      ]
+    },
+    {
+      "name": "R11 buildEnv strips cloud, mail, Google and removed settings",
+      "file": "scripts/smoke/__tests__/run.test.mjs",
+      "requirements": [
+        "R11",
+        "R13"
+      ]
+    },
+    {
+      "name": "R11 resolveServerCommand runs a .mjs fake, a .dll via dotnet and falls back to dotnet run",
+      "file": "scripts/smoke/__tests__/run.test.mjs",
+      "requirements": [
+        "R11"
+      ]
+    },
+    {
+      "name": "R11 resolveContentRoot points at a directory that holds wwwroot/index.html",
+      "file": "scripts/smoke/__tests__/run.test.mjs",
+      "requirements": [
+        "R11"
+      ]
+    },
+    {
+      "name": "R11 waitForReady gives up within the time limit instead of hanging",
+      "file": "scripts/smoke/__tests__/run.test.mjs",
+      "requirements": [
+        "R11"
+      ]
+    },
+    {
+      "name": "R11 runner exits 0 when the app starts, the home page loads and projects are readable",
+      "file": "scripts/smoke/__tests__/run.test.mjs",
+      "requirements": [
+        "R11"
+      ]
+    },
+    {
+      "name": "R11 runner fails with a plain message when the app does not start",
+      "file": "scripts/smoke/__tests__/run.test.mjs",
+      "requirements": [
+        "R11"
+      ]
+    },
+    {
+      "name": "R11 runner fails when the home page does not load",
+      "file": "scripts/smoke/__tests__/run.test.mjs",
+      "requirements": [
+        "R11"
+      ]
+    },
+    {
+      "name": "R11 runner fails when projects data cannot be read",
+      "file": "scripts/smoke/__tests__/run.test.mjs",
+      "requirements": [
+        "R11"
+      ]
+    },
+    {
+      "name": "R11 runner fails when a sign-in route is exposed in desktop mode",
+      "file": "scripts/smoke/__tests__/run.test.mjs",
+      "requirements": [
+        "R11"
+      ]
+    },
+    {
+      "name": "DesktopMode_StartsWithNoCloudSettings_AndReadsDataWithoutSigningIn",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/DesktopModeStartupTests.cs",
+      "requirements": [
+        "R11",
+        "R13"
+      ]
+    },
+    {
+      "name": "DesktopMode_HasNoSignInRoutes_AndNeverAsksForOne",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/DesktopModeStartupTests.cs",
+      "requirements": [
+        "R11"
+      ]
+    },
+    {
+      "name": "Register_CreatesOneCompanyAndOneAdmin_AndSignsThePersonIn",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R2"
+      ]
+    },
+    {
+      "name": "Register_NeverReturnsOrStoresThePasswordInThePlain",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R2"
+      ]
+    },
+    {
+      "name": "Register_WithATakenEmail_AnyCapitalisation_IsRefusedBesideTheEmailField_AndLeavesNoCompany",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R2"
+      ]
+    },
+    {
+      "name": "Register_PressedTwiceAtOnce_CreatesOnlyOneCompanyAndAccount",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R2"
+      ]
+    },
+    {
+      "name": "Register_InvalidFields_AreReportedBesideTheField",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R2"
+      ]
+    },
+    {
+      "name": "Login_WrongPasswordAndUnknownEmail_GiveTheSameGenericMessage",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R1"
+      ]
+    },
+    {
+      "name": "Login_AnyCapitalisationOfTheEmail_Works",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R1"
+      ]
+    },
+    {
+      "name": "Login_FiveWrongPasswords_LockTheAccount_EvenForTheCorrectPasswordAfterwards",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R1"
+      ]
+    },
+    {
+      "name": "OldAccount_SignsInWithTheOldEmailAndPassword_AndItsHashIsUpgraded",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R1"
+      ]
+    },
+    {
+      "name": "Logout_EndsAccessAtOnce",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R10"
+      ]
+    },
+    {
+      "name": "EndpointsWithoutSignIn_AnswerSignInRequired",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R5"
+      ]
+    },
+    {
+      "name": "PublicEndpoints_NeedNoSignIn",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R5"
+      ]
+    },
+    {
+      "name": "OperatorCanReadAndOperate_ButNotChangeSettingsOrServers",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R5"
+      ]
+    },
+    {
+      "name": "ViewerCanOnlyRead_AndSeesNoChangeAllowed",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R5"
+      ]
+    },
+    {
+      "name": "AdminDoesEverything",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R5"
+      ]
+    },
+    {
+      "name": "ARoleChangeAppliesOnThePersonsNextRequest",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R5"
+      ]
+    },
+    {
+      "name": "AnotherCompanysProject_LooksExactlyLikeOneThatDoesNotExist",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R4"
+      ]
+    },
+    {
+      "name": "Lists_OnlyEverShowTheCallersOwnCompany",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R4"
+      ]
+    },
+    {
+      "name": "ChangingOrDeletingAnotherCompanysProject_ChangesNothing",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R4"
+      ]
+    },
+    {
+      "name": "ACompanyIdInAHeaderOrQuery_IsIgnored",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R4"
+      ]
+    },
+    {
+      "name": "AnotherCompanysTeamMember_IsNotFound_ForEveryTeamAction",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R4",
+        "R8"
+      ]
+    },
+    {
+      "name": "Teammate_IsCreatedInTheAdminsCompany_AndNeverEchoesThePassword",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R6"
+      ]
+    },
+    {
+      "name": "Teammate_MustChooseANewPasswordFirst_ThenWorksNormally",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R6",
+        "R10"
+      ]
+    },
+    {
+      "name": "Teammate_WithATakenEmail_IsRefusedBesideTheEmailField_EvenInAnotherCompany",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R6"
+      ]
+    },
+    {
+      "name": "Teammate_InvalidFields_AreReportedBesideTheField",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R6"
+      ]
+    },
+    {
+      "name": "Teammate_SavedTwiceAtOnce_IsCreatedOnce",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R6"
+      ]
+    },
+    {
+      "name": "LastActiveAdmin_CannotBeDemotedOrSwitchedOff",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R7",
+        "R8"
+      ]
+    },
+    {
+      "name": "OnceAnotherAdminExists_TheFirstCanStepDown",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R7"
+      ]
+    },
+    {
+      "name": "TwoAdminsStepDownAtOnce_LeaveTheCompanyWithAnAdmin",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R7"
+      ]
+    },
+    {
+      "name": "RoleChange_WhenSomeoneElseChangedItFirst_IsReportedNotSilentlyOverwritten",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R7"
+      ]
+    },
+    {
+      "name": "SwitchingOff_StopsSignInAndAnOpenSession_KeepsEverything_AndCanBeUndone",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R8"
+      ]
+    },
+    {
+      "name": "SwitchingOffOrOn_Twice_DoesNothingAndShowsNoError",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R8"
+      ]
+    },
+    {
+      "name": "BuildStartedByASwitchedOffTeammate_StillShowsTheirName",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R8"
+      ]
+    },
+    {
+      "name": "TeamList_IsPaged_OrderedByName_WithATotal_AndAServerSideMaximum",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R9"
+      ]
+    },
+    {
+      "name": "CompanyWithOnlyItsAdmin_ListsThatPerson",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R9"
+      ]
+    },
+    {
+      "name": "TeamList_With50People_AndSignIn_AreEachUnderOneSecond",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R9"
+      ]
+    },
+    {
+      "name": "ForgotPassword_SaysTheSameThing_WhetherOrNotTheEmailExists_AndNeverShowsTheLink",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R10"
+      ]
+    },
+    {
+      "name": "ResetLink_WorksOnce_ThenSaysItIsUsedOrExpired",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R10"
+      ]
+    },
+    {
+      "name": "ResetLink_WithAGarbageToken_IsRefusedPlainly",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R10"
+      ]
+    },
+    {
+      "name": "ResettingForASwitchedOffAccount_NeitherWorksNorSwitchesItOn",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R10"
+      ]
+    },
+    {
+      "name": "ResetRequests_AreRateLimited",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R10"
+      ]
+    },
+    {
+      "name": "Google_WhenNotConfigured_IsOffAndEmailSignInStillWorks",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R3"
+      ]
+    },
+    {
+      "name": "OldCookieOrTokenFromBeforeTheSwitch_GetsAPlainSignInRequired_NotAnErrorPage",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R12"
+      ]
+    },
+    {
+      "name": "OldAuthEndpoints_AreGone",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R12"
+      ]
+    },
+    {
+      "name": "ErrorResponses_NeverContainSecrets",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiIdentityTests.cs",
+      "requirements": [
+        "R1",
+        "R3",
+        "R6",
+        "R10"
+      ]
+    },
+    {
+      "name": "WithoutSignIn_EveryEndpoint_AnswersSignInRequired",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R5"
+      ]
+    },
+    {
+      "name": "PublicEndpoints_NeedNoSignIn",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R5"
+      ]
+    },
+    {
+      "name": "HealthCheck_WorksWithoutSignIn_AndCountsNothingOfAnyCompany",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R5",
+        "R11"
+      ]
+    },
+    {
+      "name": "OldTokenOrCookieFromBeforeTheSwitch_GetsAPlainSignInRequired",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R12"
+      ]
+    },
+    {
+      "name": "OldAuthEndpoints_NoLongerIssueTokens",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R12"
+      ]
+    },
+    {
+      "name": "Register_SignsThePersonInWithACookie_AsAdminOfTheirOwnCompany_AndReturnsNoToken",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R2",
+        "R12"
+      ]
+    },
+    {
+      "name": "Register_StoresOnlyAHash",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R2"
+      ]
+    },
+    {
+      "name": "Register_WithATakenEmail_AnyCapitalisation_IsRefusedBesideTheEmailField",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R2"
+      ]
+    },
+    {
+      "name": "Register_PressedManyTimesAtOnce_CreatesOneAccount",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R2"
+      ]
+    },
+    {
+      "name": "Register_InvalidFields_ComeBackAsProblemDetailsWithFieldErrors",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R2"
+      ]
+    },
+    {
+      "name": "Login_WrongPasswordAndUnknownEmail_LookTheSame",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R1"
+      ]
+    },
+    {
+      "name": "Login_AnyCapitalisationOfTheEmail_Works",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R1"
+      ]
+    },
+    {
+      "name": "Login_FiveWrongPasswords_LockTheAccount_SoTheSixthTryFailsEvenWithTheRightPassword",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R1"
+      ]
+    },
+    {
+      "name": "OldAccount_SignsInWithTheOldPassword_AndItsHashIsQuietlyUpgraded",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R1"
+      ]
+    },
+    {
+      "name": "Logout_EndsAccessAtOnce",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R10"
+      ]
+    },
+    {
+      "name": "ErrorResponses_NeverContainSecrets",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R1",
+        "R3",
+        "R6",
+        "R10"
+      ]
+    },
+    {
+      "name": "Viewer_CanRead_ButEveryChangeIsRefusedWithAClearMessage",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R5"
+      ]
+    },
+    {
+      "name": "Operator_CanBuildAndDeploy_ButNotChangeSettingsOrServers",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R5"
+      ]
+    },
+    {
+      "name": "Admin_IsNeverRefused",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R5"
+      ]
+    },
+    {
+      "name": "Queries_AreFilteredByTheSignedInPersonsCompany_NotByWhatTheRequestSays",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R4"
+      ]
+    },
+    {
+      "name": "TwoCompanies_EachQueryOnlyWithTheirOwnCompanyId",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R4"
+      ]
+    },
+    {
+      "name": "APersonWithATemporaryPassword_CanDoNothingElseUntilTheyChooseANewOne",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R5",
+        "R6",
+        "R10"
+      ]
+    },
+    {
+      "name": "ChangePassword_ShortNewPassword_IsReportedBesideTheField",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R10"
+      ]
+    },
+    {
+      "name": "AdminCreatesATeammate_InTheirOwnCompany_WhoMustChangeThePasswordAtFirstSignIn",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R6"
+      ]
+    },
+    {
+      "name": "Teammate_WithATakenEmail_IsRefusedBesideTheEmailField_AndCreatesNothing",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R6"
+      ]
+    },
+    {
+      "name": "Teammate_InvalidFields_AreReportedBesideTheField",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R6"
+      ]
+    },
+    {
+      "name": "OperatorsAndViewers_CannotUseTheTeamEndpoints",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R5",
+        "R6"
+      ]
+    },
+    {
+      "name": "TeamList_RunsAsAPagedQueryForTheAdminsCompany",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R9"
+      ]
+    },
+    {
+      "name": "ASwitchedOffPerson_CannotSignIn_AndIsToldWhy",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R8"
+      ]
+    },
+    {
+      "name": "APersonSwitchedOffWhileSignedIn_LosesAccessOnTheNextRequest",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R5",
+        "R8"
+      ]
+    },
+    {
+      "name": "ARoleChangedWhileSignedIn_AppliesOnTheNextRequest",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R5"
+      ]
+    },
+    {
+      "name": "ForgotPassword_AnswersTheSameForKnownAndUnknownEmails_AndSendsOnlyToTheKnownOne",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R10"
+      ]
+    },
+    {
+      "name": "ResetLink_WorksOnce_AndTheOldPasswordStopsWorking",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R10"
+      ]
+    },
+    {
+      "name": "ResetLink_ForASwitchedOffAccount_DoesNotWork_AndDoesNotSwitchItOn",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R10"
+      ]
+    },
+    {
+      "name": "ResetLink_Garbage_IsRefusedPlainly",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R10"
+      ]
+    },
+    {
+      "name": "ResetRequests_AreRateLimited",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R10"
+      ]
+    },
+    {
+      "name": "Google_WhenNotConfigured_IsOff_AndEmailSignInStillWorks",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/CloudApiPipelineTests.cs",
+      "requirements": [
+        "R3"
+      ]
+    },
+    {
+      "name": "FirstTimePerson_BecomesAdminOfANewCompanyNamedAfterThem",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/GoogleSignInTests.cs",
+      "requirements": [
+        "R3"
+      ]
+    },
+    {
+      "name": "SigningInTwice_FindsTheSameAccount_AndCreatesNoSecondCompany",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/GoogleSignInTests.cs",
+      "requirements": [
+        "R3"
+      ]
+    },
+    {
+      "name": "ADoubleSignInAtOnce_CreatesOnlyOneCompany",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/GoogleSignInTests.cs",
+      "requirements": [
+        "R3"
+      ]
+    },
+    {
+      "name": "APersonWithAnExistingAccount_IsSignedInToIt_WithoutANewCompany",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/GoogleSignInTests.cs",
+      "requirements": [
+        "R3"
+      ]
+    },
+    {
+      "name": "ASwitchedOffPerson_IsStillFlaggedOff_SoTheSignInIsRefused",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/GoogleSignInTests.cs",
+      "requirements": [
+        "R3",
+        "R8"
+      ]
+    },
+    {
+      "name": "ASwitchedOffPerson_AtTheGoogleCallback_IsRefused_AndNoSessionIsCreated",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/GoogleSignInTests.cs",
+      "requirements": [
+        "R3",
+        "R8"
+      ]
+    },
+    {
+      "name": "AnEmailGoogleHasNotVerified_IsRefused",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/GoogleSignInTests.cs",
+      "requirements": [
+        "R3"
+      ]
+    },
+    {
+      "name": "MissingSubjectOrEmail_IsRefused",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/GoogleSignInTests.cs",
+      "requirements": [
+        "R3"
+      ]
+    },
+    {
+      "name": "AVerifiedEmail_IsAccepted_WithItsStableId",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/GoogleSignInTests.cs",
+      "requirements": [
+        "R3"
+      ]
+    },
+    {
+      "name": "APersonWithNoDisplayName_GetsACompanyNamedAfterTheirEmail",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/GoogleSignInTests.cs",
+      "requirements": [
+        "R3"
+      ]
+    },
+    {
+      "name": "Options_AreFiveAttemptsFiveMinutesAndEightCharacters",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/IdentityPipelineTests.cs",
+      "requirements": [
+        "R1"
+      ]
+    },
+    {
+      "name": "Cookie_LastsSevenDays_IsHttpOnly_AndRechecksTheAccountEveryMinute",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/IdentityPipelineTests.cs",
+      "requirements": [
+        "R10"
+      ]
+    },
+    {
+      "name": "SixthAttempt_WithinFiveMinutes_IsRefused_EvenWithTheCorrectPassword",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/IdentityPipelineTests.cs",
+      "requirements": [
+        "R1"
+      ]
+    },
+    {
+      "name": "CorrectPassword_ClearsEarlierFailures",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/IdentityPipelineTests.cs",
+      "requirements": [
+        "R1"
+      ]
+    },
+    {
+      "name": "OldAccount_SignsInWithOldPassword_AndIsQuietlyUpgraded",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/IdentityPipelineTests.cs",
+      "requirements": [
+        "R1"
+      ]
+    },
+    {
+      "name": "OldAccount_WithWrongPassword_IsRefused_AndKeepsItsOldHash",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/IdentityPipelineTests.cs",
+      "requirements": [
+        "R1"
+      ]
+    },
+    {
+      "name": "Email_IsFoundWhateverTheCapitals",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/IdentityPipelineTests.cs",
+      "requirements": [
+        "R1"
+      ]
+    },
+    {
+      "name": "SignInClaims_CarryCompanyAndRole_AndFlagATemporaryPassword",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/IdentityPipelineTests.cs",
+      "requirements": [
+        "R4",
+        "R6"
+      ]
+    },
+    {
+      "name": "ResetToken_WorksOnce_ThenIsRefused",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/IdentityPipelineTests.cs",
+      "requirements": [
+        "R10"
+      ]
+    },
+    {
+      "name": "ResetToken_ForAnotherPerson_IsRefused",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/IdentityPipelineTests.cs",
+      "requirements": [
+        "R10"
+      ]
+    },
+    {
+      "name": "ResetPassword_DoesNotSwitchASwitchedOffAccountBackOn",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/IdentityPipelineTests.cs",
+      "requirements": [
+        "R10"
+      ]
+    },
+    {
+      "name": "UserStore_NeverWritesRoleCompanyOrActive_WhenSavingCredentials",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/IdentityPipelineTests.cs",
+      "requirements": [
+        "R1",
+        "R4"
+      ]
+    },
+    {
+      "name": "UserStore_CannotDeleteAnAccount",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/IdentityPipelineTests.cs",
+      "requirements": [
+        "R8"
+      ]
+    },
+    {
+      "name": "UserStore_HasOneRolePerPerson",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/IdentityPipelineTests.cs",
+      "requirements": [
+        "R4",
+        "R5"
+      ]
+    },
+    {
+      "name": "Google_IsOffUntilConfigured",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/IdentityPipelineTests.cs",
+      "requirements": [
+        "R3"
+      ]
+    },
+    {
+      "name": "Google_RequestsOnlyIdentityScopes_AndSavesNoTokens",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/IdentityPipelineTests.cs",
+      "requirements": [
+        "R3"
+      ]
+    },
+    {
+      "name": "Registration_PutsNewPeopleInTheirOwnCompany",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/IdentityPipelineTests.cs",
+      "requirements": [
+        "R2",
+        "R4"
+      ]
+    },
+    {
+      "name": "Registration_CreatesOneCompanyAndOneAdmin_WithAHashedPassword",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/IdentityPipelineTests.cs",
+      "requirements": [
+        "R2"
+      ]
+    },
+    {
+      "name": "Teammate_IsCreatedInTheAdminsCompany_AsMustChangePassword",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/IdentityPipelineTests.cs",
+      "requirements": [
+        "R6"
+      ]
+    },
+    {
+      "name": "LegacyHash_WithCorrectPassword_SucceedsAndAsksForRehash",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/LegacyAwarePasswordHasherTests.cs",
+      "requirements": [
+        "R1"
+      ]
+    },
+    {
+      "name": "LegacyHash_WithWrongPassword_Fails",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/LegacyAwarePasswordHasherTests.cs",
+      "requirements": [
+        "R1"
+      ]
+    },
+    {
+      "name": "NewHash_RoundTrips_AndIsNotTakenForLegacy",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/LegacyAwarePasswordHasherTests.cs",
+      "requirements": [
+        "R1"
+      ]
+    },
+    {
+      "name": "EmptyOrGarbageHash_Fails_WithoutThrowing",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/LegacyAwarePasswordHasherTests.cs",
+      "requirements": [
+        "R1"
+      ]
+    },
+    {
+      "name": "Register_WithValidFields_HasNoErrors",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/IdentityValidationTests.cs",
+      "requirements": [
+        "R2"
+      ]
+    },
+    {
+      "name": "Register_BadEmail_IsReportedBesideTheEmailField",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/IdentityValidationTests.cs",
+      "requirements": [
+        "R2"
+      ]
+    },
+    {
+      "name": "Register_ShortOrBlankPassword_IsReportedBesideThePasswordField",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/IdentityValidationTests.cs",
+      "requirements": [
+        "R2"
+      ]
+    },
+    {
+      "name": "Register_EightCharacterPassword_IsAccepted",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/IdentityValidationTests.cs",
+      "requirements": [
+        "R2"
+      ]
+    },
+    {
+      "name": "Register_NamesOver200Characters_AreRefused_BothFields",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/IdentityValidationTests.cs",
+      "requirements": [
+        "R2"
+      ]
+    },
+    {
+      "name": "Register_BlankName_IsMissing_ButCompanyNameMayBeLeftOut",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/IdentityValidationTests.cs",
+      "requirements": [
+        "R2"
+      ]
+    },
+    {
+      "name": "Teammate_NeedsEmailNameTemporaryPasswordAndAKnownRole",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/IdentityValidationTests.cs",
+      "requirements": [
+        "R6"
+      ]
+    },
+    {
+      "name": "Teammate_UnknownRole_IsRefused_KnownRolesAccepted",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/IdentityValidationTests.cs",
+      "requirements": [
+        "R6"
+      ]
+    },
+    {
+      "name": "RoleChange_NeedsAKnownRole",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/IdentityValidationTests.cs",
+      "requirements": [
+        "R7"
+      ]
+    },
+    {
+      "name": "RequiredRole_MatchesTheDecidedPermissions",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/RoleAccessRulesTests.cs",
+      "requirements": [
+        "R5"
+      ]
+    },
+    {
+      "name": "HealthCheckAndWebAppFiles_ArePublic",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/RoleAccessRulesTests.cs",
+      "requirements": [
+        "R5",
+        "R11"
+      ]
+    },
+    {
+      "name": "HealthLookalikes_AreNotPublic",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/RoleAccessRulesTests.cs",
+      "requirements": [
+        "R5"
+      ]
+    },
+    {
+      "name": "UnknownApiRoute_NeedsAtLeastViewerToRead_AndOperatorToWrite",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/RoleAccessRulesTests.cs",
+      "requirements": [
+        "R5"
+      ]
+    },
+    {
+      "name": "RankOrder_IsAdminOverOperatorOverViewer",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/RoleAccessRulesTests.cs",
+      "requirements": [
+        "R5"
+      ]
+    },
+    {
+      "name": "TemporaryPassword_AllowsOnlyChangePasswordMeAndLogout",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/RoleAccessRulesTests.cs",
+      "requirements": [
+        "R5",
+        "R6"
+      ]
+    },
+    {
+      "name": "EveryApiRoute_HasARequiredRole_ExceptTheHealthCheck",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/RoleAccessRulesTests.cs",
+      "requirements": [
+        "R5"
+      ]
+    },
+    {
+      "name": "OnlyTheListedEndpoints_AreMarkedPublic",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/RoleAccessRulesTests.cs",
+      "requirements": [
+        "R5"
+      ]
+    },
+    {
+      "name": "TeamRoutes_AreAllAdminOnly",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/RoleAccessRulesTests.cs",
+      "requirements": [
+        "R5",
+        "R6"
+      ]
+    },
+    {
+      "name": "AuthEndpoints_RequireTheirReasonedPublicMarker_AndRateLimits",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/RoleAccessRulesTests.cs",
+      "requirements": [
+        "R5",
+        "R10"
+      ]
+    },
+    {
+      "name": "List_IsPagedInSql_OrderedByName_AndFilteredByCompany",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/TeamRepositoryTests.cs",
+      "requirements": [
+        "R9",
+        "R4"
+      ]
+    },
+    {
+      "name": "List_NeverSelectsPasswordHashes",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/TeamRepositoryTests.cs",
+      "requirements": [
+        "R9"
+      ]
+    },
+    {
+      "name": "PageSizes_HaveAServerSideMaximum",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/TeamRepositoryTests.cs",
+      "requirements": [
+        "R9"
+      ]
+    },
+    {
+      "name": "ChangeRole_KeepsALastAdminGuard_AndCompanyFilter_InTheSameUpdate",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/TeamRepositoryTests.cs",
+      "requirements": [
+        "R7"
+      ]
+    },
+    {
+      "name": "ChangeRole_Applied_WhenTheGuardedUpdateChangedARow",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/TeamRepositoryTests.cs",
+      "requirements": [
+        "R7"
+      ]
+    },
+    {
+      "name": "ChangeRole_OfSomeoneInAnotherCompany_IsNotFound",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/TeamRepositoryTests.cs",
+      "requirements": [
+        "R4",
+        "R7"
+      ]
+    },
+    {
+      "name": "ChangeRole_RefusedForTheLastAdmin_IsReportedAsLastAdmin",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/TeamRepositoryTests.cs",
+      "requirements": [
+        "R7"
+      ]
+    },
+    {
+      "name": "ChangeRole_ToTheRoleTheyAlreadyHave_DoesNothing",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/TeamRepositoryTests.cs",
+      "requirements": [
+        "R7"
+      ]
+    },
+    {
+      "name": "ChangeRole_WhenSomeoneElseChangedItFirst_IsAConflictNotASilentOverwrite",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/TeamRepositoryTests.cs",
+      "requirements": [
+        "R7"
+      ]
+    },
+    {
+      "name": "SetActive_UpdateKeepsCompanyFilterAndLastAdminGuard_AndRotatesTheStamp",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/TeamRepositoryTests.cs",
+      "requirements": [
+        "R8"
+      ]
+    },
+    {
+      "name": "SetActive_OnSomeoneAlreadyOn_DoesNothingWithoutError",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/TeamRepositoryTests.cs",
+      "requirements": [
+        "R8"
+      ]
+    },
+    {
+      "name": "SetActive_OffForTheLastActiveAdmin_IsRefused",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/TeamRepositoryTests.cs",
+      "requirements": [
+        "R8"
+      ]
+    },
+    {
+      "name": "SetActive_OfSomeoneInAnotherCompany_IsNotFound",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/TeamRepositoryTests.cs",
+      "requirements": [
+        "R4",
+        "R8"
+      ]
+    },
+    {
+      "name": "ExampleFile_ListsExactlyTheAppsSettings",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/SettingsAgreementTests.cs",
+      "requirements": [
+        "R13"
+      ]
+    },
+    {
+      "name": "DockerCompose_ListsExactlyTheAppsSettings",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/SettingsAgreementTests.cs",
+      "requirements": [
+        "R13"
+      ]
+    },
+    {
+      "name": "RemovedSettings_AppearNowhereInTheThreeLists",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/SettingsAgreementTests.cs",
+      "requirements": [
+        "R13"
+      ]
+    },
+    {
+      "name": "EverySetting_IsReadSomewhereInTheRunningApp",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/SettingsAgreementTests.cs",
+      "requirements": [
+        "R13"
+      ]
+    },
+    {
+      "name": "ExampleFile_HoldsNoRealLookingSecrets",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/SettingsAgreementTests.cs",
+      "requirements": [
+        "R13"
+      ]
+    },
+    {
+      "name": "LegacyHash_Is36BytesOfBase64",
+      "file": "back-end/ShipRight.Tests/Modules/Auth/AuthCharacterizationTests.cs",
+      "requirements": [
+        "R1"
+      ]
+    },
+    {
+      "name": "MailSender_WithoutMailSettings_NamesTheMissingSetting",
+      "file": "back-end/ShipRight.Tests/Modules/Auth/AuthCharacterizationTests.cs",
+      "requirements": [
+        "R10",
+        "R13"
+      ]
+    },
+    {
+      "name": "ValidateCloudSettings_MissingConnection_NamesSettingNotValue",
+      "file": "back-end/ShipRight.Tests/Modules/Auth/AuthCharacterizationTests.cs",
+      "requirements": [
+        "R13"
+      ]
+    },
+    {
+      "name": "ValidateCloudSettings_MissingCors_NamesSetting",
+      "file": "back-end/ShipRight.Tests/Modules/Auth/AuthCharacterizationTests.cs",
+      "requirements": [
+        "R13"
+      ]
+    },
+    {
+      "name": "ValidateCloudSettings_PlaceholderPassword_IsRefusedWithoutEchoingIt",
+      "file": "back-end/ShipRight.Tests/Modules/Auth/AuthCharacterizationTests.cs",
+      "requirements": [
+        "R13"
+      ]
+    },
+    {
+      "name": "ValidateCloudSettings_RemovedSettingsLeftInEnvironment_AreIgnored",
+      "file": "back-end/ShipRight.Tests/Modules/Auth/AuthCharacterizationTests.cs",
+      "requirements": [
+        "R13"
+      ]
+    },
+    {
+      "name": "ValidateCloudSettings_GoogleOptional_ButNotHalfSet",
+      "file": "back-end/ShipRight.Tests/Modules/Auth/AuthCharacterizationTests.cs",
+      "requirements": [
+        "R3",
+        "R13"
+      ]
+    },
+    {
+      "name": "EveryUpScript_HasADownScript_WithTheSameNumberAndName",
+      "file": "back-end/ShipRight.Tests/Database/MigrationScriptsTests.cs",
+      "requirements": [
+        "R12"
+      ]
+    },
+    {
+      "name": "UpScripts_AreEmbedded_InNumericOrder",
+      "file": "back-end/ShipRight.Tests/Database/MigrationScriptsTests.cs",
+      "requirements": [
+        "R12"
+      ]
+    },
+    {
+      "name": "UpScripts_CanBeRunAgain_EveryStatementIsGuarded",
+      "file": "back-end/ShipRight.Tests/Database/MigrationScriptsTests.cs",
+      "requirements": [
+        "R11"
+      ]
+    },
+    {
+      "name": "IdentityUpgrade_DeletesNoAccountOrCompany",
+      "file": "back-end/ShipRight.Tests/Database/MigrationScriptsTests.cs",
+      "requirements": [
+        "R12"
+      ]
+    },
+    {
+      "name": "IdentityUpgrade_MakesEveryExistingAccountAnAdmin_AndKeepsOldPasswordHashes",
+      "file": "back-end/ShipRight.Tests/Database/MigrationScriptsTests.cs",
+      "requirements": [
+        "R1",
+        "R12"
+      ]
+    },
+    {
+      "name": "IdentityUpgrade_GivesOrphanedCloudRowsToTheOldestCompany",
+      "file": "back-end/ShipRight.Tests/Database/MigrationScriptsTests.cs",
+      "requirements": [
+        "R4",
+        "R12"
+      ]
+    },
+    {
+      "name": "IdentityTables_AreIndexedForUniquenessAndLookup",
+      "file": "back-end/ShipRight.Tests/Database/MigrationScriptsTests.cs",
+      "requirements": [
+        "R2",
+        "R4"
+      ]
+    },
+    {
+      "name": "LegacyPieces_AreDroppedOnlyInTheSecondMigration",
+      "file": "back-end/ShipRight.Tests/Database/MigrationScriptsTests.cs",
+      "requirements": [
+        "R12",
+        "R13"
+      ]
+    },
+    {
+      "name": "DownScripts_PutTheOldShapeBack",
+      "file": "back-end/ShipRight.Tests/Database/MigrationScriptsTests.cs",
+      "requirements": [
+        "R12"
+      ]
+    },
+    {
+      "name": "FreshInstallSchema_HasTheFinalShape_AndMarksEveryMigrationDone",
+      "file": "back-end/ShipRight.Tests/Database/MigrationScriptsTests.cs",
+      "requirements": [
+        "R12"
+      ]
+    },
+    {
+      "name": "Upgrade_KeepsEveryAccountAndCompany_MakesThemAdmins_AndKeepsTheOldPasswordHash",
+      "file": "back-end/ShipRight.Tests/Database/MigrationUpgradeTests.cs",
+      "requirements": [
+        "R1",
+        "R12"
+      ]
+    },
+    {
+      "name": "Upgrade_GivesOrphanedRowsToTheOldestCompany_AndLosesNoProject",
+      "file": "back-end/ShipRight.Tests/Database/MigrationUpgradeTests.cs",
+      "requirements": [
+        "R4",
+        "R11",
+        "R12"
+      ]
+    },
+    {
+      "name": "Upgrade_RunTwice_LeavesTheDataIntact",
+      "file": "back-end/ShipRight.Tests/Database/MigrationUpgradeTests.cs",
+      "requirements": [
+        "R11"
+      ]
+    },
+    {
+      "name": "Upgrade_RerunningTheFirstScriptByHand_IsHarmless",
+      "file": "back-end/ShipRight.Tests/Database/MigrationUpgradeTests.cs",
+      "requirements": [
+        "R11"
+      ]
+    },
+    {
+      "name": "Upgrade_DropsTheOldTokenTablesAndColumns_ButAddsIdentityTables",
+      "file": "back-end/ShipRight.Tests/Database/MigrationUpgradeTests.cs",
+      "requirements": [
+        "R12"
+      ]
+    },
+    {
+      "name": "Upgrade_EnforcesUniqueEmailsRegardlessOfCapitals",
+      "file": "back-end/ShipRight.Tests/Database/MigrationUpgradeTests.cs",
+      "requirements": [
+        "R2"
+      ]
+    },
+    {
+      "name": "FreshInstall_FromSchemaSql_NeedsNoMigration",
+      "file": "back-end/ShipRight.Tests/Database/MigrationUpgradeTests.cs",
+      "requirements": [
+        "R12"
+      ]
+    },
+    {
+      "name": "DownScripts_RestoreTheOldShape_WithoutLosingAccounts",
+      "file": "back-end/ShipRight.Tests/Database/MigrationUpgradeTests.cs",
+      "requirements": [
+        "R12"
+      ]
+    },
+    {
+      "name": "ProjectStore_List_IsFilteredByCompanyInSql",
+      "file": "back-end/ShipRight.Tests/Modules/Tenancy/CompanyScopedStoreTests.cs",
+      "requirements": [
+        "R4"
+      ]
+    },
+    {
+      "name": "ProjectStore_GetById_FiltersByIdAndCompanyTogether",
+      "file": "back-end/ShipRight.Tests/Modules/Tenancy/CompanyScopedStoreTests.cs",
+      "requirements": [
+        "R4"
+      ]
+    },
+    {
+      "name": "ProjectStore_Delete_CannotReachAnotherCompany",
+      "file": "back-end/ShipRight.Tests/Modules/Tenancy/CompanyScopedStoreTests.cs",
+      "requirements": [
+        "R4"
+      ]
+    },
+    {
+      "name": "ProjectStore_NewProject_IsStampedWithTheCallersCompany",
+      "file": "back-end/ShipRight.Tests/Modules/Tenancy/CompanyScopedStoreTests.cs",
+      "requirements": [
+        "R4"
+      ]
+    },
+    {
+      "name": "ProjectStore_ExistingProject_UpdateIsFilteredByCompany",
+      "file": "back-end/ShipRight.Tests/Modules/Tenancy/CompanyScopedStoreTests.cs",
+      "requirements": [
+        "R4"
+      ]
+    },
+    {
+      "name": "Stores_WithNoCompany_FailClosed",
+      "file": "back-end/ShipRight.Tests/Modules/Tenancy/CompanyScopedStoreTests.cs",
+      "requirements": [
+        "R4"
+      ]
+    },
+    {
+      "name": "Stores_InSystemScope_ReadAcrossCompanies_ButOnlyThere",
+      "file": "back-end/ShipRight.Tests/Modules/Tenancy/CompanyScopedStoreTests.cs",
+      "requirements": [
+        "R4",
+        "R11"
+      ]
+    },
+    {
+      "name": "SystemScopes_Nest_AndLeavingTheInnerOneKeepsTheOuter",
+      "file": "back-end/ShipRight.Tests/Modules/Tenancy/CompanyScopedStoreTests.cs",
+      "requirements": [
+        "R4"
+      ]
+    },
+    {
+      "name": "Counts_ForACallWithNoCompany_AreZero_WithoutTouchingTheDatabase",
+      "file": "back-end/ShipRight.Tests/Modules/Tenancy/CompanyScopedStoreTests.cs",
+      "requirements": [
+        "R4"
+      ]
+    },
+    {
+      "name": "Counts_ForASignedInPerson_AreCountedInSqlForTheirCompany",
+      "file": "back-end/ShipRight.Tests/Modules/Tenancy/CompanyScopedStoreTests.cs",
+      "requirements": [
+        "R4"
+      ]
+    },
+    {
+      "name": "ServerStore_IsFilteredByCompany",
+      "file": "back-end/ShipRight.Tests/Modules/Tenancy/CompanyScopedStoreTests.cs",
+      "requirements": [
+        "R4"
+      ]
+    },
+    {
+      "name": "BuildStore_ListCountAndGet_AreFilteredByCompany",
+      "file": "back-end/ShipRight.Tests/Modules/Tenancy/CompanyScopedStoreTests.cs",
+      "requirements": [
+        "R4"
+      ]
+    },
+    {
+      "name": "BuildStore_CountIsDoneInSql_NotByLoadingEveryBuild",
+      "file": "back-end/ShipRight.Tests/Modules/Tenancy/CompanyScopedStoreTests.cs",
+      "requirements": [
+        "R4"
+      ]
+    },
+    {
+      "name": "BuildStore_StartedByBackgroundWork_TakesTheCompanyOfItsProject",
+      "file": "back-end/ShipRight.Tests/Modules/Tenancy/CompanyScopedStoreTests.cs",
+      "requirements": [
+        "R4",
+        "R11"
+      ]
+    },
+    {
+      "name": "ResourceStores_AreFilteredByCompany",
+      "file": "back-end/ShipRight.Tests/Modules/Tenancy/CompanyScopedStoreTests.cs",
+      "requirements": [
+        "R4"
+      ]
+    },
+    {
+      "name": "ResourceStore_NewResource_IsStampedWithTheCallersCompany",
+      "file": "back-end/ShipRight.Tests/Modules/Tenancy/CompanyScopedStoreTests.cs",
+      "requirements": [
+        "R4"
+      ]
+    },
+    {
+      "name": "HistoryStores_AreFilteredByCompany",
+      "file": "back-end/ShipRight.Tests/Modules/Tenancy/CompanyScopedStoreTests.cs",
+      "requirements": [
+        "R4"
+      ]
+    },
+    {
+      "name": "HistoryStore_WrittenByScheduler_TakesTheCompanyOfItsProject",
+      "file": "back-end/ShipRight.Tests/Modules/Tenancy/CompanyScopedStoreTests.cs",
+      "requirements": [
+        "R4",
+        "R11"
+      ]
+    },
+    {
+      "name": "Middleware_TakesCompanyFromTheClaim_NotFromHeadersOrQuery",
+      "file": "back-end/ShipRight.Tests/Modules/Tenancy/CompanyScopedStoreTests.cs",
+      "requirements": [
+        "R4"
+      ]
+    },
+    {
+      "name": "Middleware_WithNoClaim_LeavesNoCompany",
+      "file": "back-end/ShipRight.Tests/Modules/Tenancy/CompanyScopedStoreTests.cs",
+      "requirements": [
+        "R4"
+      ]
+    },
+    {
+      "name": "returns the parsed session body on success and sends the identity cookie",
+      "file": "front-end/src/shared/auth/__tests__/AuthApi.test.ts",
+      "requirements": [
+        "R1",
+        "R12"
+      ]
+    },
+    {
+      "name": "throws a readable ApiError when the server returns an empty 404 body",
+      "file": "front-end/src/shared/auth/__tests__/AuthApi.test.ts",
+      "requirements": [
+        "R12"
+      ]
+    },
+    {
+      "name": "throws the error object returned by the server, including field errors",
+      "file": "front-end/src/shared/auth/__tests__/AuthApi.test.ts",
+      "requirements": [
+        "R2",
+        "R6"
+      ]
+    },
+    {
+      "name": "resolves providers and the google start url",
+      "file": "front-end/src/shared/auth/__tests__/AuthApi.test.ts",
+      "requirements": [
+        "R3"
+      ]
+    },
+    {
+      "name": "calls change-password with both passwords and returns the refreshed session",
+      "file": "front-end/src/shared/auth/__tests__/AuthApi.test.ts",
+      "requirements": [
+        "R10"
+      ]
+    },
+    {
+      "name": "asks the server who is signed in and shows the page to an authenticated person",
+      "file": "front-end/src/shared/auth/__tests__/AuthGuard.test.tsx",
+      "requirements": [
+        "R5"
+      ]
+    },
+    {
+      "name": "redirects to /login when the identity cookie is rejected on a protected page",
+      "file": "front-end/src/shared/auth/__tests__/AuthGuard.test.tsx",
+      "requirements": [
+        "R12"
+      ]
+    },
+    {
+      "name": "renders a public page without needing a session",
+      "file": "front-end/src/shared/auth/__tests__/AuthGuard.test.tsx",
+      "requirements": [
+        "R2",
+        "R3"
+      ]
+    },
+    {
+      "name": "sends an authenticated person away from /login to /projects",
+      "file": "front-end/src/shared/auth/__tests__/AuthGuard.test.tsx",
+      "requirements": [
+        "R1"
+      ]
+    },
+    {
+      "name": "forces a person with a temporary password to change-password",
+      "file": "front-end/src/shared/auth/__tests__/AuthGuard.test.tsx",
+      "requirements": [
+        "R6",
+        "R10"
+      ]
+    },
+    {
+      "name": "skips the identity check and renders children in desktop mode",
+      "file": "front-end/src/shared/auth/__tests__/AuthGuard.test.tsx",
+      "requirements": [
+        "R11"
+      ]
+    },
+    {
+      "name": "renders email and password textboxes and a submit button with semantic type",
+      "file": "front-end/src/shared/auth/__tests__/LoginPage.test.tsx",
+      "requirements": [
+        "R2"
+      ]
+    },
+    {
+      "name": "calls login, stores the session and redirects on success",
+      "file": "front-end/src/shared/auth/__tests__/LoginPage.test.tsx",
+      "requirements": [
+        "R1"
+      ]
+    },
+    {
+      "name": "sends a person with a temporary password to change-password",
+      "file": "front-end/src/shared/auth/__tests__/LoginPage.test.tsx",
+      "requirements": [
+        "R6",
+        "R10"
+      ]
+    },
+    {
+      "name": "shows an error message when login fails",
+      "file": "front-end/src/shared/auth/__tests__/LoginPage.test.tsx",
+      "requirements": [
+        "R1"
+      ]
+    },
+    {
+      "name": "shows the Google button only when the server has Google configured",
+      "file": "front-end/src/shared/auth/__tests__/LoginPage.test.tsx",
+      "requirements": [
+        "R3"
+      ]
+    },
+    {
+      "name": "keeps email sign-in available and explains when Google is not configured",
+      "file": "front-end/src/shared/auth/__tests__/LoginPage.test.tsx",
+      "requirements": [
+        "R3"
+      ]
+    },
+    {
+      "name": "skips login entirely and redirects to projects in desktop mode",
+      "file": "front-end/src/shared/auth/__tests__/LoginPage.test.tsx",
+      "requirements": [
+        "R11"
+      ]
+    },
+    {
+      "name": "loads and lists the team for an Admin",
+      "file": "front-end/src/modules/Team/__tests__/TeamPage.test.tsx",
+      "requirements": [
+        "R9"
+      ]
+    },
+    {
+      "name": "hides the management UI from non-Admin roles",
+      "file": "front-end/src/modules/Team/__tests__/TeamPage.test.tsx",
+      "requirements": [
+        "R5",
+        "R6"
+      ]
+    },
+    {
+      "name": "adds a teammate with the chosen role and refreshes the list",
+      "file": "front-end/src/modules/Team/__tests__/TeamPage.test.tsx",
+      "requirements": [
+        "R6"
+      ]
+    },
+    {
+      "name": "surfaces validation errors from the server next to the fields",
+      "file": "front-end/src/modules/Team/__tests__/TeamPage.test.tsx",
+      "requirements": [
+        "R6"
+      ]
+    },
+    {
+      "name": "changes a role through the overflow menu and reloads",
+      "file": "front-end/src/modules/Team/__tests__/TeamPage.test.tsx",
+      "requirements": [
+        "R7"
+      ]
+    },
+    {
+      "name": "deactivates a teammate only after confirmation",
+      "file": "front-end/src/modules/Team/__tests__/TeamPage.test.tsx",
+      "requirements": [
+        "R8"
+      ]
+    },
+    {
+      "name": "keeps the list after a role conflict and shows the guidance",
+      "file": "front-end/src/modules/Team/__tests__/TeamPage.test.tsx",
+      "requirements": [
+        "R7"
+      ]
+    },
+    {
+      "name": "sends no Authorization header and carries cookies on every request",
+      "file": "front-end/src/shared/__tests__/ApiService.test.ts",
+      "requirements": [
+        "R1",
+        "R12"
+      ]
+    },
+    {
+      "name": "posts JSON bodies with cookies",
+      "file": "front-end/src/shared/__tests__/ApiService.test.ts",
+      "requirements": [
+        "R2",
+        "R6"
+      ]
+    },
+    {
+      "name": "clears auth and surfaces a sign-in-required error rather than retrying",
+      "file": "front-end/src/shared/__tests__/ApiService.test.ts",
+      "requirements": [
+        "R12"
+      ]
+    },
+    {
+      "name": "returns undefined for a 204",
+      "file": "front-end/src/shared/__tests__/ApiService.test.ts",
+      "requirements": [
+        "R10"
+      ]
+    },
+    {
+      "name": "returns raw text for getRaw with cookies and no auth header",
+      "file": "front-end/src/shared/__tests__/ApiService.test.ts",
+      "requirements": [
+        "R5"
+      ]
+    },
+    {
+      "name": "DesktopMode_KeepsEveryStoreInsideTheConfiguredDataDirectory",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/DesktopModeStartupTests.cs",
+      "requirements": [
+        "R11"
+      ]
+    },
+    {
+      "name": "SecretBearingResourceReads_NeedAdmin",
+      "file": "back-end/ShipRight.Tests/Modules/Identity/RoleAccessRulesTests.cs",
+      "requirements": [
+        "R5"
+      ]
+    },
+    {
+      "name": "R11 createLineBuffer keeps only the most recent lines in bounded memory",
+      "file": "scripts/smoke/__tests__/run.test.mjs",
+      "requirements": [
+        "R11"
+      ]
+    },
+    {
+      "name": "R11 the runner leaves no app process running and keeps all data in a temp dir it removes",
+      "file": "scripts/smoke/__tests__/run.test.mjs",
+      "requirements": [
+        "R11"
+      ]
+    },
+    {
+      "name": "keeps a very long name or email inside the wrapping cell so the layout does not break",
+      "file": "front-end/src/modules/Team/__tests__/TeamPage.test.tsx",
+      "requirements": [
+        "R9"
+      ]
+    }
+  ],
+  "kickbacks": []
+}

@@ -17,7 +17,7 @@ using ResourcePipelineStep = ShipRight.Modules.Resources.Models.PipelineStep;
 
 namespace ShipRight.Modules.Builds;
 
-public record StartBuildRequest(string ProjectId, List<ServiceVersionInput> ServiceVersions, string? PipelineResourceId = null);
+public record StartBuildRequest(string ProjectId, List<ServiceVersionInput> ServiceVersions, string? PipelineResourceId = null, string? Initiator = null);
 public record ServiceVersionInput(string ServiceName, string NewVersion);
 public record RespondRequest(string Reason, string Choice, Dictionary<string, string>? Data);
 public record DeployRequest(string? DeployModeOverride);
@@ -96,6 +96,7 @@ public class BuildOrchestrator
             ProjectName = project.Name,
             Status = BuildStatus.Running,
             Versions = versions,
+            Initiator = request.Initiator,
         };
 
         // BRS #9: enforce one build at a time per project
@@ -2001,7 +2002,7 @@ public class BuildOrchestrator
             serviceVersions.Add(new ServiceVersionInput(svc.Name, VersionFileService.SuggestNext(v.Version)));
         }
 
-        var record = await StartAsync(new StartBuildRequest(projectId, serviceVersions));
+        var record = await StartAsync(new StartBuildRequest(projectId, serviceVersions, Initiator: "system"));
         Log.Information("WatchBranch triggered build {BuildId} for project {ProjectId} (steps: {Steps})",
             record.Id, projectId, watchSteps);
 

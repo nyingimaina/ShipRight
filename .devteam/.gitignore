@@ -8,3 +8,21 @@ runs/*/run.lock
 runs/*/inbox/
 driver.log
 pending-request.md
+# Added by DevTeam: volatile files that must never make a merge or a switch refuse to start.
+*.log
+runs/*/scratch/
+runs/*/scratch-removed/
+runs/*/live/
+runs/*/live.js
+runs/*/heartbeat.js
+rules/*/live/
+rules/*/live.js
+metrics/
+runs/*/telemetry.json
+local-env.json
+merge/
+session.json
+knowledge/index.json
+knowledge/annotate-*
+runs/*/knowledge/
+metrics/ai-durations.json

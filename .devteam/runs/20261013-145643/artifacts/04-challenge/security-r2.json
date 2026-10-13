@@ -1,0 +1,48 @@
+{
+  "findings": [
+    {
+      "cites": "API-004",
+      "severity": "blocking",
+      "file": "back-end/ShipRight.Server/Modules/Projects/ProjectRouter.cs",
+      "line": 17,
+      "evidence": "GET /api/projects returns `Results.Ok(await store.GetAllAsync())` and GET /api/projects/{id} (lines 33-39) returns the project directly; the cloud store (CloudDiRegistrar.cs:78 -> CompanyScopedProjectStore) deserializes ProjectConfig straight from the Data column, and MariadbProjectStore.cs:84/98 writes that JSON with no encryption (unlike JsonProjectStore/SqliteProjectStore which encrypt at rest). ProjectConfig carries public serialized secrets: ProjectConfig.cs:48 DockerPassword (ServiceConfig) and ProjectConfig.cs:18 RootPassword (DatabaseConfig). RoleAccessRules.cs has no specific /api/projects GET rule, so the default at line 73 assigns it Viewer (also asserted by RoleAccessRulesTests.cs:31), meaning any Viewer or Operator receives the company's Docker registry password and database root password in plaintext.",
+      "description": "Same class as the fixed SEC-1/SEC-2: the new Viewer/Operator roles can fetch plaintext credentials the moment they can read a project. GET /api/projects and GET /api/projects/{id} must not return DockerPassword or database RootPassword to non-Admin callers - return a DTO without those fields (blank them for non-Admin, as the team/password responses do), since Viewer must still list projects per R5."
+    },
+    {
+      "cites": "API-004",
+      "severity": "advisory",
+      "file": "back-end/ShipRight.Server/Modules/Resources/ResourceRouter.cs",
+      "line": 74,
+      "evidence": "GET /api/resources/scripts (ResourceRouter.cs:74-78) returns ScriptResource whole and PipelineRouter.cs:13-35 returns PipelineResource whole, both including the Variables map (ScriptResource.cs:13, PipelineResource.cs:12). Variables feed script execution and are injected as process environment variables (ProcessRunner.cs:108-112, BuildOrchestrator.cs:1306), so they commonly hold tokens and passwords. RoleAccessRules.cs:30 leaves both GETs at Viewer.",
+      "description": "The developer's round-2 fix raised registries and aws-profiles reads to Admin but scripts and pipelines - same root cause, whole record returned - are still Viewer-readable. If Variables can hold secrets, scrub them from non-Admin read responses or raise those reads to Admin."
+    },
+    {
+      "cites": "R10",
+      "severity": "advisory",
+      "file": "back-end/ShipRight.Server/Modules/Identity/IdentityRegistration.cs",
+      "line": 73,
+      "evidence": "options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest with a 7-day session; Program.cs (lines 151-168) calls neither UseForwardedHeaders nor UseHttpsRedirection, so behind the docker-compose TLS-terminating proxy the auth cookie is issued without the Secure attribute and can travel over the plain-HTTP hop.",
+      "description": "Set CookieSecurePolicy.Always in cloud mode (or run forwarded-headers middleware before authentication) so the session cookie is never sent in cleartext. Unchanged from the round-1 advisory, still open."
+    },
+    {
+      "cites": "R10",
+      "severity": "advisory",
+      "file": "back-end/ShipRight.Server/Modules/Identity/IdentityRegistration.cs",
+      "line": 72,
+      "evidence": "SameSite=Lax is the only anti-CSRF defence and no antiforgery token exists anywhere in ShipRight.Server or front-end/src/shared. The switch from bearer headers to a cookie session therefore introduces CSRF exposure on state-changing calls, and mutating GETs (DatabaseRouter.cs:245, ServerRouter.cs:373 open-folder/backups) are reachable by a top-level cross-site navigation under Lax.",
+      "description": "Add antiforgery validation on /api mutations and/or SameSite=Strict for the auth cookie, and stop modelling host actions as GET. Unchanged from the round-1 advisory, still open."
+    }
+  ],
+  "verifications": [
+    {
+      "id": "SEC-1",
+      "status": "fixed",
+      "evidence": "RoleAccessRules.cs:28 now reads `R(\"GET\", @\"/api/resources/registries(/.*)?\", AppRoles.Admin)`, so both GET /api/resources/registries and /{id} are Admin-only (first matching rule wins; line 30 still covers only the remaining /api/resources GETs as Viewer). RoleAuthorizationHandler runs as the fallback policy for every route ResourceRouter maps (IdentityRegistration.cs:80-82, Program.cs:165-167), so a Viewer/Operator is refused before the handler returns the record. Verified by running the targeted suite `dotnet test --filter FullyQualifiedName~RoleAccessRulesTests`: 46 passed / 0 failed, including SecretBearingResourceReads_NeedAdmin which asserts Admin for /api/resources/registries and /api/resources/registries/abc. This is the finding's 'or raise the read rule to Admin like credentials' option."
+    },
+    {
+      "id": "SEC-2",
+      "status": "fixed",
+      "evidence": "RoleAccessRules.cs:29 now reads `R(\"GET\", @\"/api/resources/aws-profiles(/.*)?\", AppRoles.Admin)`, which covers the list, /{id} and the previously Admin-only /available route, so SecretAccessKey and SessionToken (AwsProfileResource.cs:15-16) no longer reach a Viewer or Operator. Same fallback-policy enforcement and same passing RoleAccessRulesTests run as SEC-1 (SecretBearingResourceReads_NeedAdmin asserts Admin for /api/resources/aws-profiles and /api/resources/aws-profiles/abc while /api/resources/scripts stays Viewer). This is the finding's 'restrict the read to Admin' option."
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Serilog;
 using ShipRight.Modules.Projects;
 using ShipRight.Shared.Events;
@@ -8,11 +9,13 @@ public static class BuildRouter
 {
     public static void MapBuildRoutes(this WebApplication app)
     {
-        app.MapPost("/api/builds/start", async (StartBuildRequest request, BuildOrchestrator orchestrator) =>
+        app.MapPost("/api/builds/start", async (StartBuildRequest request, BuildOrchestrator orchestrator, ClaimsPrincipal user) =>
         {
             try
             {
-                var record = await orchestrator.StartAsync(request);
+                var initiator = user?.FindFirst("display_name")?.Value ?? user?.FindFirst(ClaimTypes.Name)?.Value ?? user?.Identity?.Name;
+                var req = request with { Initiator = initiator };
+                var record = await orchestrator.StartAsync(req);
                 Log.Information("Build {BuildId} started for project {ProjectId}", record.Id, request.ProjectId);
                 return Results.Accepted($"/api/builds/{record.Id}", new
                 {
@@ -185,3 +188,4 @@ public static class BuildRouter
         });
     }
 }
+
