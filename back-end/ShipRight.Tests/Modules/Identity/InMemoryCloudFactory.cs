@@ -27,6 +27,10 @@ public sealed class InMemoryCloudFactory : WebApplicationFactory<Program>
 {
     private static int _clientNumber;
     private readonly Dictionary<string, string?> _saved = new();
+    private readonly string _dataDir =
+        Path.Combine(Path.GetTempPath(), "shipright-memory-test-" + Guid.NewGuid().ToString("N")[..8]);
+
+    public string DataDir => _dataDir;
 
     public RecordingDatabaseHelper Db { get; } = new();
     public RecordingEmailSender Email { get; } = new();
@@ -45,7 +49,7 @@ public sealed class InMemoryCloudFactory : WebApplicationFactory<Program>
         Set("SHIPRIGHT__PUBLIC_URL", "https://app.example.test");
         Set("SHIPRIGHT__GOOGLE_CLIENT_ID", google ? "test-google-client-id" : null);
         Set("SHIPRIGHT__GOOGLE_CLIENT_SECRET", google ? "test-google-client-secret" : null);
-        Set("SHIPRIGHT_DATA_DIR", Path.Combine(Path.GetTempPath(), "shipright-memory-test-" + Guid.NewGuid().ToString("N")[..8]));
+        Set("SHIPRIGHT_DATA_DIR", _dataDir);
     }
 
     private void Set(string name, string? value)
@@ -102,6 +106,7 @@ public sealed class InMemoryCloudFactory : WebApplicationFactory<Program>
         catch (ArgumentNullException) { /* the host never finished starting; nothing to stop */ }
         if (!disposing) return;
         foreach (var (name, value) in _saved) Environment.SetEnvironmentVariable(name, value);
+        try { Directory.Delete(_dataDir, recursive: true); } catch { /* temp folder, best effort */ }
     }
 
     private sealed class NoMigrations(IOptions<DatabaseConnectionSettings> settings)

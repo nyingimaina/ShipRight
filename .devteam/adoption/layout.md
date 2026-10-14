@@ -3,7 +3,7 @@
 The pack's guidance was written for the template. These parts were rewritten with what DevTeam found here:
 
 - `.NET 10` → `.NET 10`
-- `api/src/Shared/Db/Migrations/` → `the project's own migrations folder (see the project map)`
+- `api/src/Shared/Db/Migrations/` → `back-end/ShipRight.Server/Database/Migrations/`
 - `@ownerId` → `@companyId`
 - `owner_id` → `CompanyId`
 - `api/src/Features/` → `back-end/ShipRight.Server/Modules/`
@@ -14,7 +14,6 @@ The pack's guidance was written for the template. These parts were rewritten wit
 - `the template's Customers feature` → (rewritten for this project)
 - `web/src/app/` → `front-end/src/app/`
 - `api/tests/Api.Tests` → `back-end/ShipRight.Tests`
-- `the start-up probes section` → (replaced by what is true here)
 - `the browser-spec step` → (rewritten for this project)
 - `the template's /api sign-in sentence` → (rewritten for this project)
 - ``dotnet test` in `api/`` → ``dotnet test` in `the project root``
@@ -28,7 +27,7 @@ The pack's guidance was written for the template. These parts were rewritten wit
 - Web app: `front-end`; features in `front-end/src/pages`, pages in `front-end/src/app`.
 - API tests: `back-end/ShipRight.Tests`.
 - Web tests: jest. No browser test suite.
-- Migrations: no folder found; follow how the project already changes its schema.
+- Migrations: `back-end/ShipRight.Server/Database/Migrations`.
 - Tenancy key: `CompanyId`.
 - Where the text below names a folder or tool of the template and this list says otherwise, this list is right.
 

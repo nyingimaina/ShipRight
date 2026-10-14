@@ -1,6 +1,6 @@
 # DevTeam adoption baseline
 
-DevTeam 0.38.238 · 2026-10-13 03:04
+DevTeam 0.46.241 · 2026-10-14 13:13
 
 ## What was found
 
@@ -11,7 +11,7 @@ DevTeam 0.38.238 · 2026-10-13 03:04
 
 ## Quick checks
 
-- The app starts and works as set up: **not set up**
+- The app starts and works as set up: **later** (the slower proof, run with: devteam verify)
 - API compiles: **passed**
 - API builds and all tests pass: **later** (the slower proof, run with: devteam verify)
 - Web app tests pass: **later** (the slower proof, run with: devteam verify)
@@ -20,19 +20,13 @@ DevTeam 0.38.238 · 2026-10-13 03:04
 
 ## Not set up in this project
 
-- The app starts and works as set up: Nothing starts the app and looks at it (no scripts/smoke/run.mjs), so nothing proves the app starts and works yet.
+Nothing missing that DevTeam looks for.
 
 These stay out of the readiness verdict as **not proven**. The developer is told to add tests where it changes code; nothing is added to your project unless a feature asks for it.
 
 ## How to make more checks work
 
-### 1. Nothing proves the app starts and works
-
-This is optional. Without it the readiness page says 'not proven' for starting the app, which is honest rather than a failure.
-
-1. If you want it: devteam run "Add a start-up check that starts the app and requests its home page"
-
-After you have done any of these, run `devteam adopt refresh` so DevTeam looks at the project again.
+Nothing is stopping a check right now.
 
 ## Next:
 

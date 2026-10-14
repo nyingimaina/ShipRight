@@ -33,6 +33,9 @@
     }
   },
   "layout": {
+    "databaseScripts": [
+      "api/src/Shared/Db/Migrations/**"
+    ],
     "featureRoots": [
       "back-end/ShipRight.Server/Modules",
       "front-end/src/pages"
@@ -292,7 +295,7 @@
     },
     {
       "id": "DB-001",
-      "rule": "Every schema change is a numbered migration pair in the project's own migrations folder (see the project map) (NNNN_name.up.sql and NNNN_name.down.sql). The down script undoes the up script. Never edit a migration that has been applied; add a new one.",
+      "rule": "Every schema change is a numbered migration pair in back-end/ShipRight.Server/Database/Migrations/ (NNNN_name.up.sql and NNNN_name.down.sql). The down script undoes the up script. Never edit a migration that has been applied; add a new one.",
       "why": "Edited migrations break every database that already ran them.",
       "plain": "Database changes are applied the same way everywhere, safely.",
       "appliesTo": [
@@ -569,7 +572,7 @@
       "id": "app-boots",
       "name": "The app starts and works as set up",
       "kind": "command",
-      "command": "echo Not set up in this project: Nothing starts the app and looks at it  no scripts/smoke/run.mjs , so nothing proves the app starts and works yet. && exit 78",
+      "command": "node scripts/smoke/run.mjs",
       "workingDir": ".",
       "timeoutSeconds": 600,
       "rules": [
@@ -577,9 +580,20 @@
       ],
       "files": [],
       "exclude": [],
+      "onlyIfExists": "scripts/smoke/run.mjs",
       "tier": "full",
       "group": "api",
-      "dependsOn": []
+      "requiresEnv": [],
+      "requiresTools": [
+        "node",
+        "dotnet",
+        "npm"
+      ],
+      "dependsOn": [],
+      "phase": "challenge",
+      "inDocumentation": false,
+      "inChallenge": true,
+      "gate": false
     },
     {
       "id": "no-secrets-code",
@@ -614,7 +628,11 @@
       "tier": "fast",
       "requiresEnv": [],
       "requiresTools": [],
-      "dependsOn": []
+      "dependsOn": [],
+      "phase": "challenge",
+      "inDocumentation": false,
+      "inChallenge": true,
+      "gate": false
     },
     {
       "id": "no-secrets-config",
@@ -648,7 +666,11 @@
       "tier": "fast",
       "requiresEnv": [],
       "requiresTools": [],
-      "dependsOn": []
+      "dependsOn": [],
+      "phase": "challenge",
+      "inDocumentation": false,
+      "inChallenge": true,
+      "gate": false
     },
     {
       "id": "no-raw-sql-interpolation",
@@ -680,7 +702,11 @@
       "tier": "fast",
       "requiresEnv": [],
       "requiresTools": [],
-      "dependsOn": []
+      "dependsOn": [],
+      "phase": "challenge",
+      "inDocumentation": false,
+      "inChallenge": true,
+      "gate": false
     },
     {
       "id": "no-select-star",
@@ -712,7 +738,11 @@
       "tier": "fast",
       "requiresEnv": [],
       "requiresTools": [],
-      "dependsOn": []
+      "dependsOn": [],
+      "phase": "challenge",
+      "inDocumentation": false,
+      "inChallenge": true,
+      "gate": false
     },
     {
       "id": "no-sql-leading-wildcard",
@@ -744,7 +774,11 @@
       "tier": "fast",
       "requiresEnv": [],
       "requiresTools": [],
-      "dependsOn": []
+      "dependsOn": [],
+      "phase": "challenge",
+      "inDocumentation": false,
+      "inChallenge": true,
+      "gate": false
     },
     {
       "id": "no-debug-leftovers-api",
@@ -776,7 +810,11 @@
       "tier": "fast",
       "requiresEnv": [],
       "requiresTools": [],
-      "dependsOn": []
+      "dependsOn": [],
+      "phase": "challenge",
+      "inDocumentation": false,
+      "inChallenge": true,
+      "gate": false
     },
     {
       "id": "no-debug-leftovers-web",
@@ -809,7 +847,11 @@
       "tier": "fast",
       "requiresEnv": [],
       "requiresTools": [],
-      "dependsOn": []
+      "dependsOn": [],
+      "phase": "challenge",
+      "inDocumentation": false,
+      "inChallenge": true,
+      "gate": false
     },
     {
       "id": "api-build",
@@ -829,7 +871,11 @@
       "requiresTools": [
         "dotnet"
       ],
-      "dependsOn": []
+      "dependsOn": [],
+      "phase": "challenge",
+      "inDocumentation": false,
+      "inChallenge": true,
+      "gate": true
     },
     {
       "id": "api-build-test",
@@ -849,7 +895,11 @@
       "requiresTools": [
         "dotnet"
       ],
-      "dependsOn": []
+      "dependsOn": [],
+      "phase": "challenge",
+      "inDocumentation": false,
+      "inChallenge": true,
+      "gate": false
     },
     {
       "id": "web-tests",
@@ -870,7 +920,11 @@
         "node",
         "npm"
       ],
-      "dependsOn": []
+      "dependsOn": [],
+      "phase": "challenge",
+      "inDocumentation": false,
+      "inChallenge": true,
+      "gate": false
     },
     {
       "id": "web-typecheck",
@@ -892,7 +946,11 @@
         "node",
         "npm"
       ],
-      "dependsOn": []
+      "dependsOn": [],
+      "phase": "challenge",
+      "inDocumentation": false,
+      "inChallenge": true,
+      "gate": true
     },
     {
       "id": "web-lint-build",
@@ -916,7 +974,11 @@
       ],
       "dependsOn": [
         "web-typecheck"
-      ]
+      ],
+      "phase": "challenge",
+      "inDocumentation": false,
+      "inChallenge": true,
+      "gate": false
     }
   ],
   "coverage": [

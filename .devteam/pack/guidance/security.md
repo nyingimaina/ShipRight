@@ -4,7 +4,7 @@
 - Web app: `front-end`; features in `front-end/src/pages`, pages in `front-end/src/app`.
 - API tests: `back-end/ShipRight.Tests`.
 - Web tests: jest. No browser test suite.
-- Migrations: no folder found; follow how the project already changes its schema.
+- Migrations: `back-end/ShipRight.Server/Database/Migrations`.
 - Tenancy key: `CompanyId`.
 - Where the text below names a folder or tool of the template and this list says otherwise, this list is right.
 
@@ -25,7 +25,3 @@ This is an existing project that was not created by DevTeam. Extend it; never re
 - Web app (Next.js, TypeScript): in `front-end`. Its scripts: dev, build, start, test, lint, generate-icon.
 - Features live in: `back-end/ShipRight.Server/Modules`, `front-end/src/pages`.
 - Shared code lives in: `back-end/ShipRight.Server/Shared`, `front-end/src/shared`.
-
-Not set up in this project (so nothing proves these yet):
-- The app starts and works as set up: Nothing starts the app and looks at it (no scripts/smoke/run.mjs), so nothing proves the app starts and works yet.
-Where you touch code, add automated tests for it (write the test for the existing behaviour first, then change the code). Do not create the missing scaffolding unless the request asks for it.
