@@ -210,6 +210,7 @@ try
         app.MapWatchBranchRoutes();
     }
     app.MapResourceRoutes();
+    app.MapKeyFileRoutes();
     app.MapPipelineRoutes();
 
     // Public: the web app's own page; its data only ever comes through the guarded /api routes.
@@ -314,6 +315,7 @@ static void RegisterDesktopServices(IServiceCollection services, string dataDir)
     services.AddSingleton<IDockerRegistryResourceStore>(_ => new SqliteDockerRegistryResourceStore(dataDir));
     services.AddSingleton<IScriptResourceStore>(_ => new SqliteScriptResourceStore(dataDir));
     services.AddSingleton<ICredentialResourceStore>(_ => new SqliteCredentialResourceStore(dataDir));
+    services.AddSingleton<IKeyFileResourceStore>(_ => new SqliteKeyFileResourceStore(dataDir));
     services.AddSingleton<IPipelineResourceStore>(_ => new SqlitePipelineResourceStore(dataDir));
     services.AddSingleton<IAwsProfileResourceStore>(_ => new SqliteAwsProfileResourceStore(dataDir));
     services.AddSingleton<IAwsCredentialsReader>(sp => new AwsCredentialsReader(

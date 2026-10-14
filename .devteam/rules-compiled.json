@@ -1,0 +1,314 @@
+{
+  "rules": [
+    {
+      "ruleId": "USR-001",
+      "ruleHash": "0CFA78785D959B3C",
+      "checks": [
+        {
+          "id": "check-1",
+          "name": "No native button (use zest-button)",
+          "kind": "pattern",
+          "command": "",
+          "workingDir": ".",
+          "timeoutSeconds": 600,
+          "rules": [],
+          "files": [
+            "front-end/src/pages/**/*.tsx",
+            "front-end/src/modules/**/*.tsx",
+            "front-end/src/shared/**/*.tsx"
+          ],
+          "exclude": [],
+          "forbid": "\u003Cbutton[\\s\u003E/]",
+          "tier": "fast",
+          "requiresEnv": [],
+          "requiresTools": [],
+          "dependsOn": [],
+          "phase": "challenge",
+          "inDocumentation": false,
+          "inChallenge": true,
+          "gate": false
+        },
+        {
+          "id": "check-2",
+          "name": "No native table (use responsive-table)",
+          "kind": "pattern",
+          "command": "",
+          "workingDir": ".",
+          "timeoutSeconds": 600,
+          "rules": [],
+          "files": [
+            "front-end/src/pages/**/*.tsx",
+            "front-end/src/modules/**/*.tsx",
+            "front-end/src/shared/**/*.tsx"
+          ],
+          "exclude": [],
+          "forbid": "\u003Ctable[\\s\u003E]",
+          "tier": "fast",
+          "requiresEnv": [],
+          "requiresTools": [],
+          "dependsOn": [],
+          "phase": "challenge",
+          "inDocumentation": false,
+          "inChallenge": true,
+          "gate": false
+        },
+        {
+          "id": "check-3",
+          "name": "No native text box or file picker (use zest-textbox / zest-file-upload)",
+          "kind": "pattern",
+          "command": "",
+          "workingDir": ".",
+          "timeoutSeconds": 600,
+          "rules": [],
+          "files": [
+            "front-end/src/pages/**/*.tsx",
+            "front-end/src/modules/**/*.tsx",
+            "front-end/src/shared/**/*.tsx"
+          ],
+          "exclude": [],
+          "forbid": "\u003Ctextarea[\\s\u003E/]|\u003Cinput\\b[^\u003E]*\\btype=[\u0022\u0027{ ]*(text|password|email|search|url|number|tel|file)\\b|\u003Cinput\\s*/?\u003E",
+          "tier": "fast",
+          "requiresEnv": [],
+          "requiresTools": [],
+          "dependsOn": [],
+          "phase": "challenge",
+          "inDocumentation": false,
+          "inChallenge": true,
+          "gate": false
+        },
+        {
+          "id": "check-4",
+          "name": "No react-tabs (use zest-tabs)",
+          "kind": "pattern",
+          "command": "",
+          "workingDir": ".",
+          "timeoutSeconds": 600,
+          "rules": [],
+          "files": [
+            "front-end/src/**/*.ts",
+            "front-end/src/**/*.tsx"
+          ],
+          "exclude": [],
+          "forbid": "from\\s\u002B[\u0027\u0022]react-tabs[\u0027\u0022]",
+          "tier": "fast",
+          "requiresEnv": [],
+          "requiresTools": [],
+          "dependsOn": [],
+          "phase": "challenge",
+          "inDocumentation": false,
+          "inChallenge": true,
+          "gate": false
+        }
+      ],
+      "good": "import ZestButton from \u0027jattac.libs.web.zest-button\u0027;\nimport ZestTextbox from \u0027jattac.libs.web.zest-textbox\u0027;\n\nexport const Form = () =\u003E (\n  \u003Cdiv\u003E\n    \u003CZestTextbox label=\u0022Name\u0022 /\u003E\n    \u003CZestButton\u003ESave\u003C/ZestButton\u003E\n  \u003C/div\u003E\n);",
+      "bad": "export const Form = () =\u003E (\n  \u003Cdiv\u003E\n    \u003Cinput type=\u0022text\u0022 /\u003E\n    \u003Cbutton onClick={save}\u003ESave\u003C/button\u003E\n    \u003Ctable\u003E\u003Ctbody /\u003E\u003C/table\u003E\n  \u003C/div\u003E\n);",
+      "notes": "Whether a given custom-built component duplicates one of the listed libraries (layout, sidekick menu, overflow menu, tabs wrappers, hand-rolled menus), and whether timer-based polling (setInterval/setTimeout loops, repeated fetch) should use jattac-web-poller. Checkbox, radio and select elements are not covered. Whether the packages are installed is already visible in front-end/package.json. A reviewer should judge these.",
+      "at": "2026-10-14T07:58:03.8639132+00:00",
+      "by": "claude-code"
+    },
+    {
+      "ruleId": "USR-002",
+      "ruleHash": "62750E0B68A51502",
+      "checks": [
+        {
+          "id": "check-1",
+          "name": "No desktop-first media queries (use min-width, not max-width)",
+          "kind": "pattern",
+          "command": "",
+          "workingDir": ".",
+          "timeoutSeconds": 600,
+          "rules": [],
+          "files": [
+            "front-end/**/*.css",
+            "front-end/**/*.tsx",
+            "front-end/**/*.ts"
+          ],
+          "exclude": [],
+          "forbid": "@media[^{]*max-width",
+          "tier": "fast",
+          "requiresEnv": [],
+          "requiresTools": [],
+          "dependsOn": [],
+          "phase": "challenge",
+          "inDocumentation": false,
+          "inChallenge": true,
+          "gate": false
+        },
+        {
+          "id": "check-2",
+          "name": "No tiny fixed font sizes in stylesheets (under 12px)",
+          "kind": "pattern",
+          "command": "",
+          "workingDir": ".",
+          "timeoutSeconds": 600,
+          "rules": [],
+          "files": [
+            "front-end/**/*.css"
+          ],
+          "exclude": [],
+          "forbid": "font-size:\\s*(?:[0-9]|1[01])(?:\\.\\d\u002B)?px",
+          "tier": "fast",
+          "requiresEnv": [],
+          "requiresTools": [],
+          "dependsOn": [],
+          "phase": "challenge",
+          "inDocumentation": false,
+          "inChallenge": true,
+          "gate": false
+        },
+        {
+          "id": "check-3",
+          "name": "No tiny fixed font sizes in inline styles (under 12px)",
+          "kind": "pattern",
+          "command": "",
+          "workingDir": ".",
+          "timeoutSeconds": 600,
+          "rules": [],
+          "files": [
+            "front-end/**/*.tsx"
+          ],
+          "exclude": [],
+          "forbid": "fontSize:\\s*[\u0027\u0022]?(?:[0-9]|1[01])(?:\\.\\d\u002B)?(?:px)?[\u0027\u0022]?\\s*(?:[,}]|$)",
+          "tier": "fast",
+          "requiresEnv": [],
+          "requiresTools": [],
+          "dependsOn": [],
+          "phase": "challenge",
+          "inDocumentation": false,
+          "inChallenge": true,
+          "gate": false
+        }
+      ],
+      "good": ".card { font-size: 16px; padding: 12px; }\n@media (min-width: 768px) { .card { font-size: 18px; } }\n@media (min-width: 1280px) { .card { padding: 24px; } }",
+      "bad": ".card { font-size: 11px; padding: 4px; }\n@media (max-width: 767px) { .card { padding: 2px; } }",
+      "notes": "A reviewer must judge: whether each screen is truly mobile-first in layout, desktop-aware and tablet-optimised; whether the UI looks custom-made for each screen size while staying DRY (shared components, no per-size copies); whether touch hit areas are large enough (about 44px) and spacing between tappable items is adequate; whether text and elements stay visible and readable at every size; and whether user interactions (touch vs mouse/hover) are handled sensibly. The checks only catch desktop-first media queries and very small fixed font sizes.",
+      "at": "2026-10-14T07:58:29.7744906+00:00",
+      "by": "claude-code"
+    },
+    {
+      "ruleId": "USR-003",
+      "ruleHash": "AF9AE73B6C4A0C9E",
+      "checks": [
+        {
+          "id": "check-1",
+          "name": "No blocking on async code (deadlocks, thread starvation)",
+          "kind": "pattern",
+          "command": "",
+          "workingDir": ".",
+          "timeoutSeconds": 600,
+          "rules": [],
+          "files": [
+            "back-end/ShipRight.Server/**/*.cs",
+            "back-end/ShipRight.Desktop/**/*.cs"
+          ],
+          "exclude": [],
+          "forbid": "\\.GetAwaiter\\(\\)\\.GetResult\\(\\)|\\bTask\\.WaitAll\\(|\\bTask\\.WaitAny\\(|\\bThread\\.Sleep\\(",
+          "tier": "fast",
+          "requiresEnv": [],
+          "requiresTools": [],
+          "dependsOn": [],
+          "phase": "challenge",
+          "inDocumentation": false,
+          "inChallenge": true,
+          "gate": false
+        },
+        {
+          "id": "check-2",
+          "name": "No SQL built by string interpolation (injection risk)",
+          "kind": "pattern",
+          "command": "",
+          "workingDir": ".",
+          "timeoutSeconds": 600,
+          "rules": [],
+          "files": [
+            "back-end/ShipRight.Server/**/*.cs"
+          ],
+          "exclude": [],
+          "forbid": "\\$@?\u0022\\s*(SELECT|INSERT|UPDATE|DELETE)\\b[^\u0022]*\\{",
+          "tier": "fast",
+          "requiresEnv": [],
+          "requiresTools": [],
+          "dependsOn": [],
+          "phase": "challenge",
+          "inDocumentation": false,
+          "inChallenge": true,
+          "gate": false
+        },
+        {
+          "id": "check-3",
+          "name": "No weak hashing algorithms (MD5/SHA1)",
+          "kind": "pattern",
+          "command": "",
+          "workingDir": ".",
+          "timeoutSeconds": 600,
+          "rules": [],
+          "files": [
+            "back-end/**/*.cs"
+          ],
+          "exclude": [],
+          "forbid": "\\b(MD5|SHA1)\\.(Create|HashData)\\(|new\\s\u002B(MD5|SHA1)(CryptoServiceProvider|Managed)?\\(",
+          "tier": "fast",
+          "requiresEnv": [],
+          "requiresTools": [],
+          "dependsOn": [],
+          "phase": "challenge",
+          "inDocumentation": false,
+          "inChallenge": true,
+          "gate": false
+        },
+        {
+          "id": "check-4",
+          "name": "No disabled TLS certificate validation",
+          "kind": "pattern",
+          "command": "",
+          "workingDir": ".",
+          "timeoutSeconds": 600,
+          "rules": [],
+          "files": [
+            "back-end/**/*.cs"
+          ],
+          "exclude": [],
+          "forbid": "DangerousAcceptAnyServerCertificateValidator|ServerCertificateCustomValidationCallback\\s*=\\s*\\([^)]*\\)\\s*=\u003E\\s*true",
+          "tier": "fast",
+          "requiresEnv": [],
+          "requiresTools": [],
+          "dependsOn": [],
+          "phase": "challenge",
+          "inDocumentation": false,
+          "inChallenge": true,
+          "gate": false
+        },
+        {
+          "id": "check-5",
+          "name": "No unsafe dynamic code or raw HTML injection in the front end",
+          "kind": "pattern",
+          "command": "",
+          "workingDir": ".",
+          "timeoutSeconds": 600,
+          "rules": [],
+          "files": [
+            "front-end/**/*.ts",
+            "front-end/**/*.tsx",
+            "front-end/**/*.js",
+            "front-end/**/*.jsx"
+          ],
+          "exclude": [],
+          "forbid": "dangerouslySetInnerHTML|\\beval\\(|new\\s\u002BFunction\\(",
+          "tier": "fast",
+          "requiresEnv": [],
+          "requiresTools": [],
+          "dependsOn": [],
+          "phase": "challenge",
+          "inDocumentation": false,
+          "inChallenge": true,
+          "gate": false
+        }
+      ],
+      "good": "var rows = await db.QueryAsync\u003CBuild\u003E(\u0022SELECT * FROM builds WHERE id = @id\u0022, new { id });\nawait Task.Delay(100, ct);\nusing var sha = SHA256.Create();\nreturn \u003Cdiv\u003E{text}\u003C/div\u003E;",
+      "bad": "var rows = db.Query\u003CBuild\u003E($\u0022SELECT * FROM builds WHERE id = {id}\u0022);\nvar data = LoadAsync().GetAwaiter().GetResult();\nThread.Sleep(1000);\nusing var md5 = MD5.Create();\nhandler.ServerCertificateCustomValidationCallback = (m, c, ch, e) =\u003E true;\nreturn \u003Cdiv dangerouslySetInnerHTML={{ __html: text }} /\u003E;",
+      "notes": "Most of this rule needs human judgement: spotting technical debt and code duplication, slow or inefficient algorithms, memory leaks (undisposed resources, unbounded caches, event handlers never unsubscribed), N\u002B1 queries, and whether code is lean enough for the lowest-spec deployment machine. The checks above only catch a few well-known shortcuts (blocking on async, SQL built by string interpolation, weak hashes, disabled TLS validation, raw HTML or eval in the front end). A reviewer must judge the rest.",
+      "at": "2026-10-14T07:58:53.4006522+00:00",
+      "by": "claude-code"
+    }
+  ]
+}

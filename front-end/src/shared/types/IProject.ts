@@ -51,6 +51,8 @@ export interface IServerConfig {
   rebuildScript: string;
   deployMode: DeployMode;
   managedSshKey?: boolean;
+  /** True once the managed key has been authorized on the server so deployments never prompt again (R1/R2). */
+  managedSshKeyAuthorized?: boolean;
   rebuildScriptResourceId?: string;
   pipelineResourceId?: string;
   composeRepoUrl?: string;
@@ -175,6 +177,21 @@ export interface ICredentialResource {
   tags?: string[];
   createdAt: string;
   modifiedAt: string;
+}
+
+export interface IKeyFileResource {
+  id: string;
+  name: string;
+  tags?: string[];
+  createdAt: string;
+  modifiedAt: string;
+}
+
+export interface IKeyFilePage {
+  items: IKeyFileResource[];
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
 export interface IPipelineStep {
