@@ -1,72 +1,82 @@
 import { render, screen, waitFor } from '@testing-library/react';
-import { useAuthStore } from '../AuthStore';
-import AuthGuard from '../AuthGuard';
+import AuthGuard from '@/shared/auth/AuthGuard';
+import { useAuthStore } from '@/shared/auth';
+import { authApi } from '@/shared/auth/AuthApi';
 
-const mockReplace = jest.fn();
-let mockPathname = '/projects';
-
-jest.mock('next/router', () => ({
-  useRouter: () => ({ replace: mockReplace, pathname: mockPathname }),
+jest.mock('@/shared/auth/AuthApi', () => ({
+  authApi: {
+    me: jest.fn(),
+  },
 }));
 
-const mockUseServerMode = jest.fn();
+const mockRouter = { pathname: '/projects', replace: jest.fn() };
+jest.mock('next/router', () => ({ useRouter: () => mockRouter }));
+
+let mockMode = 'cloud';
 jest.mock('@/shared/serverInfo', () => ({
-  useServerMode: () => mockUseServerMode(),
-  loadServerMode: jest.fn(),
-  resetServerModeCache: jest.fn(),
+  useServerMode: () => mockMode,
 }));
 
-function Child() {
-  return <div data-testid="child">protected content</div>;
-}
+const meMock = authApi.me as jest.Mock;
 
-function renderPage() {
-  return render(<AuthGuard><Child /></AuthGuard>);
+const sessionUser = { id: 'u1', email: 'a@b.c', name: 'A', companyId: 'c1', role: 'Admin', mustChangePassword: false };
+
+function renderGuard(path: string) {
+  mockRouter.pathname = path;
+  return render(<AuthGuard><div data-testid="child">content</div></AuthGuard>);
 }
 
 beforeEach(() => {
-  mockReplace.mockClear();
-  mockPathname = '/projects';
-  mockUseServerMode.mockReturnValue('cloud');
-  localStorage.clear();
+  mockMode = 'cloud';
+  mockRouter.replace.mockClear();
+  meMock.mockReset();
   useAuthStore.getState().clearAuth();
 });
 
 describe('AuthGuard', () => {
-  it('redirects unauthenticated users away from protected pages', async () => {
-    renderPage();
-    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/login'));
+  it('asks the server who is signed in and shows the page to an authenticated person', async () => {
+    meMock.mockResolvedValue({ user: sessionUser });
+    renderGuard('/projects');
+
+    expect(await screen.findByTestId('child')).toBeInTheDocument();
+    expect(meMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('redirects to /login when the identity cookie is rejected on a protected page', async () => {
+    meMock.mockRejectedValue({ message: 'Sign in required.', isError: true });
+    renderGuard('/projects');
+
+    await waitFor(() => expect(mockRouter.replace).toHaveBeenCalledWith('/login'));
     expect(screen.queryByTestId('child')).not.toBeInTheDocument();
   });
 
-  it('renders protected content for authenticated users', async () => {
-    useAuthStore.getState().setAuth('access', 'refresh', {
-      id: 'u1', email: 'a@b.c', name: 'A', companyId: 'c1', isAdmin: false,
-    });
-    renderPage();
+  it('renders a public page without needing a session', async () => {
+    meMock.mockRejectedValue({ message: 'Sign in required.', isError: true });
+    renderGuard('/login');
+
     expect(await screen.findByTestId('child')).toBeInTheDocument();
-    expect(mockReplace).not.toHaveBeenCalled();
+    expect(mockRouter.replace).not.toHaveBeenCalled();
   });
 
-  it('renders public pages without requiring authentication', async () => {
-    mockPathname = '/login';
-    renderPage();
-    expect(await screen.findByTestId('child')).toBeInTheDocument();
-    expect(mockReplace).not.toHaveBeenCalled();
+  it('sends an authenticated person away from /login to /projects', async () => {
+    meMock.mockResolvedValue({ user: sessionUser });
+    renderGuard('/login');
+
+    await waitFor(() => expect(mockRouter.replace).toHaveBeenCalledWith('/projects'));
   });
 
-  it('renders protected content without auth when running in desktop mode', async () => {
-    mockUseServerMode.mockReturnValue('desktop');
-    renderPage();
-    expect(await screen.findByTestId('child')).toBeInTheDocument();
-    expect(mockReplace).not.toHaveBeenCalled();
+  it('forces a person with a temporary password to change-password', async () => {
+    meMock.mockResolvedValue({ user: { ...sessionUser, mustChangePassword: true } });
+    renderGuard('/projects');
+
+    await waitFor(() => expect(mockRouter.replace).toHaveBeenCalledWith('/change-password'));
   });
 
-  it('does not redirect to login on public pages in desktop mode', async () => {
-    mockUseServerMode.mockReturnValue('desktop');
-    mockPathname = '/login';
-    renderPage();
-    expect(await screen.findByTestId('child')).toBeInTheDocument();
-    expect(mockReplace).not.toHaveBeenCalled();
+  it('skips the identity check and renders children in desktop mode', () => {
+    mockMode = 'desktop';
+    renderGuard('/projects');
+
+    expect(screen.getByTestId('child')).toBeInTheDocument();
+    expect(meMock).not.toHaveBeenCalled();
   });
 });

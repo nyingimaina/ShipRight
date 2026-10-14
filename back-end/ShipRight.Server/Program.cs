@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.IdentityModel.Tokens.Jwt;
 using System.Reflection;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
@@ -13,15 +12,13 @@ using Serilog;
 using Serilog.Formatting.Json;
 using ShipRight.Database;
 using ShipRight.Database.Models;
-using ShipRight.Modules.Auth;
-using ShipRight.Modules.Auth.Middleware;
-using ShipRight.Modules.Auth.Models;
 using ShipRight.Modules.Auth.Services;
 using ShipRight.Modules.Builds;
 using ShipRight.Modules.ComposeRepo;
 using ShipRight.Modules.Database;
 using ShipRight.Modules.Database.Providers;
 using ShipRight.Modules.Filesystem;
+using ShipRight.Modules.Identity;
 using ShipRight.Modules.Projects;
 using ShipRight.Modules.RepoMaintenance;
 using ShipRight.Modules.RemoteHost;
@@ -40,6 +37,7 @@ using ShipRight.Shared.Events;
 using ShipRight.Shared.ProcessRunner;
 using ShipRight.Shared.SshRunner;
 using ShipRight.Shared.Store;
+using ShipRight.Shared.Tenancy;
 using ShipRight.Server;
 using ShipRight.RuntimeConfig;
 
@@ -97,12 +95,11 @@ try
 
     if (cloudMode)
     {
-        CloudConfiguration.ValidateProductionSettings(
+        CloudConfiguration.ValidateCloudSettings(
             Environment.GetEnvironmentVariable("SHIPRIGHT__DB_CONNECTION"),
-            Environment.GetEnvironmentVariable("SHIPRIGHT__JWT_KEY"),
-            Environment.GetEnvironmentVariable("SHIPRIGHT__ADMIN_EMAIL"),
-            Environment.GetEnvironmentVariable("SHIPRIGHT__ADMIN_PASSWORD"),
-            Environment.GetEnvironmentVariable("SHIPRIGHT__CORS_ORIGINS"));
+            Environment.GetEnvironmentVariable("SHIPRIGHT__CORS_ORIGINS"),
+            Environment.GetEnvironmentVariable("SHIPRIGHT__GOOGLE_CLIENT_ID"),
+            Environment.GetEnvironmentVariable("SHIPRIGHT__GOOGLE_CLIENT_SECRET"));
     }
 
     builder.Services.AddCors(options =>
@@ -155,18 +152,27 @@ try
     {
         app.UseRateLimiter();
         app.UseMiddleware<DatabaseTransactionMiddleware>();
-        app.UseMiddleware<JwtMiddleware>();
     }
 
     app.UseCors("ShipRightPolicy");
     app.UseDefaultFiles();
     app.UseStaticFiles();
 
+    if (cloudMode)
+    {
+        // Sign-in: the cookie identifies the person, their company claim scopes every query, and the
+        // fallback policy (role rules) guards every endpoint that is not explicitly marked public.
+        app.UseAuthentication();
+        app.UseMiddleware<CompanyContextMiddleware>();
+        app.UseAuthorization();
+    }
+
     // ─── Routes ────────────────────────────────────────────────────
 
     if (cloudMode)
     {
-        app.MapAuthRoutes();
+        app.MapIdentityAuthRoutes();
+        app.MapTeamRoutes();
     }
 
     app.MapHealthRoutes(profile, cloudMode ? AppMode.Cloud : AppMode.Desktop);
@@ -206,31 +212,32 @@ try
     app.MapResourceRoutes();
     app.MapPipelineRoutes();
 
-    app.MapFallbackToFile("index.html");
+    // Public: the web app's own page; its data only ever comes through the guarded /api routes.
+    app.MapFallbackToFile("index.html").AllowAnonymous();
 
     // ─── Startup ───────────────────────────────────────────────────
 
     if (cloudMode)
     {
         _ = app.Services.GetRequiredService<IPasswordResetEmailSender>();
-        var adminEmail = Environment.GetEnvironmentVariable("SHIPRIGHT__ADMIN_EMAIL");
-        var adminPassword = Environment.GetEnvironmentVariable("SHIPRIGHT__ADMIN_PASSWORD");
-        if (!string.IsNullOrEmpty(adminEmail) && !string.IsNullOrEmpty(adminPassword))
-        {
-            var setupService = app.Services.GetRequiredService<ISetupService>();
-            await setupService.EnsureAdminUserAsync(adminEmail, adminPassword);
-        }
+        // Idempotent: upgrades existing accounts and company data to the Identity tables, or does nothing.
+        await app.Services.GetRequiredService<MigrationRunner>().RunAsync();
     }
 
-    await app.Services.GetRequiredService<IBuildStore>().MarkInterruptedAsync();
+    // Start-up work and the schedulers started below belong to no one company: they run as system work.
+    // Desktop mode has no company context and no scope is needed.
+    using (app.Services.GetService<ICompanyContext>()?.BeginSystemScope())
+    {
+        await app.Services.GetRequiredService<IBuildStore>().MarkInterruptedAsync();
 
-    var projectCount = app.Services.GetRequiredService<IProjectStore>().Count;
-    var buildCount   = app.Services.GetRequiredService<IBuildStore>().Count;
-    Log.Information("ShipRight starting on port {Port}", profile.Port);
-    Log.Information("Data directory: {DataDir}", dataDir);
-    Log.Information("{ProjectCount} projects, {BuildCount} builds loaded", projectCount, buildCount);
+        var projectCount = app.Services.GetRequiredService<IProjectStore>().Count;
+        var buildCount   = app.Services.GetRequiredService<IBuildStore>().Count;
+        Log.Information("ShipRight starting on port {Port}", profile.Port);
+        Log.Information("Data directory: {DataDir}", dataDir);
+        Log.Information("{ProjectCount} projects, {BuildCount} builds loaded", projectCount, buildCount);
 
-    await app.StartAsync();
+        await app.StartAsync();
+    }
 
     if (args.Contains("--browser"))
     {
@@ -266,7 +273,7 @@ static void RegisterDesktopServices(IServiceCollection services, string dataDir)
     services.AddSingleton<SqliteProjectStore>(_ => new SqliteProjectStore(dataDir));
     services.AddSingleton<IProjectStore>(sp =>
         new DockerCredentialPreservingProjectStore(sp.GetRequiredService<SqliteProjectStore>()));
-    services.AddSingleton<IBuildStore, SqliteBuildStore>();
+    services.AddSingleton<IBuildStore>(_ => new SqliteBuildStore(dataDir));
     services.AddSingleton<BuildEventBus>();
     services.AddSingleton<IProcessRunner, ProcessRunner>();
     services.AddSingleton<KnownHostsStore>();
@@ -291,17 +298,24 @@ static void RegisterDesktopServices(IServiceCollection services, string dataDir)
         sp.GetRequiredService<MariaDbProvider>(),
         sp.GetRequiredService<SqlServerProvider>()));
     services.AddSingleton<DatabaseOrchestrator>();
-    services.AddSingleton<IServerStore, SqliteServerStore>();
+    services.AddSingleton<IServerStore>(_ => new SqliteServerStore(dataDir));
     services.AddSingleton<SshKeyStore>(_ => new SshKeyStore(dataDir));
     services.AddSingleton<IRemoteHostProvider, LinuxSshProvider>();
     services.AddSingleton<IMonitoringProvider, LinuxSshMonitoringProvider>();
     services.AddSchedulerModule();
+    // The scheduler module registers its history stores from ~/.shipright; override them so every
+    // desktop data file lives under the resolved profile directory (R11: a smoke run must not touch
+    // the real user data directory, whether it passes or fails).
+    services.AddSingleton<SqliteBackupHistoryStore>(_ => new SqliteBackupHistoryStore(dataDir));
+    services.AddSingleton<SqliteBackupOverflowStore>(sp =>
+        new SqliteBackupOverflowStore(dataDir, sp.GetRequiredService<TempoScheduler<BackupJob>>()));
     services.AddWatchBranchModule();
-    services.AddSingleton<IDockerRegistryResourceStore, SqliteDockerRegistryResourceStore>();
-    services.AddSingleton<IScriptResourceStore, SqliteScriptResourceStore>();
-    services.AddSingleton<ICredentialResourceStore, SqliteCredentialResourceStore>();
-    services.AddSingleton<IPipelineResourceStore, SqlitePipelineResourceStore>();
-    services.AddSingleton<IAwsProfileResourceStore, SqliteAwsProfileResourceStore>();
+    services.AddSingleton<SqliteWatchBranchHistoryStore>(_ => new SqliteWatchBranchHistoryStore(dataDir));
+    services.AddSingleton<IDockerRegistryResourceStore>(_ => new SqliteDockerRegistryResourceStore(dataDir));
+    services.AddSingleton<IScriptResourceStore>(_ => new SqliteScriptResourceStore(dataDir));
+    services.AddSingleton<ICredentialResourceStore>(_ => new SqliteCredentialResourceStore(dataDir));
+    services.AddSingleton<IPipelineResourceStore>(_ => new SqlitePipelineResourceStore(dataDir));
+    services.AddSingleton<IAwsProfileResourceStore>(_ => new SqliteAwsProfileResourceStore(dataDir));
     services.AddSingleton<IAwsCredentialsReader>(sp => new AwsCredentialsReader(
         sp.GetService<IProcessRunner>()));
     services.AddSingleton<AwsProfileValidator>();
@@ -311,3 +325,6 @@ static void RegisterDesktopServices(IServiceCollection services, string dataDir)
     services.AddSingleton<BuildMachineImagePruner>();
     services.AddSingleton<WslDiskService>();
 }
+
+// Lets WebApplicationFactory start the real app in tests.
+public partial class Program;

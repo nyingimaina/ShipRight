@@ -47,6 +47,7 @@ public class BuildRecord
     public List<string> SucceededSteps { get; set; } = new();
     public bool IsRollback { get; set; } = false;
     public string? RolledBackFromBuildId { get; set; }
+    public string? Initiator { get; set; }
 
     /// <summary>
     /// Set when a git push fails with an auth prompt (GIT_TERMINAL_PROMPT=0).

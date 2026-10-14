@@ -1,4 +1,4 @@
 export { useAuthStore } from './AuthStore';
-export type { User, AuthState } from './AuthStore';
-export { authApi } from './AuthApi';
-export type { AuthResponse, ApiError } from './AuthApi';
+export type { User, Role, AuthState } from './AuthStore';
+export { authApi, googleStartUrl } from './AuthApi';
+export type { Session, SessionUser, ApiError, ProvidersInfo } from './AuthApi';

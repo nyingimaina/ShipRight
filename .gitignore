@@ -52,3 +52,8 @@ back-end/temp-apicheck/
 back-end/ShipRight.Server/wwwroot/*
 !back-end/ShipRight.Server/wwwroot/index.html
 !back-end/ShipRight.Server/wwwroot/404.html
+# Added by DevTeam: test results are made fresh by every check and must never be saved with the work.
+.coverage/
+TestResults/
+.nyc_output/
+*.cobertura.xml

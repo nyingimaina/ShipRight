@@ -8,7 +8,9 @@ using Serilog;
 using ShipRight.Database;
 using ShipRight.Modules.Auth.Services;
 using ShipRight.Modules.Builds;
+using ShipRight.Modules.ComposeRepo;
 using ShipRight.Modules.Database;
+using ShipRight.Modules.Identity;
 using ShipRight.Modules.Database.Providers;
 using ShipRight.Modules.Projects;
 using ShipRight.Modules.RemoteHost;
@@ -25,6 +27,7 @@ using ShipRight.Shared.Events;
 using ShipRight.Shared.ProcessRunner;
 using ShipRight.Shared.SshRunner;
 using ShipRight.Shared.Store;
+using ShipRight.Shared.Tenancy;
 
 namespace ShipRight.Server;
 
@@ -37,14 +40,7 @@ public static class CloudDiRegistrar
             config,
             Environment.GetEnvironmentVariable("SHIPRIGHT__DB_CONNECTION"));
 
-        services.AddSingleton<IPasswordHelper, PasswordHelper>();
-
-        var jwtKey = Environment.GetEnvironmentVariable("SHIPRIGHT__JWT_KEY")
-            ?? config["Jwt:SigningKey"]
-            ?? throw new InvalidOperationException("JWT signing key is required. Set SHIPRIGHT__JWT_KEY env var.");
-        services.AddSingleton<IJwtService>(_ => new JwtService(jwtKey));
-        services.AddSingleton<ITokenService, TokenService>();
-        services.AddSingleton<ISetupService, SetupService>();
+        services.AddShipRightIdentity(GoogleSettings.FromEnvironment());
         services.AddSingleton<IPasswordResetEmailSender, SmtpPasswordResetEmailSender>();
 
         services.AddRateLimiter(options =>
@@ -66,17 +62,27 @@ public static class CloudDiRegistrar
                 opt.QueueLimit = 0;
             });
             options.RejectionStatusCode = 429;
+
+            // Asking for password resets is limited so nobody can flood an inbox with reset emails.
+            options.AddPolicy(AuthEndpoints.PasswordResetLimiter, context =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    _ => new FixedWindowRateLimiterOptions { PermitLimit = 5, Window = TimeSpan.FromHours(1), QueueLimit = 0 }));
+            options.AddPolicy(AuthEndpoints.AuthAttemptsLimiter, context =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    _ => new FixedWindowRateLimiterOptions { PermitLimit = 30, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
         });
 
-        // MariaDB-backed stores
-        services.AddSingleton<IProjectStore, MariaDbProjectStore>();
-        services.AddSingleton<IServerStore, MariaDbServerStore>();
-        services.AddSingleton<IBuildStore, MariaDbBuildStore>();
-        services.AddSingleton<IDockerRegistryResourceStore, MariaDbDockerRegistryResourceStore>();
-        services.AddSingleton<IScriptResourceStore, MariaDbScriptResourceStore>();
-        services.AddSingleton<ICredentialResourceStore, MariaDbCredentialResourceStore>();
-        services.AddSingleton<IPipelineResourceStore, MariaDbPipelineResourceStore>();
-        services.AddSingleton<IAwsProfileResourceStore, MariaDbAwsProfileResourceStore>();
+        // MariaDB-backed stores, each limited to the signed-in person's company
+        services.AddSingleton<IProjectStore, CompanyScopedProjectStore>();
+        services.AddSingleton<IServerStore, CompanyScopedServerStore>();
+        services.AddSingleton<IBuildStore, CompanyScopedBuildStore>();
+        services.AddSingleton<IDockerRegistryResourceStore, CompanyScopedDockerRegistryResourceStore>();
+        services.AddSingleton<IScriptResourceStore, CompanyScopedScriptResourceStore>();
+        services.AddSingleton<ICredentialResourceStore, CompanyScopedCredentialResourceStore>();
+        services.AddSingleton<IPipelineResourceStore, CompanyScopedPipelineResourceStore>();
+        services.AddSingleton<IAwsProfileResourceStore, CompanyScopedAwsProfileResourceStore>();
         services.AddSingleton<MariaDbBackupHistoryStore>();
         services.AddSingleton<MariaDbWatchBranchHistoryStore>();
 
@@ -98,6 +104,7 @@ public static class CloudDiRegistrar
         services.AddSingleton<AwsCliInstaller>();
 
         services.AddSingleton<BuildOrchestrator>();
+        services.AddSingleton<ComposeRepoService>();
         services.AddSingleton<MariaDbProvider>();
         services.AddSingleton<SqlServerProvider>();
         services.AddSingleton<IDbProviderResolver>(sp => new DbProviderResolver(
@@ -122,6 +129,8 @@ public static class CloudDiRegistrar
         // ── Watch Branch (cloud: MariaDB-backed history) ──────────────────────
         services.AddSingleton<TempoQueue<TempoScheduledWork<WatchBranchJob>>>(sp =>
         {
+            // Background work belongs to no signed-in person: it runs as system work across companies.
+            using var systemScope = sp.GetRequiredService<ICompanyContext>().BeginSystemScope();
             var processor = new WatchBranchJobProcessor(
                 sp.GetRequiredService<IProjectStore>(),
                 sp.GetRequiredService<BuildOrchestrator>(),
@@ -169,6 +178,7 @@ public static class CloudDiRegistrar
 
         services.AddSingleton<TempoScheduler<WatchBranchJob>>(sp =>
         {
+            using var systemScope = sp.GetRequiredService<ICompanyContext>().BeginSystemScope();
             var scheduler = new TempoScheduler<WatchBranchJob>(
                 sp.GetRequiredService<TempoQueue<TempoScheduledWork<WatchBranchJob>>>(),
                 new TempoSchedulerSettings { TickInterval = TimeSpan.FromSeconds(10), MaxCatchUpSlots = 10 });

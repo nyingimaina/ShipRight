@@ -42,6 +42,7 @@ export interface IBuildRecord {
   isRollback: boolean;
   rolledBackFromBuildId: string | null;
   credentialHost?: string | null;
+  initiator?: string | null;
 }
 
 export interface IDeployment {

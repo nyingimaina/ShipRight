@@ -30,39 +30,33 @@ public class CloudConfigurationTests
     }
 
     [TestMethod]
-    public void ValidateProductionSettings_RejectsPlaceholderValues()
+    public void ValidateCloudSettings_RejectsPlaceholderValues()
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["DatabaseConnection"] = "Server=db;Password=changeme",
-                ["JwtKey"] = "CHANGE-ME-TO-A-RANDOM-64-CHAR-HEX-STRING",
-                ["AdminEmail"] = "admin@example.com",
-                ["AdminPassword"] = "changeme",
                 ["CorsOrigins"] = "https://shipright.example.com",
             })
             .Build();
 
         Assert.ThrowsException<InvalidOperationException>(() =>
-            CloudConfiguration.ValidateProductionSettings(configuration));
+            CloudConfiguration.ValidateCloudSettings(configuration));
     }
 
     [TestMethod]
-    public void ValidateProductionSettings_RejectsLocalhostCorsOrigin()
+    public void ValidateCloudSettings_RejectsLocalhostCorsOrigin()
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["DatabaseConnection"] = "Server=db;Password=production-secret",
-                ["JwtKey"] = "production-signing-key",
-                ["AdminEmail"] = "ops@shipright.example.com",
-                ["AdminPassword"] = "production-password",
                 ["CorsOrigins"] = "http://localhost:5200",
             })
             .Build();
 
         Assert.ThrowsException<InvalidOperationException>(() =>
-            CloudConfiguration.ValidateProductionSettings(configuration));
+            CloudConfiguration.ValidateCloudSettings(configuration));
     }
 
     [TestMethod]
@@ -70,10 +64,6 @@ public class CloudConfigurationTests
     {
         var services = new ServiceCollection();
         var configuration = new ConfigurationManager();
-        configuration.AddInMemoryCollection(new Dictionary<string, string?>
-        {
-            ["Jwt:SigningKey"] = "test-signing-key",
-        });
 
         ShipRight.Server.CloudDiRegistrar.Register(services, configuration);
 

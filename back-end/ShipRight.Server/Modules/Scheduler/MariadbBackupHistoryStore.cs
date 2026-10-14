@@ -2,33 +2,43 @@ using Dapper.Contrib.Extensions;
 using Jattac.Libraries.QBuilder;
 using Rocket.Libraries.DatabaseIntegrator;
 using ShipRight.Database;
+using ShipRight.Shared.Tenancy;
 
 namespace ShipRight.Modules.Scheduler;
 
 /// <summary>
 /// MariaDB-backed store for backup history, replacing BackupHistoryStore
 /// (JSON file-based) when running in cloud mode.
-/// Public API matches the original file-based store.
+/// Public API matches the original file-based store. With a CompanyScope every query is limited to the
+/// signed-in person's company (R4); rows written by the scheduler are stamped with the project's company.
 /// </summary>
 public class MariaDbBackupHistoryStore
 {
     private readonly IDatabaseHelper<Guid> _db;
+    private readonly CompanyScope? _scope;
 
     public MariaDbBackupHistoryStore(IDatabaseHelper<Guid> db)
     {
         _db = db;
     }
 
+    public MariaDbBackupHistoryStore(IDatabaseHelper<Guid> db, CompanyScope scope)
+    {
+        _db = db;
+        _scope = scope;
+    }
+
     public async Task Append(BackupHistoryRecord record)
     {
+        var projectId = Guid.Parse(record.ProjectId);
         using var qb = AppQBuilderExtensions.NewQBuilder();
         var built = qb
             .UseTableBoundInsert<Record>()
             .FromObject(new Record
             {
                 Id = Guid.NewGuid(),
-                CompanyId = Guid.Empty,
-                ProjectId = Guid.Parse(record.ProjectId),
+                CompanyId = _scope is null ? Guid.Empty : await _scope.InsertCompanyAsync(projectId),
+                ProjectId = projectId,
                 ProjectName = record.ProjectName,
                 DatabaseName = record.DatabaseName,
                 Status = record.Status,
@@ -55,6 +65,7 @@ public class MariaDbBackupHistoryStore
         using var qb = AppQBuilderExtensions.NewQBuilder();
         qb.UseSelector().Select<Record>("*");
         var filter = qb.UseTableBoundFilter<Record>();
+        ApplyCompany(qb);
 
         if (since.HasValue)
             filter.WhereGreaterThanOrEqualTo(r => r.StartedAt, since.Value);
@@ -70,7 +81,7 @@ public class MariaDbBackupHistoryStore
 
         return records
             .OrderByDescending(r => r.StartedAt)
-            .Take(limit ?? int.MaxValue)
+            .Take(limit ?? 500)
             .Select(Map)
             .ToList();
     }
@@ -81,13 +92,12 @@ public class MariaDbBackupHistoryStore
         until ??= DateTime.UtcNow;
 
         using var qb = AppQBuilderExtensions.NewQBuilder();
-        var built = qb
-            .UseSelector().Select<Record>("Status, DurationMs, BackupSizeBytes").Then()
-            .UseTableBoundFilter<Record>()
+        qb.UseSelector().Select<Record>("Status, DurationMs, BackupSizeBytes");
+        qb.UseTableBoundFilter<Record>()
             .WhereGreaterThanOrEqualTo(r => r.StartedAt, since.Value)
-            .WhereLessThanOrEqualTo(r => r.StartedAt, until.Value)
-            .Then()
-            .BuildWithParameters();
+            .WhereLessThanOrEqualTo(r => r.StartedAt, until.Value);
+        ApplyCompany(qb);
+        var built = qb.BuildWithParameters();
 
         var records = await _db.GetManyAsync<Record>(built.ParameterizedSql, built.Parameters);
         var total = records.Count;
@@ -113,13 +123,12 @@ public class MariaDbBackupHistoryStore
         var until = DateTime.UtcNow.Date.AddDays(1);
 
         using var qb = AppQBuilderExtensions.NewQBuilder();
-        var built = qb
-            .UseSelector().Select<Record>("StartedAt, Status, DurationMs, BackupSizeBytes").Then()
-            .UseTableBoundFilter<Record>()
+        qb.UseSelector().Select<Record>("StartedAt, Status, DurationMs, BackupSizeBytes");
+        qb.UseTableBoundFilter<Record>()
             .WhereGreaterThanOrEqualTo(r => r.StartedAt, since)
-            .WhereLessThan(r => r.StartedAt, until)
-            .Then()
-            .BuildWithParameters();
+            .WhereLessThan(r => r.StartedAt, until);
+        ApplyCompany(qb);
+        var built = qb.BuildWithParameters();
 
         var records = await _db.GetManyAsync<Record>(built.ParameterizedSql, built.Parameters);
         var byDay = records.GroupBy(r => r.StartedAt.Date).ToDictionary(g => g.Key, g => g.ToList());
@@ -150,11 +159,10 @@ public class MariaDbBackupHistoryStore
     public async Task<List<BackupProjectReport>> GetProjectReports()
     {
         using var qb = AppQBuilderExtensions.NewQBuilder();
-        var built = qb
-            .UseSelector().Select<Record>("*").Then()
-            .UseTableBoundFilter<Record>()
-            .Then()
-            .BuildWithParameters();
+        qb.UseSelector().Select<Record>("*");
+        qb.UseTableBoundFilter<Record>();
+        ApplyCompany(qb);
+        var built = qb.BuildWithParameters();
 
         var records = await _db.GetManyAsync<Record>(built.ParameterizedSql, built.Parameters);
         var byProject = records.GroupBy(r => r.ProjectId);
@@ -180,11 +188,10 @@ public class MariaDbBackupHistoryStore
     public async Task Prune(int retainCount = 1000)
     {
         using var qb = AppQBuilderExtensions.NewQBuilder();
-        var built = qb
-            .UseSelector().Select<Record>("Id, StartedAt").Then()
-            .UseTableBoundFilter<Record>()
-            .Then()
-            .BuildWithParameters();
+        qb.UseSelector().Select<Record>("Id, StartedAt");
+        qb.UseTableBoundFilter<Record>();
+        ApplyCompany(qb);
+        var built = qb.BuildWithParameters();
 
         var records = await _db.GetManyAsync<Record>(built.ParameterizedSql, built.Parameters);
         if (records.Count <= retainCount) return;
@@ -203,6 +210,13 @@ public class MariaDbBackupHistoryStore
                 .BuildWithParameters();
             await _db.ExecuteAsync(delBuilt.ParameterizedSql, delBuilt.Parameters);
         }
+    }
+
+    // No scope means the store was built without tenancy (unit tests only); the cloud registers it with one.
+    private void ApplyCompany(QBuilder qb)
+    {
+        if (_scope?.Filter() is { } companyId)
+            qb.UseTableBoundFilter<Record>().WhereEqualTo(r => r.CompanyId, companyId);
     }
 
     private static BackupHistoryRecord Map(Record r) => new()

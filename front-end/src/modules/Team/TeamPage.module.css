@@ -1,0 +1,162 @@
+.page {
+  padding: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.headingRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.heading {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.addCard {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.addTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 14px;
+}
+
+.addFields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  align-items: end;
+}
+
+.addActions {
+  display: flex;
+  align-items: center;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.select {
+  background: var(--bg-input);
+  border: 1px solid var(--border-medium);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 14px;
+  color: var(--text-primary);
+  font-family: inherit;
+}
+
+.fieldError {
+  color: var(--error);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.formError {
+  color: var(--error);
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+
+.errorBanner {
+  background: var(--error-dim);
+  border: 1px solid var(--error-border);
+  color: var(--error);
+  font-size: 13px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+}
+
+.listCard {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 20px;
+}
+
+.stateText {
+  color: var(--text-muted);
+  font-size: 14px;
+  padding: 24px 0;
+  text-align: center;
+}
+
+.retry {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  font-family: inherit;
+}
+
+.cellText {
+  display: inline-block;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.roleBadge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.active {
+  color: var(--success);
+  font-size: 13px;
+}
+
+.inactive {
+  color: var(--error);
+  font-size: 13px;
+}
+
+.paging {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pagingButtons {
+  display: flex;
+  gap: 8px;
+}
+
+.notAllowed {
+  color: var(--text-muted);
+  text-align: center;
+  padding: 48px 24px;
+}

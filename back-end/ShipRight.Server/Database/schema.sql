@@ -19,49 +19,48 @@ CREATE TABLE Company (
     UNIQUE KEY uq_company_slug (Slug)
 ) ENGINE=InnoDB;
 
+-- One person: exactly one company and one role (Admin, Operator or Viewer). Matches migrations 0001 + 0002.
 CREATE TABLE User (
-    Id              CHAR(36)     NOT NULL PRIMARY KEY,
-    CompanyId       CHAR(36)     NOT NULL,
-    Email           VARCHAR(255) NOT NULL,
-    PasswordHash    VARCHAR(255) NOT NULL,
-    Name            VARCHAR(255) NOT NULL DEFAULT '',
-    IsAdmin         BOOLEAN      NOT NULL DEFAULT FALSE,
-    TokenVersion    INT          NOT NULL DEFAULT 1,
-    Created         DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    Modified        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    Deleted         BOOLEAN      NOT NULL DEFAULT FALSE,
+    Id                 CHAR(36)     NOT NULL PRIMARY KEY,
+    CompanyId          CHAR(36)     NOT NULL,
+    Email              VARCHAR(255) NOT NULL,
+    NormalizedEmail    VARCHAR(255) NULL,
+    PasswordHash       VARCHAR(255) NULL,
+    Name               VARCHAR(255) NOT NULL DEFAULT '',
+    Role               VARCHAR(20)  NOT NULL DEFAULT 'Viewer',
+    IsActive           BOOLEAN      NOT NULL DEFAULT TRUE,
+    MustChangePassword BOOLEAN      NOT NULL DEFAULT FALSE,
+    SecurityStamp      VARCHAR(64)  NULL,
+    LockoutEnd         DATETIME     NULL,
+    AccessFailedCount  INT          NOT NULL DEFAULT 0,
+    Created            DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    Modified           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    Deleted            BOOLEAN      NOT NULL DEFAULT FALSE,
     UNIQUE KEY uq_user_email (Email),
+    UNIQUE KEY uq_user_normalized_email (NormalizedEmail),
     KEY idx_user_company (CompanyId),
+    KEY idx_user_company_name (CompanyId, Name),
+    KEY idx_user_company_role (CompanyId, Role, IsActive),
     CONSTRAINT fk_user_company FOREIGN KEY (CompanyId) REFERENCES Company(Id)
 ) ENGINE=InnoDB;
 
-CREATE TABLE RefreshToken (
-    Id          CHAR(36)     NOT NULL PRIMARY KEY,
+CREATE TABLE ExternalLogin (
+    Provider    VARCHAR(50)  NOT NULL,
+    ProviderKey VARCHAR(255) NOT NULL,
     UserId      CHAR(36)     NOT NULL,
-    TokenHash   VARCHAR(64)  NOT NULL,
-    ExpiresAt   DATETIME     NOT NULL,
     Created     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    Modified    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    Deleted     BOOLEAN      NOT NULL DEFAULT FALSE,
-    RevokedAt   DATETIME     NULL,
-    KEY idx_refresh_token_hash (TokenHash),
-    KEY idx_refresh_token_user (UserId),
-    CONSTRAINT fk_refresh_token_user FOREIGN KEY (UserId) REFERENCES User(Id)
+    PRIMARY KEY (Provider, ProviderKey),
+    KEY idx_external_login_user (UserId),
+    CONSTRAINT fk_external_login_user FOREIGN KEY (UserId) REFERENCES User(Id)
 ) ENGINE=InnoDB;
 
-CREATE TABLE ResetToken (
-    Id          CHAR(36)     NOT NULL PRIMARY KEY,
-    UserId      CHAR(36)     NOT NULL,
-    TokenHash   VARCHAR(64)  NOT NULL,
-    ExpiresAt   DATETIME     NOT NULL,
-    Created     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    Modified    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    Deleted     BOOLEAN      NOT NULL DEFAULT FALSE,
-    UsedAt      DATETIME     NULL,
-    KEY idx_reset_token_hash (TokenHash),
-    KEY idx_reset_token_user (UserId),
-    CONSTRAINT fk_reset_token_user FOREIGN KEY (UserId) REFERENCES User(Id)
+-- Records which numbered migrations have run. A fresh database already has their result, so they are marked done.
+CREATE TABLE SchemaMigration (
+    Id        VARCHAR(100) NOT NULL PRIMARY KEY,
+    AppliedAt DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
+
+INSERT INTO SchemaMigration (Id) VALUES ('0001_identity'), ('0002_drop_legacy_auth');
 
 -- ============================================================================
 -- Domain Tables (JSON-based for flexibility, matching existing SQLite pattern)

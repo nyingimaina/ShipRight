@@ -15,10 +15,6 @@ public class CloudDiRegistrarTests
     {
         var services = new ServiceCollection();
         var config = new ConfigurationManager();
-        config.AddInMemoryCollection(new Dictionary<string, string?>
-        {
-            ["Jwt:SigningKey"] = "test-signing-key-for-cloud-di-registrar-tests",
-        });
         ShipRight.Server.CloudDiRegistrar.Register(services, config);
         return services.BuildServiceProvider();
     }
