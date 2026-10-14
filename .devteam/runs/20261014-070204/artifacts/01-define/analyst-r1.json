@@ -1,0 +1,59 @@
+{
+  "summary": "This is a verification run: the app is to be checked exactly as it is today, with no behaviour, screen, setting or data change. The only deliverable is evidence that the current app starts, its existing automated tests pass, and nothing in the project was modified by the check. The earlier sign-in/Identity decisions belong to a separate feature and are not part of this change.",
+  "roles": ["Builder: runs the checks and reads the result", "Existing app users (Admin, Operator, Viewer, and desktop/local user): must notice no difference"],
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "The app is left exactly as it is: no application file, setting, schema or stored data is changed, and the existing automated tests and start-up behaviour still pass.",
+      "rationale": "The builder asked only to verify the app as it is, so any change would be a surprise and would defeat the purpose of the check.",
+      "acceptance": [
+        "After the check, the project's files are identical to before it (no application file differs)",
+        "The existing back-end and front-end automated test suites run and report no failures",
+        "The app starts and its home page loads, and reading data through it succeeds"
+      ],
+      "edgeCases": [
+        "If an existing test already fails before any change, it is reported as a failure and not hidden or fixed silently",
+        "Running the check twice gives the same result and leaves no extra files in the project"
+      ],
+      "pitfalls": [
+        "The check must not edit, delete or add application files, settings or example settings files",
+        "The check must not alter any stored company, user or project data"
+      ],
+      "rules": ["BOOT-001"]
+    }
+  ],
+  "outOfScope": [
+    "Any change to sign-in, roles, Google sign-in, teammates, or environment settings",
+    "Fixing problems the verification finds",
+    "Adding new tests, scripts or scaffolding"
+  ],
+  "nonFunctional": [
+    {
+      "area": "reliability",
+      "statement": "The verification leaves the project unchanged.",
+      "acceptance": "A comparison of the project's files before and after shows no differences to application files."
+    }
+  ],
+  "risks": [
+    "The project has no start-up check script (scripts/smoke/run.mjs), so 'the app starts' can only be shown by the existing in-process tests."
+  ],
+  "glossary": [
+    "Verification: running the existing checks on the app without changing it."
+  ],
+  "questions": [],
+  "coverage": [
+    { "topic": "users", "status": "not-applicable", "note": "No feature is built; existing roles are unchanged." },
+    { "topic": "data", "status": "not-applicable", "note": "No data is stored or changed." },
+    { "topic": "permissions", "status": "not-applicable", "note": "No permission changes; existing rules stay as they are." },
+    { "topic": "validation", "status": "not-applicable", "note": "No input is added or changed." },
+    { "topic": "states", "status": "not-applicable", "note": "No screen is added or changed." },
+    { "topic": "duplicates", "status": "not-applicable", "note": "No records are created." },
+    { "topic": "volume", "status": "not-applicable", "note": "No lists or data handling change." },
+    { "topic": "deletion", "status": "not-applicable", "note": "Nothing is deleted." },
+    { "topic": "privacy", "status": "not-applicable", "note": "No personal data is touched." },
+    { "topic": "quality", "status": "answered", "note": "The only quality need is that the app still starts and tests pass, unchanged (R1)." }
+  ],
+  "assumptions": [
+    "The earlier decisions about Identity, roles and Google sign-in belong to a different feature and are not part of this verification request."
+  ]
+}
