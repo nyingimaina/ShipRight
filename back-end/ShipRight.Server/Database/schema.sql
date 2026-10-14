@@ -60,7 +60,7 @@ CREATE TABLE SchemaMigration (
     AppliedAt DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
-INSERT INTO SchemaMigration (Id) VALUES ('0001_identity'), ('0002_drop_legacy_auth');
+INSERT INTO SchemaMigration (Id) VALUES ('0001_identity'), ('0002_drop_legacy_auth'), ('0003_key_files');
 
 -- ============================================================================
 -- Domain Tables (JSON-based for flexibility, matching existing SQLite pattern)
@@ -150,6 +150,21 @@ CREATE TABLE CredentialResource (
     Deleted     BOOLEAN      NOT NULL DEFAULT FALSE,
     KEY idx_credential_company (CompanyId),
     CONSTRAINT fk_credential_company FOREIGN KEY (CompanyId) REFERENCES Company(Id)
+) ENGINE=InnoDB;
+
+-- .pem key files, shared company-wide. Name + Tags live in Data (JSON); the .pem content is inside
+-- Data too and is never selected into a metadata read. idx_key_file_company_created serves ordered paging.
+CREATE TABLE KeyFileResource (
+    Id          CHAR(36)     NOT NULL PRIMARY KEY,
+    CompanyId   CHAR(36)     NOT NULL,
+    Name        VARCHAR(255) NOT NULL,
+    Data        LONGTEXT     NOT NULL,
+    Created     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    Modified    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    Deleted     BOOLEAN      NOT NULL DEFAULT FALSE,
+    KEY idx_key_file_company (CompanyId),
+    KEY idx_key_file_company_created (CompanyId, Created),
+    CONSTRAINT fk_key_file_company FOREIGN KEY (CompanyId) REFERENCES Company(Id)
 ) ENGINE=InnoDB;
 
 CREATE TABLE PipelineResource (

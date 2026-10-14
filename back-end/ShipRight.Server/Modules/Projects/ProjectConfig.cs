@@ -113,6 +113,11 @@ public record ServerConfig
     /// When true, SshKeyPath points to a key generated and managed by ShipRight (via Managed SSH Key).
     public bool ManagedSshKey { get; init; } = false;
     /// <summary>
+    /// When true the managed key has been authorized on this server once, so ShipRight connects without
+    /// being prompted again (R1/R2). Regenerating the managed key resets this to false.
+    /// </summary>
+    public bool ManagedSshKeyAuthorized { get; init; } = false;
+    /// <summary>
     /// When set, the rebuild script content is resolved from the referenced
     /// ScriptResource at deploy time instead of using inline RebuildScript.
     /// </summary>

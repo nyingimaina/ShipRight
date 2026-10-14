@@ -14,9 +14,10 @@ import AwsCliInstallButton from '@/shared/components/AwsCliInstallButton';
 import { guidedErrorFor } from '@/shared/awsGuided';
 import { useServerMode } from '@/shared/serverInfo';
 import AwsProfileWizard from '@/modules/Resources/AwsProfileWizard';
+import KeyFilesPanel from '@/modules/Resources/KeyFilesPanel';
 import styles from './Styles/Resources.module.css';
 
-type Tab = 'registries' | 'scripts' | 'credentials' | 'aws-profiles' | 'wsl-disk';
+type Tab = 'registries' | 'scripts' | 'credentials' | 'aws-profiles' | 'key-files' | 'wsl-disk';
 
 type RegistryInput = {
   id?: string;
@@ -420,6 +421,12 @@ export default function ResourcesPage() {
               AWS Profiles ({awsProfiles.length})
             </button>
             <button
+              className={`${styles.tab} ${tab === 'key-files' ? styles.tabActive : ''}`}
+              onClick={() => setTab('key-files')}
+            >
+              Key Files
+            </button>
+            <button
               className={`${styles.tab} ${tab === 'wsl-disk' ? styles.tabActive : ''}`}
               onClick={() => setTab('wsl-disk')}
             >
@@ -452,7 +459,7 @@ export default function ResourcesPage() {
                       {r.tags && r.tags.length > 0 && (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
                           {r.tags.map(tag => (
-                            <span key={tag} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: 'rgba(201,168,76,0.15)', color: '#C9A84C' }}>
+                            <span key={tag} style={{ fontSize: 12, padding: '2px 6px', borderRadius: 4, background: 'rgba(201,168,76,0.15)', color: '#C9A84C' }}>
                               {tag}
                             </span>
                           ))}
@@ -469,10 +476,9 @@ export default function ResourcesPage() {
               {!loading && registries.length === 0 && (
                 <p className={styles.empty}>
                   No registry resources.{' '}
-                  <button onClick={openNewRegistry}
-                    style={{ background: 'none', border: 'none', color: '#C9A84C', cursor: 'pointer' }}>
+                  <ZestButton onClick={openNewRegistry} zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}>
                     Add one
-                  </button>.
+                  </ZestButton>.
                 </p>
               )}
             </div>
@@ -491,7 +497,7 @@ export default function ResourcesPage() {
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                         <h3 className={styles.cardTitle}>{s.name}</h3>
-                        <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: 'rgba(201,168,76,0.2)', color: '#C9A84C' }}>
+                        <span style={{ fontSize: 12, padding: '2px 6px', borderRadius: 4, background: 'rgba(201,168,76,0.2)', color: '#C9A84C' }}>
                           {s.platform}
                         </span>
                       </div>
@@ -507,10 +513,9 @@ export default function ResourcesPage() {
               {!loading && scripts.length === 0 && (
                 <p className={styles.empty}>
                   No script resources.{' '}
-                  <button onClick={openNewScript}
-                    style={{ background: 'none', border: 'none', color: '#C9A84C', cursor: 'pointer' }}>
+                  <ZestButton onClick={openNewScript} zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}>
                     Add one
-                  </button>.
+                  </ZestButton>.
                 </p>
               )}
             </div>
@@ -533,7 +538,7 @@ export default function ResourcesPage() {
                       {c.tags && c.tags.length > 0 && (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
                           {c.tags.map(tag => (
-                            <span key={tag} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: 'rgba(201,168,76,0.15)', color: '#C9A84C' }}>
+                            <span key={tag} style={{ fontSize: 12, padding: '2px 6px', borderRadius: 4, background: 'rgba(201,168,76,0.15)', color: '#C9A84C' }}>
                               {tag}
                             </span>
                           ))}
@@ -550,10 +555,9 @@ export default function ResourcesPage() {
               {!loading && credentials.length === 0 && (
                 <p className={styles.empty}>
                   No credential resources.{' '}
-                  <button onClick={openNewCredential}
-                    style={{ background: 'none', border: 'none', color: '#C9A84C', cursor: 'pointer' }}>
+                  <ZestButton onClick={openNewCredential} zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}>
                     Add one
-                  </button>.
+                  </ZestButton>.
                 </p>
               )}
             </div>
@@ -578,7 +582,7 @@ export default function ResourcesPage() {
                       {a.tags && a.tags.length > 0 && (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
                           {a.tags.map(tag => (
-                            <span key={tag} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: 'rgba(201,168,76,0.15)', color: '#C9A84C' }}>
+                            <span key={tag} style={{ fontSize: 12, padding: '2px 6px', borderRadius: 4, background: 'rgba(201,168,76,0.15)', color: '#C9A84C' }}>
                               {tag}
                             </span>
                           ))}
@@ -595,14 +599,15 @@ export default function ResourcesPage() {
               {!loading && awsProfiles.length === 0 && (
                 <p className={styles.empty}>
                   No AWS profile resources.{' '}
-                  <button onClick={openNewAwsProfile}
-                    style={{ background: 'none', border: 'none', color: '#C9A84C', cursor: 'pointer' }}>
+                  <ZestButton onClick={openNewAwsProfile} zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}>
                     Add one
-                  </button>.
+                  </ZestButton>.
                 </p>
               )}
             </div>
           )}
+
+          {tab === 'key-files' && <KeyFilesPanel />}
 
           {tab === 'wsl-disk' && (
             <div className={styles.grid} style={{ gridTemplateColumns: '1fr' }}>
@@ -776,7 +781,7 @@ function RegistryForm({ initial, isEdit, onSave, onCancel, awsProfiles, allTags 
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>
-            <div style={{ fontSize: 11, color: '#637389', marginTop: 4 }}>
+            <div style={{ fontSize: 12, color: '#637389', marginTop: 4 }}>
               Optional — a saved AWS credential used for{' '}
               <code>aws ecr get-login-password</code> on {whereLabel}.
             </div>
@@ -988,7 +993,7 @@ function ScriptForm({ initial, isEdit, onSave, onCancel }: {
             <label className={styles.label}>Default Working Directory</label>
             <ZestTextbox value={form.workingDirectory || ''} onChange={e => set('workingDirectory', e.target.value || undefined)}
               placeholder="{ProjectDir}" zest={{ stretch: true }} />
-            <div style={{ fontSize: 11, color: '#637389', marginTop: 4 }}>
+            <div style={{ fontSize: 12, color: '#637389', marginTop: 4 }}>
               Default: {'{ProjectDir}'}. Variables: {'{ProjectDir}'} {'{ScriptDir}'} {'{TempDir}'}
             </div>
           </div>
@@ -1000,7 +1005,7 @@ function ScriptForm({ initial, isEdit, onSave, onCancel }: {
                   <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', background: '#1A2540', borderRadius: 4, fontSize: 13 }}>
                     <span style={{ color: '#C9A84C', fontFamily: 'monospace' }}>{'{' + name + '}'}</span>
                     <span style={{ flex: 1, color: '#F0F2F5', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis' }}>{value}</span>
-                    <button onClick={() => removeVariable(name)} style={{ background: 'none', border: 'none', color: '#637389', cursor: 'pointer' }}>×</button>
+                    <ZestButton onClick={() => removeVariable(name)} zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}>×</ZestButton>
                   </div>
                 ))}
               </div>
@@ -1077,7 +1082,7 @@ function CredentialForm({ initial, isEdit, onSave, onCancel, allTags }: {
         <label className={styles.label}>Host Pattern (optional)</label>
         <ZestTextbox value={form.hostPattern ?? ''} onChange={e => set('hostPattern', e.target.value || '')}
           placeholder="e.g. dev.azure.com or github.com" zest={{ stretch: true }} />
-        <div style={{ fontSize: 11, color: '#637389', marginTop: 4 }}>
+        <div style={{ fontSize: 12, color: '#637389', marginTop: 4 }}>
           Used to select this credential automatically. Leave empty for manual assignment.
         </div>
       </div>

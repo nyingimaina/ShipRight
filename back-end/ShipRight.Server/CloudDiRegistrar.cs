@@ -2,6 +2,7 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Jattac.Libs.Tempo;
 using Jattac.Libs.Tempo.Scheduling;
 using Serilog;
@@ -81,6 +82,7 @@ public static class CloudDiRegistrar
         services.AddSingleton<IDockerRegistryResourceStore, CompanyScopedDockerRegistryResourceStore>();
         services.AddSingleton<IScriptResourceStore, CompanyScopedScriptResourceStore>();
         services.AddSingleton<ICredentialResourceStore, CompanyScopedCredentialResourceStore>();
+        services.AddSingleton<IKeyFileResourceStore, CompanyScopedKeyFileResourceStore>();
         services.AddSingleton<IPipelineResourceStore, CompanyScopedPipelineResourceStore>();
         services.AddSingleton<IAwsProfileResourceStore, CompanyScopedAwsProfileResourceStore>();
         services.AddSingleton<MariaDbBackupHistoryStore>();
@@ -177,33 +179,46 @@ public static class CloudDiRegistrar
         });
 
         services.AddSingleton<TempoScheduler<WatchBranchJob>>(sp =>
-        {
-            using var systemScope = sp.GetRequiredService<ICompanyContext>().BeginSystemScope();
-            var scheduler = new TempoScheduler<WatchBranchJob>(
+            new TempoScheduler<WatchBranchJob>(
                 sp.GetRequiredService<TempoQueue<TempoScheduledWork<WatchBranchJob>>>(),
-                new TempoSchedulerSettings { TickInterval = TimeSpan.FromSeconds(10), MaxCatchUpSlots = 10 });
-            var projects = sp.GetRequiredService<IProjectStore>().GetAllAsync().GetAwaiter().GetResult();
-            var count = 0;
-            foreach (var p in projects)
-            {
-                if (string.IsNullOrWhiteSpace(p.WatchBranch) || p.GitRepos.Count == 0) continue;
-                var interval = TimeSpan.FromSeconds(Math.Max(60, p.WatchPollSeconds));
-                try
-                {
-                    scheduler.Register(new WatchBranchJob
-                    {
-                        TenantId = WatchBranchJob.TenantIdFromProject(p.Id), ProjectId = p.Id,
-                        ProjectName = p.Name, RepoPath = p.GitRepos[0].RepoPath,
-                        BranchName = p.WatchBranch, WatchSteps = p.WatchSteps,
-                    }, new TempoSchedule.Every(interval), MissedRunPolicy.Skip, OverlapPolicy.Skip);
-                    count++;
-                }
-                catch (Exception ex) { Log.Error(ex, "WatchBranch: failed to register schedule for {Project}", p.Name); }
-            }
-            Log.Information("WatchBranch: {Count} watch schedules registered at startup", count);
-            return scheduler;
-        });
+                new TempoSchedulerSettings { TickInterval = TimeSpan.FromSeconds(10), MaxCatchUpSlots = 10 }));
 
+        // Schedules are registered in a hosted service (not the DI factory) so start-up never blocks
+        // on async work (USR-003); this is added before WatchBranchHostedService, which starts the scheduler.
+        services.AddHostedService<WatchBranchScheduleRegistrar>();
         services.AddHostedService<WatchBranchHostedService>();
     }
+}
+
+// Registers each project's watch branch as a schedule at start-up, across every company.
+internal sealed class WatchBranchScheduleRegistrar(
+    TempoScheduler<WatchBranchJob> scheduler,
+    IProjectStore projects,
+    ICompanyContext companyContext) : IHostedService
+{
+    public async Task StartAsync(CancellationToken cancellationToken)
+    {
+        using var systemScope = companyContext.BeginSystemScope();
+        var all = await projects.GetAllAsync();
+        var count = 0;
+        foreach (var p in all)
+        {
+            if (string.IsNullOrWhiteSpace(p.WatchBranch) || p.GitRepos.Count == 0) continue;
+            var interval = TimeSpan.FromSeconds(Math.Max(60, p.WatchPollSeconds));
+            try
+            {
+                scheduler.Register(new WatchBranchJob
+                {
+                    TenantId = WatchBranchJob.TenantIdFromProject(p.Id), ProjectId = p.Id,
+                    ProjectName = p.Name, RepoPath = p.GitRepos[0].RepoPath,
+                    BranchName = p.WatchBranch, WatchSteps = p.WatchSteps,
+                }, new TempoSchedule.Every(interval), MissedRunPolicy.Skip, OverlapPolicy.Skip);
+                count++;
+            }
+            catch (Exception ex) { Log.Error(ex, "WatchBranch: failed to register schedule for {Project}", p.Name); }
+        }
+        Log.Information("WatchBranch: {Count} watch schedules registered at startup", count);
+    }
+
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }

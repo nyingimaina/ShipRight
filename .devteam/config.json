@@ -1,24 +1,23 @@
 {
   "pack": ".devteam/pack",
   "agent": {
-    "runtime": "claude-code",
-    "command": "claude",
+    "runtime": "opencode",
+    "command": "opencode",
     "args": [
-      "-p",
-      "{prompt}",
-      "--output-format",
-      "stream-json",
-      "--verbose",
-      "--permission-mode",
-      "acceptEdits",
-      "--allowedTools",
-      "Read,Write,Edit,Glob,Grep,Bash(dotnet:*),Bash(npm:*),Bash(npx:*),Bash(git status:*),Bash(git diff:*)"
-    ],
-    "discussArgs": [
-      "--permission-mode",
-      "plan",
+      "run",
+      "--format",
+      "json",
+      "--dir",
+      "{dir}",
       "{prompt}"
     ],
+    "discussArgs": [
+      "--agent",
+      "plan",
+      "--prompt",
+      "{prompt}"
+    ],
+    "model": "opencode-go/deepseek-v4.1-flash",
     "timeoutSeconds": 900,
     "ceilingSeconds": 7200,
     "stallSeconds": 900,
@@ -29,7 +28,16 @@
   "limits": {
     "maxRevisionRounds": 2,
     "maxDefineRounds": 2,
+    "volatilePaths": [],
+    "planReview": true,
+    "maxPlanReviewRounds": 1,
+    "planReviewMinutes": 4,
+    "shortcuts": true,
+    "maxShortcuts": 2,
+    "arbiterMinutes": 5,
     "maxArtifactAttempts": 2,
+    "maxResumes": 2,
+    "helperTools": false,
     "budgetUsd": 10,
     "parallelChallengers": true,
     "baselineChecks": true,
@@ -38,6 +46,7 @@
     "noProgressMinutes": 20,
     "progressPollSeconds": 15,
     "quickCheckSeconds": 30,
+    "learnedTiers": true,
     "analystQuestionBudget": 8,
     "analystQuestionCap": 12,
     "maxAssumedTopics": 3,

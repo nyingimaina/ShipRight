@@ -27,6 +27,10 @@ public static class RoleAccessRules
         R("GET", @"/api/resources/credentials(/.*)?", AppRoles.Admin),
         R("GET", @"/api/resources/registries(/.*)?", AppRoles.Admin),
         R("GET", @"/api/resources/aws-profiles(/.*)?", AppRoles.Admin),
+        // Key files: metadata is safe for every signed-in role to read (the .pem content is never returned),
+        // so a Viewer can see the tab and a member can pick one when authorizing; changing them needs Operator.
+        R("GET", @"/api/resources/key-files(/.*)?", AppRoles.Viewer),
+        R(null, @"/api/resources/key-files(/.*)?", AppRoles.Operator),
         R("GET", @"/api/resources(/.*)?", AppRoles.Viewer),
         R(null, @"/api/resources(/.*)?", AppRoles.Admin),
 

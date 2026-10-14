@@ -143,10 +143,9 @@ export default function ServersPage() {
           {!loading && servers.length === 0 && (
             <p className={styles.empty}>
               No servers registered.{' '}
-              <button onClick={openNew}
-                style={{ background: 'none', border: 'none', color: '#C9A84C', cursor: 'pointer' }}>
+              <ZestButton onClick={openNew} zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}>
                 Add one
-              </button>.
+              </ZestButton>.
             </p>
           )}
         </ZestResponsiveLayout>
@@ -208,7 +207,7 @@ function ServerForm({ initial, onSave, onCancel }: {
           disabledReason="Fill in host, username and SSH key first to browse the server." />
       </div>
       {initial.id && (
-        <SshKeySection apiBase={`/api/servers/${initial.id}/ssh-key`} />
+        <SshKeySection apiBase={`/api/servers/${initial.id}/ssh-key`} allowSavedKeyFile />
       )}
       <ServerDeploySection serverId={initial.id} values={form}
         onChange={(field, value) => setForm(prev => ({ ...prev, [field]: value }))} />
