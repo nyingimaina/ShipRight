@@ -8,3 +8,10 @@ runs/*/run.lock
 runs/*/inbox/
 driver.log
 pending-request.md
+
+# Generated per-run output (ignored locally)
+knowledge/
+merge/
+metrics/
+rules/
+runs/
