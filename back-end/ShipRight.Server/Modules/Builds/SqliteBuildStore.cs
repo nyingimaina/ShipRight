@@ -23,6 +23,28 @@ public class SqliteBuildStore : IBuildStore
     };
     private readonly SemaphoreSlim _writeLock = new(1, 1);
 
+    // SQL text is a constant; every filter value is bound as a parameter. A null
+    // parameter disables its clause, so no clause is ever assembled at runtime.
+    private const string QuerySql = """
+        SELECT data FROM builds
+        WHERE ($projectId IS NULL OR project_id = $projectId)
+          AND ($statusList IS NULL OR instr($statusList, ',' || LOWER(status) || ',') > 0)
+          AND ($from IS NULL OR started_at >= $from)
+          AND ($to IS NULL OR started_at <= $to)
+          AND ($gitTag IS NULL OR git_tag = $gitTag)
+        ORDER BY started_at DESC
+        LIMIT $pageSize OFFSET $offset
+        """;
+
+    private const string CountSql = """
+        SELECT COUNT(*) FROM builds
+        WHERE ($projectId IS NULL OR project_id = $projectId)
+          AND ($statusList IS NULL OR instr($statusList, ',' || LOWER(status) || ',') > 0)
+          AND ($from IS NULL OR started_at >= $from)
+          AND ($to IS NULL OR started_at <= $to)
+          AND ($gitTag IS NULL OR git_tag = $gitTag)
+        """;
+
     public SqliteBuildStore() : this(DataDirectory.Resolve()) { }
 
     internal SqliteBuildStore(string dataDir)
@@ -92,13 +114,8 @@ public class SqliteBuildStore : IBuildStore
     {
         using var conn = OpenConnection();
         using var cmd = conn.CreateCommand();
-        var where = ApplyFilters(cmd, projectId, status, from, to, gitTag);
-        cmd.CommandText = $"""
-            SELECT data FROM builds
-            {where}
-            ORDER BY started_at DESC
-            LIMIT $pageSize OFFSET $offset
-            """;
+        cmd.CommandText = QuerySql;
+        BindFilters(cmd, projectId, status, from, to, gitTag);
         cmd.Parameters.AddWithValue("$pageSize", pageSize);
         cmd.Parameters.AddWithValue("$offset", (page - 1) * pageSize);
 
@@ -118,8 +135,8 @@ public class SqliteBuildStore : IBuildStore
     {
         using var conn = OpenConnection();
         using var cmd = conn.CreateCommand();
-        var where = ApplyFilters(cmd, projectId, status, from, to, gitTag);
-        cmd.CommandText = $"SELECT COUNT(*) FROM builds {where}";
+        cmd.CommandText = CountSql;
+        BindFilters(cmd, projectId, status, from, to, gitTag);
         return Convert.ToInt32(await cmd.ExecuteScalarAsync());
     }
 
@@ -159,49 +176,36 @@ public class SqliteBuildStore : IBuildStore
         }
     }
 
-    private string ApplyFilters(SqliteCommand cmd, string? projectId, string? status,
+    private static void BindFilters(SqliteCommand cmd, string? projectId, string? status,
         DateTime? from, DateTime? to, string? gitTag)
     {
-        var conditions = new List<string>();
+        cmd.Parameters.AddWithValue("$projectId",
+            string.IsNullOrWhiteSpace(projectId) ? (object)DBNull.Value : projectId);
 
-        if (!string.IsNullOrWhiteSpace(projectId))
-        {
-            conditions.Add("project_id = $projectId");
-            cmd.Parameters.AddWithValue("$projectId", projectId);
-        }
+        var statusList = string.IsNullOrWhiteSpace(status) ? "" : ToStatusList(status);
+        cmd.Parameters.AddWithValue("$statusList",
+            statusList.Length == 0 ? (object)DBNull.Value : statusList);
 
-        if (!string.IsNullOrWhiteSpace(status))
-        {
-            var statuses = status.Split(',', StringSplitOptions.RemoveEmptyEntries);
-            var names = new List<string>(statuses.Length);
-            for (var i = 0; i < statuses.Length; i++)
-            {
-                var p = $"$status{i}";
-                names.Add($"LOWER(status) = {p}");
-                cmd.Parameters.AddWithValue(p, statuses[i].ToLowerInvariant());
-            }
-            conditions.Add("(" + string.Join(" OR ", names) + ")");
-        }
+        cmd.Parameters.AddWithValue("$from",
+            from.HasValue ? from.Value.ToString("o") : (object)DBNull.Value);
 
-        if (from.HasValue)
-        {
-            conditions.Add("started_at >= $from");
-            cmd.Parameters.AddWithValue("$from", from.Value.ToString("o"));
-        }
+        cmd.Parameters.AddWithValue("$to",
+            to.HasValue ? to.Value.ToString("o") : (object)DBNull.Value);
 
-        if (to.HasValue)
-        {
-            conditions.Add("started_at <= $to");
-            cmd.Parameters.AddWithValue("$to", to.Value.ToString("o"));
-        }
+        cmd.Parameters.AddWithValue("$gitTag",
+            string.IsNullOrWhiteSpace(gitTag) ? (object)DBNull.Value : gitTag);
+    }
 
-        if (!string.IsNullOrWhiteSpace(gitTag))
-        {
-            conditions.Add("git_tag = $gitTag");
-            cmd.Parameters.AddWithValue("$gitTag", gitTag);
-        }
-
-        return conditions.Count > 0 ? "WHERE " + string.Join(" AND ", conditions) : "";
+    // Comma-surrounded lower-case list (",running,buildfailed,") so a bound value can
+    // be matched with instr() against ',' || LOWER(status) || ',' without dynamic SQL.
+    private static string ToStatusList(string status)
+    {
+        var statuses = status.Split(',', StringSplitOptions.RemoveEmptyEntries);
+        if (statuses.Length == 0) return "";
+        var lowered = new string[statuses.Length];
+        for (var i = 0; i < statuses.Length; i++)
+            lowered[i] = statuses[i].ToLowerInvariant();
+        return "," + string.Join(",", lowered) + ",";
     }
 
     private BuildRecord? Deserialize(string data)

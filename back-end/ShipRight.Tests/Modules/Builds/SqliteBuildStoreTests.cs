@@ -202,6 +202,38 @@ public class SqliteBuildStoreTests : IDisposable
     }
 
     [TestMethod]
+    public async Task QueryAndCount_ApplyEveryFilterTogether()
+    {
+        var store = new SqliteBuildStore(_tmpDir);
+        var t0 = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        await store.SaveAsync(MakeBuild("all-1", "proj-a", BuildStatus.Deployed, t0, "v1.0"));
+        await store.SaveAsync(MakeBuild("all-2", "proj-a", BuildStatus.Running, t0.AddDays(1), "v2.0"));
+        await store.SaveAsync(MakeBuild("all-3", "proj-b", BuildStatus.Deployed, t0.AddDays(1), "v2.0"));
+
+        var results = await store.QueryAsync("proj-a", "Deployed", t0.AddHours(-1), t0.AddDays(2), "v1.0", 1, 50);
+        Assert.AreEqual(1, results.Count);
+        Assert.AreEqual("all-1", results[0].Id);
+
+        var count = await store.CountQueryAsync("proj-a", "Deployed", t0.AddHours(-1), t0.AddDays(2), "v1.0");
+        Assert.AreEqual(1, count);
+    }
+
+    [TestMethod]
+    public async Task QueryAndCount_TreatFilterValuesAsParameters_NotSqlText()
+    {
+        var store = new SqliteBuildStore(_tmpDir);
+        await store.SaveAsync(MakeBuild("inj-1", "p1", BuildStatus.Running));
+
+        const string payload = "Running'; DROP TABLE builds; --";
+        var results = await store.QueryAsync(null, payload, null, null, null, 1, 50);
+        Assert.AreEqual(0, results.Count, "A filter value that matches nothing returns no rows");
+        Assert.AreEqual(0, await store.CountQueryAsync(null, payload, null, null, null));
+
+        Assert.AreEqual(1, store.Count, "The builds table must be intact after a hostile filter value");
+        Assert.IsNotNull(await store.GetByIdAsync("inj-1"));
+    }
+
+    [TestMethod]
     public async Task CountQueryAsync_FiltersByStatus()
     {
         var store = new SqliteBuildStore(_tmpDir);
