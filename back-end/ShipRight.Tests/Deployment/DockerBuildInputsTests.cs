@@ -32,14 +32,14 @@ public class DockerBuildInputsTests
     [TestMethod]
     public void Dockerfile_FailsTheInstallStep_WhenNpmCiLeavesNoNextBinary()
     {
-        var install = File.ReadAllLines(RepoFile("Dockerfile")).First(l => l.TrimStart().StartsWith("RUN npm ci"));
+        var install = File.ReadAllLines(RepoFile("Dockerfile")).First(l => l.TrimStart().StartsWith("RUN") && l.Contains("npm ci"));
         StringAssert.Contains(install, "test -x node_modules/.bin/next");
     }
 
     [TestMethod]
     public void Dockerfile_PrintsTheNpmDebugLogOnFailure_SoTheRealCauseIsVisible()
     {
-        var install = File.ReadAllLines(RepoFile("Dockerfile")).First(l => l.TrimStart().StartsWith("RUN npm ci"));
+        var install = File.ReadAllLines(RepoFile("Dockerfile")).First(l => l.TrimStart().StartsWith("RUN") && l.Contains("npm ci"));
         StringAssert.Contains(install, "/root/.npm/_logs");
         StringAssert.Contains(install, "exit 1");
     }
@@ -47,15 +47,48 @@ public class DockerBuildInputsTests
     [TestMethod]
     public void Dockerfile_RetriesNpmFetchesOnFlakyNetworks()
     {
-        var install = File.ReadAllLines(RepoFile("Dockerfile")).First(l => l.TrimStart().StartsWith("RUN npm ci"));
+        var install = File.ReadAllLines(RepoFile("Dockerfile")).First(l => l.TrimStart().StartsWith("RUN") && l.Contains("npm ci"));
         StringAssert.Contains(install, "--fetch-retries=");
         StringAssert.Contains(install, "--fetch-timeout=");
     }
 
     [TestMethod]
+    public void Dockerfile_KeepsTheNpmCacheBetweenAttempts_SoAFlakyNetworkConverges()
+    {
+        var install = File.ReadAllLines(RepoFile("Dockerfile")).First(l => l.TrimStart().StartsWith("RUN"));
+        StringAssert.Contains(install, "--mount=type=cache,target=/root/.npm");
+    }
+
+    [TestMethod]
+    public void Dockerfile_TriesNpmjsFirst_ThenFallsBackToAMirror_WhenTheRouteToNpmjsIsBroken()
+    {
+        var text = File.ReadAllText(RepoFile("Dockerfile"));
+        var install = File.ReadAllLines(RepoFile("Dockerfile")).First(l => l.TrimStart().StartsWith("RUN") && l.Contains("npm ci"));
+        Assert.IsTrue(install.IndexOf("--registry=https://registry.npmjs.org/", StringComparison.Ordinal)
+                      < install.IndexOf("NPM_FALLBACK_REGISTRY", StringComparison.Ordinal), "npmjs must be tried first");
+        StringAssert.Contains(text, "ARG NPM_FALLBACK_REGISTRY=https://registry.npmmirror.com");
+        Assert.AreEqual(2, System.Text.RegularExpressions.Regex.Matches(install, "test -x node_modules/.bin/next").Count,
+            "each attempt must verify the install, because npm can exit 0 after crashing");
+    }
+
+    [TestMethod]
+    public void Lockfile_PinsIntegrityHashes_SoAnyRegistryMirrorIsSafe()
+    {
+        var lockfile = File.ReadAllText(RepoFile("front-end", "package-lock.json"));
+        Assert.IsTrue(System.Text.RegularExpressions.Regex.Matches(lockfile, "\"integrity\": \"sha512-").Count > 500);
+    }
+
+    [TestMethod]
+    public void Dockerfile_LimitsParallelNpmDownloads_ForLossyLinks()
+    {
+        var install = File.ReadAllLines(RepoFile("Dockerfile")).First(l => l.TrimStart().StartsWith("RUN") && l.Contains("npm ci"));
+        StringAssert.Contains(install, "--maxsockets=");
+    }
+
+    [TestMethod]
     public void Dockerfile_SkipsNpmAuditAndFund_ToAvoidNetworkHangs()
     {
-        var install = File.ReadAllLines(RepoFile("Dockerfile")).First(l => l.TrimStart().StartsWith("RUN npm ci"));
+        var install = File.ReadAllLines(RepoFile("Dockerfile")).First(l => l.TrimStart().StartsWith("RUN") && l.Contains("npm ci"));
         StringAssert.Contains(install, "--no-audit");
         StringAssert.Contains(install, "--no-fund");
     }
