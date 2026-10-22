@@ -12,7 +12,7 @@ interface SslCertMetric   { domain: string; issuedUtc: string; expiresUtc: strin
 interface OomEventMetric  { processName: string; pid: number; memoryMb: number; occurredAt: string | null; }
 interface ZombieProcess   { pid: number; processName: string; parentName: string; }
 
-interface SystemMetrics {
+export interface SystemMetrics {
   reachable: boolean;
   cpuPercent: number;
   memUsedMb: number;   memTotalMb: number;
@@ -27,7 +27,7 @@ interface SystemMetrics {
   failedServices: string[];
   error?: string;
 }
-type ServerMetrics = SystemMetrics & { serverId: string };
+export type ServerMetrics = SystemMetrics & { serverId: string };
 
 function fmtUptime(s: number): string {
   const d = Math.floor(s / 86400);
@@ -92,7 +92,7 @@ function containerBadgeClass(status: string): string {
   }
 }
 
-function ServerCard({ server, metrics }: { server: IServerConfig; metrics?: ServerMetrics }) {
+export function ServerCard({ server, metrics }: { server: IServerConfig; metrics?: ServerMetrics }) {
   const loading = !metrics;
   const offline  = metrics && !metrics.reachable;
   const online   = metrics?.reachable;

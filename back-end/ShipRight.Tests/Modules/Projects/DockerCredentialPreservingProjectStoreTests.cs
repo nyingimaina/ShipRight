@@ -63,6 +63,54 @@ public class DockerCredentialPreservingProjectStoreTests : IDisposable
     }
 
     [TestMethod]
+    public async Task Save_PreservesDatabaseRootPasswordWhenEmptyOnUpdate()
+    {
+        var p = MakeProject("db-keep", "DB Keep") with
+        {
+            Database = new DatabaseConfig { ContainerName = "db", DatabaseName = "app", RootPassword = "db-s3cret!" },
+        };
+        await _inner.SaveAsync(p);
+
+        var updated = p with { Database = p.Database! with { RootPassword = "" } };
+        await _wrapper.SaveAsync(updated);
+
+        var reloaded = await _inner.GetByIdAsync("db-keep");
+        Assert.IsNotNull(reloaded);
+        Assert.AreEqual("db-s3cret!", reloaded!.Database!.RootPassword);
+    }
+
+    [TestMethod]
+    public async Task Save_AllowsExplicitDatabasePasswordChange()
+    {
+        var p = MakeProject("db-change", "DB Change") with
+        {
+            Database = new DatabaseConfig { ContainerName = "db", DatabaseName = "app", RootPassword = "old-db-pass" },
+        };
+        await _inner.SaveAsync(p);
+
+        var updated = p with { Database = p.Database! with { RootPassword = "new-db-pass" } };
+        await _wrapper.SaveAsync(updated);
+
+        var reloaded = await _inner.GetByIdAsync("db-change");
+        Assert.AreEqual("new-db-pass", reloaded!.Database!.RootPassword);
+    }
+
+    [TestMethod]
+    public async Task Save_DoesNotAddADatabaseWhenTheUpdateRemovesIt()
+    {
+        var p = MakeProject("db-remove", "DB Remove") with
+        {
+            Database = new DatabaseConfig { ContainerName = "db", DatabaseName = "app", RootPassword = "db-pass" },
+        };
+        await _inner.SaveAsync(p);
+
+        await _wrapper.SaveAsync(p with { Database = null });
+
+        var reloaded = await _inner.GetByIdAsync("db-remove");
+        Assert.IsNull(reloaded!.Database);
+    }
+
+    [TestMethod]
     public async Task Save_DoesNotAffectNewProjects()
     {
         var p = MakeProject("dc-new", "DC New");

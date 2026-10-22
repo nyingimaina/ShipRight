@@ -26,12 +26,20 @@ public class DockerCredentialPreservingProjectStore : IProjectStore
         if (existing is not null)
         {
             project = MergeDockerCredentials(project, existing);
+            project = MergeDatabasePassword(project, existing);
         }
         await _inner.SaveAsync(project);
     }
 
     public Task DeleteAsync(string id) =>
         _inner.DeleteAsync(id);
+
+    private static ProjectConfig MergeDatabasePassword(ProjectConfig incoming, ProjectConfig existing)
+    {
+        if (incoming.Database is null || existing.Database is null) return incoming;
+        if (!string.IsNullOrEmpty(incoming.Database.RootPassword)) return incoming;
+        return incoming with { Database = incoming.Database with { RootPassword = existing.Database.RootPassword } };
+    }
 
     private static ProjectConfig MergeDockerCredentials(ProjectConfig incoming, ProjectConfig existing)
     {
