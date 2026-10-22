@@ -1,7 +1,7 @@
 FROM node:20-alpine AS frontend
 WORKDIR /build/frontend
 COPY front-end/package*.json ./
-RUN npm ci --no-audit --no-fund && test -x node_modules/.bin/next
+RUN npm ci --no-audit --no-fund --fetch-retries=5 --fetch-retry-mintimeout=5000 --fetch-timeout=120000 && test -x node_modules/.bin/next || { echo "=== npm debug log ==="; tail -n 80 /root/.npm/_logs/*.log; exit 1; }
 COPY front-end/ .
 RUN npm run build
 

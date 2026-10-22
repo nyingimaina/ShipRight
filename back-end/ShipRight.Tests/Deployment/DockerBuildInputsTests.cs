@@ -37,6 +37,22 @@ public class DockerBuildInputsTests
     }
 
     [TestMethod]
+    public void Dockerfile_PrintsTheNpmDebugLogOnFailure_SoTheRealCauseIsVisible()
+    {
+        var install = File.ReadAllLines(RepoFile("Dockerfile")).First(l => l.TrimStart().StartsWith("RUN npm ci"));
+        StringAssert.Contains(install, "/root/.npm/_logs");
+        StringAssert.Contains(install, "exit 1");
+    }
+
+    [TestMethod]
+    public void Dockerfile_RetriesNpmFetchesOnFlakyNetworks()
+    {
+        var install = File.ReadAllLines(RepoFile("Dockerfile")).First(l => l.TrimStart().StartsWith("RUN npm ci"));
+        StringAssert.Contains(install, "--fetch-retries=");
+        StringAssert.Contains(install, "--fetch-timeout=");
+    }
+
+    [TestMethod]
     public void Dockerfile_SkipsNpmAuditAndFund_ToAvoidNetworkHangs()
     {
         var install = File.ReadAllLines(RepoFile("Dockerfile")).First(l => l.TrimStart().StartsWith("RUN npm ci"));
