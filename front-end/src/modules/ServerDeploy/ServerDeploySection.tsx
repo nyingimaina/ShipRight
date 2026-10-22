@@ -20,11 +20,13 @@ interface Props {
   serverId?: string;
   values: IServerDeployValues;
   onChange: (field: keyof IServerDeployValues, value: string | boolean) => void;
+  /** Show the Prepare/Deploy buttons and output. False when they live elsewhere (server detail page). */
+  showActions?: boolean;
 }
 
 interface OutLine { id: number; kind: 'log' | 'ok' | 'error'; text: string; }
 
-export default function ServerDeploySection({ serverId, values, onChange }: Props) {
+export default function ServerDeploySection({ serverId, values, onChange, showActions = true }: Props) {
   const [lines, setLines] = useState<OutLine[]>([]);
   const [running, setRunning] = useState(false);
   const esRef = useRef<EventSource | null>(null);
@@ -133,15 +135,15 @@ export default function ServerDeploySection({ serverId, values, onChange }: Prop
         <span className={styles.hint}>Written to the working directory as .env (chmod 600) on every prepare/deploy.</span>
       </div>
 
-      <div className={styles.actions}>
+      {showActions && <div className={styles.actions}>
         <ZestButton onClick={() => start('bootstrap')} disabled={!serverId || running}
           zest={{ buttonStyle: 'outline' }}>Prepare server</ZestButton>
         <ZestButton onClick={() => start('deploy')} disabled={!serverId || running}
           zest={{ visualOptions: { variant: 'standard' }, buttonStyle: 'solid' }}>Deploy now</ZestButton>
-      </div>
-      {!serverId && <p className={styles.hint}>Save the server first, then these actions become available. Actions use the saved settings.</p>}
+      </div>}
+      {showActions && !serverId && <p className={styles.hint}>Save the server first, then these actions become available. Actions use the saved settings.</p>}
 
-      {lines.length > 0 && (
+      {showActions && lines.length > 0 && (
         <div className={styles.output}>
           {lines.map(l => (
             <span key={l.id} className={`${styles.line} ${l.kind === 'ok' ? styles.ok : l.kind === 'error' ? styles.err : ''}`}>

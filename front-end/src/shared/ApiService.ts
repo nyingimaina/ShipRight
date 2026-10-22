@@ -46,7 +46,27 @@ async function getRaw(path: string): Promise<string> {
   return res.text();
 }
 
+/** POST a raw file body (used for server file uploads — avoids multipart size limits). */
+async function upload<T>(path: string, file: File): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream' },
+    body: file,
+    credentials: 'include',
+  });
+
+  if (res.status === 401) {
+    clearSession();
+    throw { isError: true, message: 'Sign in required.' };
+  }
+
+  const data = await res.json().catch(() => ({ isError: true, message: `HTTP ${res.status}` }));
+  if (!res.ok) throw data;
+  return data as T;
+}
+
 export const api = {
+  upload,
   get:    <T>(path: string)               => request<T>('GET',    path),
   post:   <T>(path: string, body: unknown) => request<T>('POST',   path, body),
   put:    <T>(path: string, body: unknown) => request<T>('PUT',    path, body),

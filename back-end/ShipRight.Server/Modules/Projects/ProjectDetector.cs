@@ -25,7 +25,7 @@ public record DetectedProjectConfig(
 
 public static class ProjectDetector
 {
-    public static DetectedProjectConfig Detect(string rootPath)
+    public static DetectedProjectConfig Detect(string rootPath, bool pullLatest = true)
     {
         Log.Information("Project detection starting at {RootPath}", rootPath);
 
@@ -121,7 +121,7 @@ public static class ProjectDetector
         foreach (var repoPath in gitRepoPaths)
         {
             // Pull latest so version files and tags are current
-            GitPull(repoPath);
+            if (pullLatest) GitPull(repoPath);
             var branch = DetectDefaultBranch(repoPath) ?? "master";
             gitRepos.Add(new DetectedGitRepo(repoPath, branch));
             Log.Information("Git repo detected: {Path}, branch: {Branch}", repoPath, branch);

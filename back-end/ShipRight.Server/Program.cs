@@ -14,6 +14,7 @@ using ShipRight.Database;
 using ShipRight.Database.Models;
 using ShipRight.Modules.Auth.Services;
 using ShipRight.Modules.Builds;
+using ShipRight.Shared;
 using ShipRight.Modules.ComposeRepo;
 using ShipRight.Modules.Database;
 using ShipRight.Modules.Database.Providers;
@@ -156,7 +157,7 @@ try
 
     app.UseCors("ShipRightPolicy");
     app.UseDefaultFiles();
-    app.UseStaticFiles();
+    app.UseStaticFiles(StaticAssetCaching.Options());
 
     if (cloudMode)
     {
@@ -180,6 +181,7 @@ try
     app.MapWslDiskRoutes();
     app.MapFsRoutes();
     app.MapProjectRoutes();
+    app.MapProjectPathRefreshRoutes();
     app.MapProjectSummaryRoutes();
     app.MapBuildRoutes();
     app.MapDatabaseRoutes();
@@ -189,6 +191,8 @@ try
     app.MapComposeRepoRoutes();
     app.MapServerRoutes();
     app.MapServerBootstrapRoutes();
+    app.MapServerLogRoutes();
+    app.MapServerFilesRoutes();
     if (cloudMode)
     {
         app.MapSchedulerCoreRoutes();
@@ -214,7 +218,7 @@ try
     app.MapPipelineRoutes();
 
     // Public: the web app's own page; its data only ever comes through the guarded /api routes.
-    app.MapFallbackToFile("index.html").AllowAnonymous();
+    app.MapFallbackToFile("index.html", StaticAssetCaching.FallbackOptions()).AllowAnonymous();
 
     // ─── Startup ───────────────────────────────────────────────────
 

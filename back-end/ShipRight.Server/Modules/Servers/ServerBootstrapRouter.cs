@@ -20,7 +20,7 @@ public static class ServerBootstrapRouter
             string serverId, IServerStore store, ISshRunner ssh, BuildEventBus bus) =>
             StartAsync("bootstrap", serverId, store, bus, async (server, onLine, ct) =>
             {
-                var r = await new RemoteServerBootstrapper(ssh).RunAsync(server, onLine, ct);
+                var r = await new ResilientServerBootstrapper(ssh).RunAsync(server, onLine, ct);
                 return (r.Success, r.Message);
             }));
 
@@ -28,8 +28,7 @@ public static class ServerBootstrapRouter
             string serverId, IServerStore store, ISshRunner ssh, BuildEventBus bus) =>
             StartAsync("deploy", serverId, store, bus, async (server, onLine, ct) =>
             {
-                var deployer = new RemoteServerDeployer(ssh, new RemoteHealthChecker(ssh));
-                var r = await deployer.DeployAsync(server, onLine, ct);
+                var r = await new ResilientServerDeployer(ssh).DeployAsync(server, onLine, ct);
                 return (r.Success, r.Message);
             }));
     }

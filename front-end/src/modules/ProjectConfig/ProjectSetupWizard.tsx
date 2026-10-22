@@ -10,6 +10,8 @@ import { IProject, IProjectInput, IApiError, IServerConfig, ICredentialResource,
 import ProjectIdentityAtom, { IdentityState } from './atoms/ProjectIdentityAtom';
 import GitReposAtom from './atoms/GitReposAtom';
 import ServicesAtom from './atoms/ServicesAtom';
+import RefreshProjectAtom from './atoms/RefreshProjectAtom';
+import { applyPathChanges } from './pathRefresh';
 import WslAtom from './atoms/WslAtom';
 import ServerAtom, { ServerDraft } from './atoms/ServerAtom';
 import DatabaseAtom, { DatabaseDraft } from './atoms/DatabaseAtom';
@@ -54,7 +56,7 @@ function draftFrom(existing: IProject | undefined): ProjectDraft {
     features: existing ? (existing.features ?? featureFallback(existing)) : defaultFreeformFeatures,
     gitPushTimeoutSeconds: existing?.gitPushTimeoutSeconds ?? 300,
     services: existing
-      ? existing.services.map(s => ({ name: s.name, versionFilePath: s.versionFilePath, buildContextPath: s.buildContextPath, dockerImageName: s.dockerImageName, dockerRegistry: s.dockerRegistry ?? '', composeServiceName: s.composeServiceName ?? '', dockerUsername: s.dockerUsername ?? '', dockerPassword: '', imageRetentionCount: s.imageRetentionCount ?? 5, localImageKeepCount: s.localImageKeepCount ?? 2, version: null }))
+      ? existing.services.map(s => ({ name: s.name, versionFilePath: s.versionFilePath, buildContextPath: s.buildContextPath, dockerImageName: s.dockerImageName, dockerRegistry: s.dockerRegistry ?? '', dockerRegistryResourceId: s.dockerRegistryResourceId, composeServiceName: s.composeServiceName ?? '', dockerUsername: s.dockerUsername ?? '', dockerPassword: '', imageRetentionCount: s.imageRetentionCount ?? 5, localImageKeepCount: s.localImageKeepCount ?? 2, version: null }))
       : [],
     gitRepos: existing ? existing.gitRepos.map(r => ({ repoPath: r.repoPath, deployBranch: r.deployBranch, pushArgs: r.pushArgs, credentialResourceId: r.credentialResourceId })) : [],
     wslWorkingDir: existing?.wsl.workingDir ?? '',
@@ -266,8 +268,8 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
 
   return (
     <div className={styles.wizard}>
-      {step !== 'type' && (
-        <div className={styles.steps}>
+      {step !== 'type' && !existing && (
+        <div className={styles.steps} data-testid="wizard-steps">
           {['server', 'pick', 'review'].map((s, i) => (
             <div key={s} style={{ display: 'contents' }}>
               {i > 0 && <div className={styles.stepDotLine} />}
@@ -333,8 +335,12 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
       {step === 'review' && (
         <>
           <div>
-            <h2 className={styles.stepTitle}>Review detected config</h2>
-            <p className={styles.stepSub}>Fields marked in gold need your input.</p>
+            <h2 className={styles.stepTitle}>{existing ? 'Project settings' : 'Review detected config'}</h2>
+            <p className={styles.stepSub}>
+              {existing
+                ? 'Change anything below, then press Save. Passwords you saved earlier are kept, even though they are not shown.'
+                : 'Fields marked in gold need your input.'}
+            </p>
           </div>
 
           <ProjectIdentityAtom
@@ -373,6 +379,14 @@ export default function ProjectSetupWizard({ existing, onSaved, onCancel }: Prop
             onServicesChange={services => patch({ services })}
             onRegistriesChange={setRegistries}
           />
+
+          {existing && (
+            <RefreshProjectAtom
+              projectId={existing.id}
+              defaultRootPath={draft.gitRepos[0]?.repoPath ?? ''}
+              onApplied={changes => patch({ services: applyPathChanges(draft.services, changes) })}
+            />
+          )}
 
           <WslAtom
             workingDir={draft.wslWorkingDir}

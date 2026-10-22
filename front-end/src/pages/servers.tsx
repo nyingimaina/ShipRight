@@ -1,5 +1,6 @@
 import Head from 'next/head';
 import Link from 'next/link';
+import Router from 'next/router';
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { ZestResponsiveLayout } from 'jattac.libs.web.zest-responsive-layout';
@@ -14,13 +15,15 @@ import BrowsePathField from '@/modules/FilePicker/BrowsePathField';
 import ServerDeploySection from '@/modules/ServerDeploy/ServerDeploySection';
 import styles from './Styles/Servers.module.css';
 
-type ServerInput = Omit<IServerConfig, 'id'> & { id?: string };
+export type ServerInput = Omit<IServerConfig, 'id'> & { id?: string };
 const emptyServer = (): ServerInput => ({
   name: '', host: '', username: 'ubuntu', sshKeyPath: '',
   remoteWorkingDir: '', rebuildScript: 'rebuild.sh', deployMode: 'GitScript' as DeployMode,
 });
 
 export default function ServersPage() {
+  const detailHref = (s: IServerConfig) => `/servers/detail/?id=${s.id}`;
+  const openDetail = (s: IServerConfig) => Router.push(detailHref(s));
   const [servers, setServers] = useState<IServerConfig[]>([]);
   const [projects, setProjects] = useState<IProject[]>([]);
   const [loading, setLoading] = useState(true);
@@ -107,14 +110,16 @@ export default function ServersPage() {
             {!loading && servers.map(s => {
               const linked = projectsByServer(s.id!);
               return (
-                <div key={s.id} className={styles.card}>
+                <div key={s.id} className={styles.card} style={{ cursor: 'pointer' }}
+                  onClick={e => { if (!(e.target as HTMLElement).closest('a,button,[role="menu"]')) openDetail(s); }}>
                   <div className={styles.cardTop}>
                     <div>
-                      <h3 className={styles.cardTitle}>{s.name || s.host}</h3>
+                      <h3 className={styles.cardTitle}><Link href={detailHref(s)}>{s.name || s.host}</Link></h3>
                       <p className={styles.cardHost}>{s.username}@{s.host}</p>
                       <p className={styles.cardDetail}>Key: {s.sshKeyPath.split('/').pop()}</p>
                     </div>
                     <OverflowMenu items={[
+                      { content: 'Open', onClick: () => openDetail(s) },
                       { content: 'Edit', onClick: () => openEdit(s) },
                       { content: 'Delete', onClick: () => handleDelete(s) },
                     ]} />
@@ -154,10 +159,12 @@ export default function ServersPage() {
   );
 }
 
-function ServerForm({ initial, onSave, onCancel }: {
+export function ServerForm({ initial, onSave, onCancel, hideDeployActions }: {
   initial: ServerInput;
   onSave: (s: ServerInput) => Promise<void>;
   onCancel: () => void;
+  /** Hide Prepare/Deploy inside the form (the detail page has its own Actions tab). */
+  hideDeployActions?: boolean;
 }) {
   const [form, setForm] = useState<ServerInput>(initial);
   const [saving, setSaving] = useState(false);
@@ -209,7 +216,7 @@ function ServerForm({ initial, onSave, onCancel }: {
       {initial.id && (
         <SshKeySection apiBase={`/api/servers/${initial.id}/ssh-key`} allowSavedKeyFile />
       )}
-      <ServerDeploySection serverId={initial.id} values={form}
+      <ServerDeploySection serverId={initial.id} values={form} showActions={!hideDeployActions}
         onChange={(field, value) => setForm(prev => ({ ...prev, [field]: value }))} />
       <div className={styles.footer}>
         <ZestButton onClick={handleSubmit} disabled={saving}
