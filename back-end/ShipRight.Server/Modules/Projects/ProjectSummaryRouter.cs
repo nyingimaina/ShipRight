@@ -43,7 +43,7 @@ public static class ProjectSummaryRouter
             }
 
             string[] buildSteps = ["PreconditionCheck", "GitStatusCheck", "BranchCheck", "WriteVersionsAndTag", "ComposeRepoSync", "DockerBuild", "BuildComplete"];
-            string[] pushSteps  = ["DockerLoginCheck", "DockerPush", "PushComplete"];
+            string[] pushSteps  = ["DockerLoginCheck", "DockerPush", "ComposeRepoPublish", "PushComplete"];
             string[] deploySteps = ["Deploy"];
 
             return Results.Ok(new

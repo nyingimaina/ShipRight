@@ -2,8 +2,9 @@
 # (the repo set as "Compose repo URL" on the server) as docker-compose.yml.
 #
 # The server never builds: it pulls the app image from ECR and mariadb from Docker Hub.
-# The release pipeline rewrites the `image:` tag of the app service below after each push, so keep
-# that line in the form  image: <registry>/<repo>:<tag>.
+# The app tag is ${SHIPRIGHT_APP_TAG:-<default>}: the release pipeline rewrites the <default> after each image push, and
+# the server can pin any other version (rollback) by setting SHIPRIGHT_APP_TAG in its .env. Keep the line in the form
+# image: <registry>/<repo>:${VAR:-<tag>}  so the pipeline can find it.
 # (docker-compose.yml in this repo is the build-from-source variant for local/self-hosted use.)
 services:
   db:
@@ -25,7 +26,7 @@ services:
       start_period: 30s
 
   app:
-    image: 080632633137.dkr.ecr.us-east-2.amazonaws.com/ship-right/app:4.3.14
+    image: 080632633137.dkr.ecr.us-east-2.amazonaws.com/ship-right/app:${SHIPRIGHT_APP_TAG:-4.4.7}
     container_name: shipright-app
     restart: unless-stopped
     depends_on:

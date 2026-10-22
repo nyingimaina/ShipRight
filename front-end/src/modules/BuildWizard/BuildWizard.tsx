@@ -45,7 +45,7 @@ const BUILD_STEP_NAMES = [
   'PreconditionCheck', 'GitStatusCheck', 'BranchCheck',
   'WriteVersionsAndTag', 'ComposeRepoSync', 'DockerBuild', 'BuildComplete',
 ];
-const PUSH_STEP_NAMES = ['DockerLoginCheck', 'DockerPush', 'PushComplete'];
+const PUSH_STEP_NAMES = ['DockerLoginCheck', 'DockerPush', 'ComposeRepoPublish', 'PushComplete'];
 
 function deriveCustomPipelineStepNames(pipeline: IPipelineResource): string[] {
   const names: string[] = [];

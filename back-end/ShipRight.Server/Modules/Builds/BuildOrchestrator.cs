@@ -611,35 +611,10 @@ public class BuildOrchestrator
             var localComposePath = await ResolveWslPathAsync(composePath);
             if (File.Exists(localComposePath))
             {
-                var imageMap = record.Versions.ToDictionary(
-                    v => v.DockerImageName,
-                    v => v.NewVersion);
-                await DockerComposeUpdater.UpdateAsync(localComposePath, imageMap);
-                await ctx.EmitLogAsync($"Updated docker-compose.yml with new image tags", "shipright");
-
-                var addCompose = await _runner.RunAsync("git",
-                    ["-C", project.Wsl.WorkingDir, "add", "docker-compose.yml"],
-                    null, line => ctx.EmitLogAsync(line, "git"));
-                if (!addCompose.Success)
-                    throw new InvalidOperationException($"git add compose failed:\n{addCompose.StdErr}");
-
-                var commitCompose = await _runner.RunAsync("git",
-                    ["-C", project.Wsl.WorkingDir, "commit", "-m", $"chore: deploy — {versionSummary}"],
-                    null, line => ctx.EmitLogAsync(line, "git"));
-                if (!commitCompose.Success)
-                {
-                    var composeCommitOut = commitCompose.StdOut + commitCompose.StdErr;
-                    if (composeCommitOut.Contains("nothing to commit"))
-                        await ctx.EmitLogAsync("Compose already committed — skipping", "shipright");
-                    else
-                        throw new InvalidOperationException($"git commit compose failed:\n{commitCompose.StdErr}");
-                }
-
-                await ctx.EmitLogAsync("Pushing compose repo…");
-                var pushCompose = await RunGitPushAsync(ctx, project.Wsl.WorkingDir, composeBranch,
-                    ["--progress"], project, ct);
-                if (!pushCompose.Success)
-                    throw new InvalidOperationException($"git push compose repo failed:\n{pushCompose.StdErr}");
+                // Validate only. The tag rewrite + commit + push happen after DockerPush
+                // (PublishComposeRepoAsync) so the compose repo never names an image that is not
+                // yet in the registry — a failed build or push must not leave a deployable lie.
+                await ctx.EmitLogAsync("docker-compose.yml found — image tags are updated after the image is pushed.", "shipright");
             }
             else
             {
@@ -699,6 +674,57 @@ public class BuildOrchestrator
         {
             _cancellations.TryRemove(record.Id, out _);
         }
+    }
+
+    /// <summary>
+    /// Rewrites the image tags in the compose repo's docker-compose.yml, commits and pushes it.
+    /// Runs only after the images are in the registry. Idempotent: "nothing to commit" is fine, so a
+    /// re-run after a partial failure is safe. Skipped for EnvCompose (tags are injected at deploy time).
+    /// </summary>
+    private async Task PublishComposeRepoAsync(PipelineContext ctx, BuildRecord record, ProjectConfig project, CancellationToken ct)
+    {
+        if (project.Server.DeployMode == DeployMode.EnvCompose)
+        {
+            await ctx.EmitLogAsync("ComposeRepoPublish skipped — EnvCompose mode injects image tags at deploy time", "shipright");
+            return;
+        }
+
+        var versionSummary = string.Join(", ", record.Versions.Select(v => $"{v.ServiceName} {v.NewVersion}"));
+        var composeBranch  = project.GitRepos.FirstOrDefault()?.DeployBranch ?? "master";
+        var composePath    = project.Wsl.WorkingDir.TrimEnd('/', '\\') + "/docker-compose.yml";
+        var localComposePath = await ResolveWslPathAsync(composePath);
+        if (!File.Exists(localComposePath))
+            throw new InvalidOperationException(
+                $"docker-compose.yml not found at '{localComposePath}' (WSL: '{composePath}'). " +
+                "Ensure the WSL working directory is set to the folder containing docker-compose.yml.");
+
+        var imageMap = record.Versions.ToDictionary(v => v.DockerImageName, v => v.NewVersion);
+        await DockerComposeUpdater.UpdateTagsAsync(localComposePath, imageMap);
+        await ctx.EmitLogAsync("Updated docker-compose.yml with new image tags", "shipright");
+
+        var addCompose = await _runner.RunAsync("git",
+            ["-C", project.Wsl.WorkingDir, "add", "docker-compose.yml"],
+            null, line => ctx.EmitLogAsync(line, "git"));
+        if (!addCompose.Success)
+            throw new InvalidOperationException($"git add compose repo failed:\n{addCompose.StdErr}");
+
+        var commitCompose = await _runner.RunAsync("git",
+            ["-C", project.Wsl.WorkingDir, "commit", "-m", $"chore: deploy — {versionSummary}"],
+            null, line => ctx.EmitLogAsync(line, "git"));
+        if (!commitCompose.Success)
+        {
+            var commitOut = commitCompose.StdOut + commitCompose.StdErr;
+            if (commitOut.Contains("nothing to commit"))
+                await ctx.EmitLogAsync("Compose already committed — skipping", "shipright");
+            else
+                throw new InvalidOperationException($"git commit compose repo failed:\n{commitCompose.StdErr}");
+        }
+
+        await ctx.EmitLogAsync("Pushing compose repo…");
+        var pushCompose = await RunGitPushAsync(ctx, project.Wsl.WorkingDir, composeBranch,
+            ["--progress"], project, ct);
+        if (!pushCompose.Success)
+            throw new InvalidOperationException($"git push compose repo failed:\n{pushCompose.StdErr}");
     }
 
     public async Task PushAsync(string buildId)
@@ -873,10 +899,16 @@ public class BuildOrchestrator
 
             await ctx.StepCompletedAsync(2, "DockerPush");
 
-            // ── Push Step 3: Push Complete ────────────────────────────────────
-            await ctx.StepStartedAsync(3, "PushComplete");
+            // ── Push Step 3: Compose Repo Publish (only once the image is in the registry) ──
+            await ctx.StepStartedAsync(3, "ComposeRepoPublish");
+            await PublishComposeRepoAsync(ctx, record, project, ct);
+            await ctx.StepCompletedAsync(3, "ComposeRepoPublish");
+            await _buildStore.SaveAsync(record);
+
+            // ── Push Step 4: Push Complete ────────────────────────────────────
+            await ctx.StepStartedAsync(4, "PushComplete");
             record.Status = BuildStatus.PushSucceeded;
-            await ctx.StepCompletedAsync(3, "PushComplete");
+            await ctx.StepCompletedAsync(4, "PushComplete");
             await _buildStore.SaveAsync(record);
             await ctx.PushCompletedAsync();
 
@@ -1928,7 +1960,7 @@ public class BuildOrchestrator
                         $"docker-compose.yml not found at '{localComposePath}' (WSL: '{composePath}') — cannot rollback without it.");
 
                 var imageMap = target.Versions.ToDictionary(v => v.DockerImageName, v => v.NewVersion);
-                await DockerComposeUpdater.UpdateAsync(localComposePath, imageMap);
+                await DockerComposeUpdater.UpdateTagsAsync(localComposePath, imageMap);
 
                 var rbAdd = await _runner.RunAsync("git",
                     ["-C", project.Wsl.WorkingDir, "add", "docker-compose.yml"],

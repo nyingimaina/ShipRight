@@ -1262,6 +1262,143 @@ public class BuildOrchestratorCustomPipelineTests
         }
     }
 
+    // ── Compose repo is published only AFTER the image is in the registry ───────
+
+    private ProjectConfig CreateGitComposeProject(string id, out string composePath)
+    {
+        var project = CreateProject(id);
+        project.Services[0] = project.Services[0] with
+        {
+            DockerImageName = "owner/api",
+            DockerUsername = "user",
+            DockerPassword = "pass",
+        };
+        project = project with { Server = project.Server with { DeployMode = DeployMode.GitCompose } };
+        composePath = Path.Combine(project.Wsl.WorkingDir, "docker-compose.yml");
+        File.WriteAllText(composePath, "services:\n  api:\n    image: owner/api:1.0.0\n");
+        _projectStore.Add(project);
+        SetComposeRunner(null);
+        return project;
+    }
+
+    /// <summary>`wsl wslpath` answers with the path itself (tests run on plain paths); `special` may override any other call.</summary>
+    private void SetComposeRunner(Func<string, string[], ProcessResult?>? special) =>
+        _runner.SetResultFactory((exe, args) =>
+            exe == "wsl" && args.Length > 0 && args[0] == "wslpath"
+                ? new ProcessResult(0, args[^1] + "\n", "", TimeSpan.Zero)
+                : special?.Invoke(exe, args) ?? new ProcessResult(0, "ok", "", TimeSpan.Zero));
+
+    private static bool IsComposeGit((string Executable, string[] Args, string? Stdin) c, string wslDir, string verb) =>
+        c.Executable == "git" && c.Args.Contains(wslDir) && c.Args.Contains(verb);
+
+    [TestMethod]
+    public async Task ComposeOrder_BuildPhase_ChecksTheComposeRepoButDoesNotCommitOrPushIt()
+    {
+        var project = CreateGitComposeProject("proj-order-1", out var composePath);
+        _runner.SetDefaultResult(new ProcessResult(0, "ok", "", TimeSpan.Zero));
+
+        var record = await _orchestrator.StartAsync(new StartBuildRequest("proj-order-1", [new("api", "1.1.0")]));
+        await WaitForStatusAsync(record.Id, BuildStatus.ImageBuilt);
+
+        Assert.IsTrue(_runner.Calls.Any(c => IsComposeGit(c, project.Wsl.WorkingDir, "pull")), "step 5 still pulls/validates");
+        Assert.IsFalse(_runner.Calls.Any(c => IsComposeGit(c, project.Wsl.WorkingDir, "commit")), "no compose commit before the image is pushed");
+        Assert.IsFalse(_runner.Calls.Any(c => IsComposeGit(c, project.Wsl.WorkingDir, "push")), "no compose push before the image is pushed");
+        StringAssert.Contains(File.ReadAllText(composePath), "owner/api:1.0.0", "the tag must not change until the push succeeds");
+    }
+
+    [TestMethod]
+    public async Task ComposeOrder_BuildPhase_StillFailsFastWhenComposeFileIsMissing()
+    {
+        var project = CreateGitComposeProject("proj-order-2", out var composePath);
+        File.Delete(composePath);
+        _runner.SetDefaultResult(new ProcessResult(0, "ok", "", TimeSpan.Zero));
+
+        var record = await _orchestrator.StartAsync(new StartBuildRequest("proj-order-2", [new("api", "1.1.0")]));
+        await WaitForStatusAsync(record.Id, BuildStatus.BuildFailed);
+
+        var saved = await _buildStore.GetByIdAsync(record.Id);
+        Assert.AreEqual("ComposeRepoSync", saved!.FailedStep);
+        StringAssert.Contains(saved.ErrorSummary ?? "", "docker-compose.yml not found");
+    }
+
+    [TestMethod]
+    public async Task ComposeOrder_PushPhase_UpdatesCommitsAndPushesComposeOnlyAfterDockerPush()
+    {
+        var project = CreateGitComposeProject("proj-order-3", out var composePath);
+        _runner.SetDefaultResult(new ProcessResult(0, "ok", "", TimeSpan.Zero));
+
+        var record = await _orchestrator.StartAsync(new StartBuildRequest("proj-order-3", [new("api", "1.1.0")]));
+        await WaitForStatusAsync(record.Id, BuildStatus.ImageBuilt);
+        await _orchestrator.PushAsync(record.Id);
+        await WaitForStatusAsync(record.Id, BuildStatus.PushSucceeded);
+
+        var calls = _runner.Calls.ToList();
+        var dockerPush = calls.FindIndex(c => c.Executable == "docker" && c.Args[0] == "push");
+        var commit = calls.FindIndex(c => IsComposeGit(c, project.Wsl.WorkingDir, "commit"));
+        var gitPush = calls.FindIndex(c => IsComposeGit(c, project.Wsl.WorkingDir, "push"));
+        Assert.IsTrue(dockerPush >= 0, "image must be pushed");
+        Assert.IsTrue(commit > dockerPush, $"compose commit ({commit}) must come after docker push ({dockerPush})");
+        Assert.IsTrue(gitPush > commit, "compose push must come after its commit");
+        StringAssert.Contains(File.ReadAllText(composePath), "owner/api:1.1.0");
+
+        var saved = await _buildStore.GetByIdAsync(record.Id);
+        CollectionAssert.IsSubsetOf(new[] { "DockerPush", "ComposeRepoPublish" }, saved!.SucceededSteps.ToList());
+    }
+
+    [TestMethod]
+    public async Task ComposeOrder_DockerPushFails_ComposeRepoIsNeverTouched()
+    {
+        var project = CreateGitComposeProject("proj-order-4", out var composePath);
+        SetComposeRunner((exe, args) =>
+            exe == "docker" && args.Length > 0 && args[0] == "push"
+                ? new ProcessResult(1, "", "name unknown: repository does not exist", TimeSpan.Zero)
+                : null);
+
+        var record = await _orchestrator.StartAsync(new StartBuildRequest("proj-order-4", [new("api", "1.1.0")]));
+        await WaitForStatusAsync(record.Id, BuildStatus.ImageBuilt);
+        await _orchestrator.PushAsync(record.Id);
+        await WaitForStatusAsync(record.Id, BuildStatus.PushFailed);
+
+        Assert.IsFalse(_runner.Calls.Any(c => IsComposeGit(c, project.Wsl.WorkingDir, "commit")));
+        Assert.IsFalse(_runner.Calls.Any(c => IsComposeGit(c, project.Wsl.WorkingDir, "push")));
+        StringAssert.Contains(File.ReadAllText(composePath), "owner/api:1.0.0");
+    }
+
+    [TestMethod]
+    public async Task ComposeOrder_ComposePushFails_BuildReportsTheComposePublishStep()
+    {
+        var project = CreateGitComposeProject("proj-order-5", out _);
+        SetComposeRunner((exe, args) =>
+            exe == "git" && args.Contains("push") && args.Contains(project.Wsl.WorkingDir)
+                ? new ProcessResult(1, "", "remote: Permission denied", TimeSpan.Zero)
+                : null);
+
+        var record = await _orchestrator.StartAsync(new StartBuildRequest("proj-order-5", [new("api", "1.1.0")]));
+        await WaitForStatusAsync(record.Id, BuildStatus.ImageBuilt);
+        await _orchestrator.PushAsync(record.Id);
+        await WaitForStatusAsync(record.Id, BuildStatus.PushFailed);
+
+        var saved = await _buildStore.GetByIdAsync(record.Id);
+        Assert.AreEqual("ComposeRepoPublish", saved!.FailedStep);
+        StringAssert.Contains(saved.ErrorSummary ?? "", "compose repo");
+    }
+
+    [TestMethod]
+    public async Task ComposeOrder_EnvComposeMode_NeverPublishesAComposeRepo()
+    {
+        var project = CreateGitComposeProject("proj-order-6", out _);
+        project = project with { Server = project.Server with { DeployMode = DeployMode.EnvCompose } };
+        _projectStore.Add(project);
+        _runner.SetDefaultResult(new ProcessResult(0, "ok", "", TimeSpan.Zero));
+
+        var record = await _orchestrator.StartAsync(new StartBuildRequest("proj-order-6", [new("api", "1.1.0")]));
+        await WaitForStatusAsync(record.Id, BuildStatus.ImageBuilt);
+        await _orchestrator.PushAsync(record.Id);
+        await WaitForStatusAsync(record.Id, BuildStatus.PushSucceeded);
+
+        Assert.IsFalse(_runner.Calls.Any(c => IsComposeGit(c, project.Wsl.WorkingDir, "commit")));
+    }
+
     #region Fakes
 
     private sealed class FakeBuildStore : IBuildStore

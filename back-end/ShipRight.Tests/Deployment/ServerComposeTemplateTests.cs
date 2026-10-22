@@ -53,10 +53,17 @@ public class ServerComposeTemplateTests
         File.Copy(TemplatePath(), copy);
         try
         {
-            DockerComposeUpdater.UpdateAsync(copy, new Dictionary<string, string> { [AppImage] = "9.9.9" }).GetAwaiter().GetResult();
-            StringAssert.Contains(File.ReadAllText(copy), $"image: {AppImage}:9.9.9");
+            DockerComposeUpdater.UpdateTagsAsync(copy, new Dictionary<string, string> { [AppImage] = "9.9.9" }).GetAwaiter().GetResult();
+            StringAssert.Contains(File.ReadAllText(copy), $"image: {AppImage}:${{SHIPRIGHT_APP_TAG:-9.9.9}}");
         }
         finally { File.Delete(copy); }
+    }
+
+    [TestMethod]
+    public void AppTagComesFromAnEnvVariable_WithAPipelineMaintainedDefault_SoAnyVersionCanBeDeployed()
+    {
+        var line = File.ReadAllLines(TemplatePath()).Single(l => l.TrimStart().StartsWith($"image: {AppImage}"));
+        StringAssert.Matches(line, new System.Text.RegularExpressions.Regex(@":\$\{SHIPRIGHT_APP_TAG:-\d+\.\d+\.\d+\}\s*$"));
     }
 
     [TestMethod]
