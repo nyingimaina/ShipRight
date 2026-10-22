@@ -28,6 +28,17 @@ public sealed class RemoteServerDeployer
         $"cd '{server.RemoteWorkingDir.TrimEnd('/')}' && git pull --ff-only && " +
         "docker compose pull && docker compose up -d --remove-orphans";
 
+    /// <summary>Like <see cref="BuildDeployCommand"/>, but prints the resolved image tags before pulling and the running ones after.</summary>
+    public static string BuildVerboseDeployCommand(ServerConfig server) =>
+        $"cd '{server.RemoteWorkingDir.TrimEnd('/')}' && {{ {RemoteGitHygiene.BuildSafePullFragment()}; }} && " +
+        $"{{ {RemoteDeployPrep.BuildCleanSlateFragment()}; }} && {{ {RemoteDeployPrep.BuildDiskGuardFragment()}; }} && " +
+        "echo '[deploy] images to pull:' && docker compose config --images && " +
+        "docker compose pull --quiet && " +
+        "docker compose up -d --remove-orphans; rc=$?; " +
+        $"if [ $rc -eq 0 ]; then {RemoteDeployPrep.BuildPruneFragment()}; fi; " +
+        "echo '[deploy] containers (name / image / status):'; " +
+        "docker compose ps -a --format '{{.Name}} / {{.Image}} / {{.Status}}'; exit $rc";
+
     public async Task<RemoteDeployResult> DeployAsync(
         ServerConfig server, Func<string, Task> onLine, CancellationToken ct = default)
     {
@@ -79,7 +90,7 @@ public sealed class RemoteServerDeployer
                 return new(false, $"Writing .env failed (exit {exit}).");
         }
 
-        var ecr = RemoteServerBootstrapper.BuildEcrLoginCommand(server);
+        var ecr = RemoteEcrLogin.BuildWithTimeout(server);
         if (ecr is not null)
         {
             await onLine("[deploy] refreshing ECR login…");
@@ -89,7 +100,7 @@ public sealed class RemoteServerDeployer
         }
 
         await onLine("[deploy] pulling and restarting containers…");
-        var deployExit = await Run("compose-up", BuildDeployCommand(server));
+        var deployExit = await Run("compose-up", BuildVerboseDeployCommand(server));
         if (deployExit != 0)
             return new(false, $"Deploy command failed (exit {deployExit}).");
 

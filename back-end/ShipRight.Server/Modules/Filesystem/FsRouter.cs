@@ -174,6 +174,51 @@ public static void MapFsRoutes(this WebApplication app)
         });
     }
 
+    /// <summary>POST /api/fs/remote/mkdir — creates one folder under a remote directory (the picker's "New folder").</summary>
+    public static void MapFsRemoteMkdirRoute(this WebApplication app)
+    {
+        app.MapPost("/api/fs/remote/mkdir", async (RemoteMkdirRequest req, KnownHostsStore knownHosts) =>
+        {
+            if (string.IsNullOrWhiteSpace(req.Host) || string.IsNullOrWhiteSpace(req.User) || string.IsNullOrWhiteSpace(req.KeyPath))
+                return Results.BadRequest(new { isError = true, message = "host, user, and keyPath are required." });
+            if (string.IsNullOrWhiteSpace(req.Parent) || req.Parent.Contains('\0'))
+                return Results.BadRequest(new { isError = true, message = "Choose the folder to create it in first." });
+            var problem = RemoteFolderName.Validate(req.Name);
+            if (problem is not null)
+                return Results.BadRequest(new { isError = true, message = problem });
+
+            var target = RemoteFolderName.Join(req.Parent, req.Name!);
+            try
+            {
+                using var keyFile = await SshKeyLoader.LoadAsync(req.KeyPath);
+                using var sftp = new SftpClient(req.Host, req.User, keyFile);
+                sftp.ConnectionInfo.Timeout = TimeSpan.FromSeconds(SshConnectTimeoutSecs);
+                sftp.HostKeyReceived += (_, e) =>
+                {
+                    knownHosts.Add(req.Host, BitConverter.ToString(e.FingerPrint).Replace("-", ":").ToLowerInvariant());
+                    e.CanTrust = true;
+                };
+                sftp.Connect();
+                try
+                {
+                    if (sftp.Exists(target))
+                        return Results.Conflict(new { isError = true, message = $"\"{req.Name!.Trim()}\" already exists in {req.Parent}." });
+                    sftp.CreateDirectory(target);
+                    Console.WriteLine($"[fs/remote/mkdir] created {target} on {req.User}@{req.Host}");
+                    return Results.Ok(new { path = target });
+                }
+                finally { sftp.Disconnect(); }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[fs/remote/mkdir] error: {ex.Message}");
+                return Results.BadRequest(new { isError = true, message = $"Could not create the folder: {ex.Message}" });
+            }
+        });
+    }
+
+    private record RemoteMkdirRequest(string Host, string User, string KeyPath, string Parent, string? Name);
+
     private static string? ComputeRemoteParent(string remotePath)
     {
         var trimmed = remotePath.TrimEnd('/');

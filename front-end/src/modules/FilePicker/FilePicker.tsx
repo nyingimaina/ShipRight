@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   RiFolderLine, RiFileLine, RiArrowLeftLine,
   RiHomeLine, RiComputerLine, RiFileTextLine, RiDownloadLine,
-  RiHardDriveLine, RiTerminalLine, RiLoader2Line,
+  RiHardDriveLine, RiTerminalLine, RiLoader2Line, RiFolderAddLine,
 } from 'react-icons/ri';
 import ZestButton from 'jattac.libs.web.zest-button';
 import { api } from '@/shared/ApiService';
@@ -100,6 +100,29 @@ export default function FilePicker({ initialPath, onSelect, dirsOnly = false, la
     }
   }, []);
 
+  // "New folder" (server browsing only): creates one folder in the directory being viewed, then opens it.
+  const [newName, setNewName] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  const createFolder = async () => {
+    const name = (newName ?? '').trim();
+    if (!sshConfig || !listing?.path || !name || creating) return;
+    setCreating(true);
+    setCreateError(null);
+    try {
+      const { path } = await api.post<{ path: string }>('/api/fs/remote/mkdir', {
+        host: sshConfig.host, user: sshConfig.user, keyPath: sshConfig.keyPath, parent: listing.path, name,
+      });
+      setNewName(null);
+      navigate(path);
+    } catch (e) {
+      setCreateError((e as { message?: string })?.message ?? 'Could not create the folder.');
+    } finally {
+      setCreating(false);
+    }
+  };
+
   const breadcrumbs = listing?.path ? parseBreadcrumbs(listing.path) : [];
   const entries = (listing?.entries ?? []).filter(e => dirsOnly ? e.isDirectory : true);
   const cur = listing?.path ?? '';
@@ -187,6 +210,29 @@ export default function FilePicker({ initialPath, onSelect, dirsOnly = false, la
                 </span>
               ))}
             </div>
+
+            {sshConfig && (
+              <div className={styles.newFolderBar}>
+                {newName === null ? (
+                  <button type="button" className={styles.newFolderBtn} disabled={loading || !listing?.path}
+                    title="Make a new folder inside the folder you are viewing"
+                    onClick={() => { setNewName(''); setCreateError(null); }}>
+                    <RiFolderAddLine /> New folder
+                  </button>
+                ) : (
+                  <>
+                    <input className={styles.newFolderInput} aria-label="New folder name" autoFocus
+                      value={newName} placeholder={`Name, created in ${listing?.path ?? ''}`} disabled={creating}
+                      onChange={e => setNewName(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') createFolder(); if (e.key === 'Escape') setNewName(null); }} />
+                    <button type="button" className={styles.newFolderBtn} onClick={createFolder}
+                      disabled={!newName.trim() || creating}>Create</button>
+                    <button type="button" className={styles.newFolderBtn} onClick={() => setNewName(null)} disabled={creating}>Cancel</button>
+                  </>
+                )}
+                {createError && <span className={styles.newFolderError}>{createError}</span>}
+              </div>
+            )}
 
             {/* Entries */}
             <div className={styles.list}>

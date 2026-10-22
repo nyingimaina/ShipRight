@@ -3,6 +3,7 @@ import Poller from 'jattac-web-poller';
 import { api } from '@/shared/ApiService';
 import Spinner from '@/shared/components/Busy/Spinner';
 import { IServerConfig } from '@/shared/types/IProject';
+import SwapOffer from './SwapOffer';
 import { ServerCard, ServerMetrics, SystemMetrics } from '@/pages/monitoring';
 
 const unreachable = (serverId: string): ServerMetrics => ({
@@ -34,5 +35,12 @@ export default function ServerStatsTab({ server }: { server: IServerConfig }) {
   if (!metrics) {
     return <Spinner label="Connecting to the server over SSH…" hint="Slow connections can take up to half a minute for the first reading." />;
   }
-  return <ServerCard server={server} metrics={metrics} />;
+  return (
+    <>
+      <SwapOffer serverId={server.id!} reachable={metrics.reachable} swapTotalMb={metrics.swapTotalMb}
+        memTotalMb={metrics.memTotalMb}
+        onCreated={gb => setMetrics(m => (m ? { ...m, swapTotalMb: gb * 1024 } : m))} />
+      <ServerCard server={server} metrics={metrics} />
+    </>
+  );
 }

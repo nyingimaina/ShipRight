@@ -58,6 +58,19 @@ public static class RemoteCheckpoint
                "echo '# checkpoints.log (last 20)'; tail -n 20 \"$HOME/.shipright/checkpoints.log\" 2>&1; true";
     }
 
+    /// <summary>Per-container image, health and log tail — the part that explains an "unhealthy" dependency.</summary>
+    public static string BuildContainerDiagnosticsCommand(ServerConfig server)
+    {
+        var dir = server.RemoteWorkingDir.TrimEnd('/');
+        return $"cd '{dir}' 2>&1; echo '# containers (name / image / status)'; " +
+               "docker ps -a --format '{{.Names}} / {{.Image}} / {{.Status}}' 2>&1 | head -n 20; " +
+               "for c in $(docker ps -aq 2>/dev/null | head -n 6); do " +
+               "echo \"# $(docker inspect -f '{{.Name}}' $c) health: $(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}n/a{{end}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' $c)\"; " +
+               "docker inspect -f '{{if .State.Health}}{{range .State.Health.Log}}{{.Output}}{{end}}{{end}}' $c 2>&1 | tail -n 5; " +
+               "docker logs --tail 40 $c 2>&1; done; " +
+               "echo '# memory'; free -m 2>&1 | head -n 2; true";
+    }
+
     /// <summary>Runs diagnostics, streaming each line to onLine. Never throws — it must not mask the real error.</summary>
     public static async Task RunDiagnosticsAsync(
         ISshRunner ssh, ServerConfig server, Func<string, Task> onLine, Serilog.ILogger log, CancellationToken ct)
@@ -71,7 +84,7 @@ public static class RemoteCheckpoint
                 return onLine(l);
             }
             await ssh.RunAsync(server.Host, server.Username, server.SshKeyPath,
-                BuildDiagnosticsCommand(server), Emit, Emit, ct);
+                BuildDiagnosticsCommand(server) + "; " + BuildContainerDiagnosticsCommand(server), Emit, Emit, ct);
             await onLine($"[diagnostics] done. Full history is on the server at ~/.shipright/checkpoints.log");
         }
         catch (Exception ex)

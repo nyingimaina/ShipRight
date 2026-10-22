@@ -88,7 +88,7 @@ public class ResilientServerOpsTests
         var result = await new ResilientServerBootstrapper(ssh).RunAsync(Server(), _ => Task.CompletedTask);
 
         Assert.IsTrue(result.Success);
-        Assert.AreEqual(6, ssh.Commands.Count);
+        Assert.AreEqual(8, ssh.Commands.Count); // 4 setup + .env + domain check + settings check + ECR login
         Assert.IsTrue(ssh.Commands.All(c => c.Contains("checkpoints.log")));
         Assert.IsFalse(ssh.Commands.Any(c => c.Contains("git clone")));
         StringAssert.Contains(ssh.Commands[3], "git init");

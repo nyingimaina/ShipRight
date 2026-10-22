@@ -51,6 +51,8 @@ public class RoleAccessRulesTests
     [DataRow("PUT", "/api/servers/abc", AppRoles.Admin)]
     [DataRow("DELETE", "/api/servers/abc", AppRoles.Admin)]
     [DataRow("POST", "/api/servers/abc/bootstrap", AppRoles.Admin)]
+    [DataRow("POST", "/api/fs/remote/mkdir", AppRoles.Admin)]
+    [DataRow("POST", "/api/servers/abc/swap", AppRoles.Admin)]
     [DataRow("POST", "/api/servers/abc/ssh-key/generate", AppRoles.Admin)]
     [DataRow("POST", "/api/resources/scripts", AppRoles.Admin)]
     [DataRow("DELETE", "/api/resources/credentials/abc", AppRoles.Admin)]

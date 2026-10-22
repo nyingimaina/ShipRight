@@ -6,6 +6,10 @@
 # the server can pin any other version (rollback) by setting SHIPRIGHT_APP_TAG in its .env. Keep the line in the form
 # image: <registry>/<repo>:${VAR:-<tag>}  so the pipeline can find it.
 # (docker-compose.yml in this repo is the build-from-source variant for local/self-hosted use.)
+# The project and volume names are fixed so that moving or renaming the working folder on the server never creates
+# empty replacement volumes (which would look like data loss). Deploy adopts data left in older, differently named volumes.
+name: shipright
+
 services:
   db:
     image: mariadb:11
@@ -16,14 +20,20 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-shipright}
       MYSQL_USER: ${MYSQL_USER:-shipright}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    # Memory caps so the database and the app fit on a 1 GB server (defaults assume a machine with spare RAM).
+    command:
+      - --innodb-buffer-pool-size=64M
+      - --performance-schema=OFF
+      - --max-connections=50
     volumes:
       - shipright-db-data:/var/lib/mysql
+    # Generous timings: the first start initialises the database, and a small server can be slow to answer a probe.
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 15s
-      timeout: 5s
+      timeout: 10s
       retries: 10
-      start_period: 30s
+      start_period: 90s
 
   app:
     image: 080632633137.dkr.ecr.us-east-2.amazonaws.com/ship-right/app:${SHIPRIGHT_APP_TAG:-4.4.7}
@@ -36,8 +46,8 @@ services:
       SHIPRIGHT__MODE: ${SHIPRIGHT__MODE:-Cloud}
       SHIPRIGHT__TIME_ZONE: ${SHIPRIGHT__TIME_ZONE:-UTC}
       SHIPRIGHT__DB_CONNECTION: ${SHIPRIGHT__DB_CONNECTION:?Set SHIPRIGHT__DB_CONNECTION}
-      SHIPRIGHT__CORS_ORIGINS: ${SHIPRIGHT__CORS_ORIGINS:?Set SHIPRIGHT__CORS_ORIGINS}
-      SHIPRIGHT__PUBLIC_URL: ${SHIPRIGHT__PUBLIC_URL:?Set SHIPRIGHT__PUBLIC_URL}
+      SHIPRIGHT__CORS_ORIGINS: ${SHIPRIGHT__CORS_ORIGINS:-https://${SHIPRIGHT_DOMAIN}}
+      SHIPRIGHT__PUBLIC_URL: ${SHIPRIGHT__PUBLIC_URL:-https://${SHIPRIGHT_DOMAIN}}
       SHIPRIGHT__SMTP_HOST: ${SHIPRIGHT__SMTP_HOST:?Set SHIPRIGHT__SMTP_HOST}
       SHIPRIGHT__SMTP_PORT: ${SHIPRIGHT__SMTP_PORT:-587}
       SHIPRIGHT__SMTP_USERNAME: ${SHIPRIGHT__SMTP_USERNAME:?Set SHIPRIGHT__SMTP_USERNAME}
@@ -45,11 +55,36 @@ services:
       SHIPRIGHT__SMTP_FROM: ${SHIPRIGHT__SMTP_FROM:?Set SHIPRIGHT__SMTP_FROM}
       SHIPRIGHT__GOOGLE_CLIENT_ID: ${SHIPRIGHT__GOOGLE_CLIENT_ID:-}
       SHIPRIGHT__GOOGLE_CLIENT_SECRET: ${SHIPRIGHT__GOOGLE_CLIENT_SECRET:-}
+    # Bound to the server itself: Caddy reaches the app over the compose network, and the deploy health check
+    # curls localhost:5200. Plain-HTTP 5200 is not exposed to the internet.
     ports:
-      - "5200:5200"
+      - "127.0.0.1:5200:5200"
     volumes:
       - shipright-app-data:/root/.shipright
 
+  # HTTPS front door: gets and renews a Let's Encrypt certificate for SHIPRIGHT_DOMAIN by itself.
+  # Needs: a DNS A record for the domain pointing at this server, and inbound ports 80 and 443 open.
+  caddy:
+    image: caddy:2-alpine
+    container_name: shipright-caddy
+    restart: unless-stopped
+    depends_on:
+      - app
+    command: caddy reverse-proxy --from ${SHIPRIGHT_DOMAIN:?Set SHIPRIGHT_DOMAIN to the address people will visit} --to app:5200
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+
 volumes:
   shipright-db-data:
+    name: shipright-db-data
   shipright-app-data:
+    name: shipright-app-data
+  caddy-data:
+    name: shipright-caddy-data
+  caddy-config:
+    name: shipright-caddy-config

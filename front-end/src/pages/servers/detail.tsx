@@ -8,20 +8,23 @@ import AppShell from '@/modules/AppShell/AppShell';
 import ServerActionsTab from '@/modules/ServerDetail/ServerActionsTab';
 import Spinner from '@/shared/components/Busy/Spinner';
 import ServerFilesTab from '@/modules/ServerDetail/ServerFilesTab';
+import RemoteTerminal from '@/shared/components/RemoteTerminal/RemoteTerminal';
 import ServerStatsTab from '@/modules/ServerDetail/ServerStatsTab';
 import { ServerForm, ServerInput } from '@/pages/servers';
 import { api } from '@/shared/ApiService';
 import { IServerConfig } from '@/shared/types/IProject';
 import styles from '@/modules/ServerDetail/Styles/ServerDetail.module.css';
 
-type Tab = 'actions' | 'stats' | 'files' | 'settings';
+type Tab = 'actions' | 'stats' | 'files' | 'terminal' | 'settings';
 const TABS: ZestTabItem<Tab>[] = [
   { label: 'Actions', value: 'actions' },
   { label: 'Stats', value: 'stats' },
   { label: 'Files', value: 'files' },
+  { label: 'Terminal', value: 'terminal' },
   { label: 'Settings', value: 'settings' },
 ];
-const isTab = (v: unknown): v is Tab => v === 'actions' || v === 'stats' || v === 'files' || v === 'settings';
+const isTab = (v: unknown): v is Tab =>
+  v === 'actions' || v === 'stats' || v === 'files' || v === 'terminal' || v === 'settings';
 
 export default function ServerDetailPage() {
   const router = useRouter();
@@ -67,6 +70,10 @@ export default function ServerDetailPage() {
                 {tab === 'actions' && <ServerActionsTab serverId={server.id!} serverName={title} />}
                 {tab === 'stats' && <ServerStatsTab server={server} />}
                 {tab === 'files' && <ServerFilesTab server={server} />}
+                {tab === 'terminal' && (
+                  <RemoteTerminal serverId={server.id!} serverLabel={`${server.username}@${server.host}`}
+                    startDir={server.remoteWorkingDir} />
+                )}
                 {tab === 'settings' && (
                   <div className={styles.settingsWrap}>
                     <ServerForm initial={server} onSave={save} onCancel={() => load(server.id!)} hideDeployActions />

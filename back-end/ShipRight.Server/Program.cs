@@ -180,6 +180,7 @@ try
     app.MapSystemRoutes();
     app.MapWslDiskRoutes();
     app.MapFsRoutes();
+    app.MapFsRemoteMkdirRoute();
     app.MapProjectRoutes();
     app.MapProjectPathRefreshRoutes();
     app.MapProjectSummaryRoutes();
@@ -192,6 +193,7 @@ try
     app.MapServerRoutes();
     app.MapServerBootstrapRoutes();
     app.MapServerLogRoutes();
+    app.MapServerSwapRoutes();
     app.MapServerFilesRoutes();
     if (cloudMode)
     {

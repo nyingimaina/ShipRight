@@ -7,7 +7,7 @@ import { api } from '@/shared/ApiService';
 import { IServerConfig } from '@/shared/types/IProject';
 import styles from './Styles/Terminal.module.css';
 
-const SshTerminal = dynamic(() => import('@/modules/Ssh/SshTerminal'), { ssr: false });
+const SshTerminal = dynamic(() => import('@/shared/components/RemoteTerminal/RemoteTerminal'), { ssr: false });
 
 const selectStyles = {
   control:     (b: object) => ({ ...b, background: '#1A2640', border: '1px solid rgba(255,255,255,0.08)', minHeight: 36, minWidth: 280 }),
@@ -55,6 +55,7 @@ export default function TerminalPage() {
         {current ? (
           <SshTerminal
             serverId={current.id}
+            startDir={current.remoteWorkingDir}
             serverLabel={`${current.username}@${current.host}`}
           />
         ) : (

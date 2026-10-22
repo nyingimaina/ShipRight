@@ -32,11 +32,19 @@ public sealed class ResilientServerBootstrapper
             ("Install Docker + git", RemoteServerBootstrapper.BuildInstallDockerCommand()),
             ("Ensure Docker Compose plugin", RemoteServerBootstrapper.BuildEnsureComposeCommand()),
             ("Install AWS CLI", RemoteServerBootstrapper.BuildInstallAwsCliCommand()),
-            ("Compose repo sync", RemoteCheckpoint.BuildSyncRepoCommand(server)),
+            ("Compose repo sync", RemoteGitHygiene.BuildSafeSyncRepoCommand(server)),
         };
         if (!string.IsNullOrWhiteSpace(server.EnvFile))
             steps.Add(("Write .env", RemoteEnvFileWriter.BuildWriteEnvFileCommand(server.RemoteWorkingDir, server.EnvFile)));
-        var ecr = RemoteServerBootstrapper.BuildEcrLoginCommand(server);
+        if (!string.IsNullOrWhiteSpace(server.EnvFile))
+        {
+            var domain = RemoteDomainCheck.ExtractDomain(server.EnvFile);
+            steps.Add(("Domain check", domain is null
+                ? RemoteDomainCheck.BuildMissingDomainCommand()
+                : RemoteDomainCheck.BuildCommand(domain)));
+            steps.Add(("Settings check", RemoteEnvLint.BuildCommand(server.EnvFile)));
+        }
+        var ecr = RemoteEcrLogin.BuildWithTimeout(server);
         if (ecr is not null) steps.Add(("ECR login", ecr));
 
         log.Information("Bootstrap started: user={User} dir={Dir} steps={Steps}", server.Username, server.RemoteWorkingDir, steps.Count);

@@ -12,7 +12,7 @@ import ZestTabs, { ZestTabItem } from 'jattac.libs.web.zest-tabs';
 import { api, sseUrl } from '@/shared/ApiService';
 import { useElapsedTimer, fmtElapsed } from '@/shared/hooks/useElapsedTimer';
 
-const SshTerminal    = dynamic(() => import('@/modules/Ssh/SshTerminal'),          { ssr: false });
+const SshTerminal    = dynamic(() => import('@/shared/components/RemoteTerminal/RemoteTerminal'), { ssr: false });
 import DbOperationsPanel from '@/modules/Database/DbOperationsPanel';
 import { IDatabaseConfig, IProject } from '@/shared/types/IProject';
 import { IDeployment, IServiceVersion } from '@/shared/types/IBuildRecord';
@@ -697,6 +697,7 @@ export default function ProjectDetailPanel({ projectId, onBack }: Props) {
             {project.server.host ? (
               <SshTerminal
                 projectId={project.id}
+                startDir={project.server.remoteWorkingDir}
                 serverLabel={`${project.server.username}@${project.server.host}`}
               />
             ) : (

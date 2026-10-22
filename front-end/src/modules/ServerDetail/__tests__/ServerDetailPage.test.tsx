@@ -72,6 +72,21 @@ describe('Server detail page', () => {
     ['Actions', 'Stats', 'Files', 'Settings'].forEach(t => expect(screen.getByRole('button', { name: t })).toBeInTheDocument());
   });
 
+  it('has a Terminal tab with quick commands that knows the compose folder', async () => {
+    render(<ServerDetailPage />);
+    await screen.findByRole('heading', { name: 'Prod' });
+    fireEvent.click(screen.getByRole('button', { name: 'Terminal' }));
+    expect(await screen.findByLabelText('Command')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Images to deploy' }));
+    expect((screen.getByLabelText('Command') as HTMLInputElement).value).toBe("cd '/srv/app' && docker compose config --images");
+  });
+
+  it('honours ?tab=terminal', async () => {
+    router.query = { id: 's1', tab: 'terminal' };
+    render(<ServerDetailPage />);
+    expect(await screen.findByLabelText('Command')).toBeInTheDocument();
+  });
+
   it('Actions tab is the default and offers Prepare and Deploy', async () => {
     render(<ServerDetailPage />);
     expect(await screen.findByRole('button', { name: 'Prepare server' })).toBeInTheDocument();
