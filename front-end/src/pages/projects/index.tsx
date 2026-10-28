@@ -8,6 +8,8 @@ import OverflowMenu from 'jattac.libs.web.overflow-menu';
 import ZestButton from 'jattac.libs.web.zest-button';
 import ProjectSetupWizard from '@/modules/ProjectConfig/ProjectSetupWizard';
 import ProjectDetailPanel from '@/modules/ProjectDetail/ProjectDetailPanel';
+import ImportProjectDialog from '@/modules/ProjectTransfer/ImportProjectDialog';
+import { exportProject } from '@/modules/ProjectTransfer/exportProject';
 import { api } from '@/shared/ApiService';
 import { IProject } from '@/shared/types/IProject';
 import styles from './Styles/ProjectList.module.css';
@@ -20,6 +22,7 @@ export default function ProjectList() {
   const [projects, setProjects] = useState<IProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [wizardTarget, setWizardTarget] = useState<WizardTarget>(undefined);
+  const [importOpen, setImportOpen] = useState(false);
 
   const detailId = router.query.detail as string | undefined;
 
@@ -50,6 +53,15 @@ export default function ProjectList() {
       setProjects(prev => prev.filter(p => p.id !== id));
     } catch {
       toast.error('Failed to delete project.');
+    }
+  };
+
+  const handleExport = async (id: string, name: string) => {
+    try {
+      await exportProject(id);
+      toast.success(`'${name}' exported. Secrets are not included.`);
+    } catch (e) {
+      toast.error((e as Error).message || 'Export failed.');
     }
   };
 
@@ -86,10 +98,15 @@ export default function ProjectList() {
         >
           <div className={styles.header}>
             <h1 className={styles.heading}>Projects</h1>
-            <ZestButton onClick={() => setWizardTarget(null)}
-              zest={{ visualOptions: { variant: 'standard' }, semanticType: 'add' }}>
-              New Project
-            </ZestButton>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <ZestButton onClick={() => setImportOpen(true)} zest={{ buttonStyle: 'outline' }}>
+                Import
+              </ZestButton>
+              <ZestButton onClick={() => setWizardTarget(null)}
+                zest={{ visualOptions: { variant: 'standard' }, semanticType: 'add' }}>
+                New Project
+              </ZestButton>
+            </div>
           </div>
 
           <div className={styles.grid}>
@@ -114,6 +131,7 @@ export default function ProjectList() {
                   </div>
                   <OverflowMenu items={[
                     { content: 'Edit', onClick: () => setWizardTarget(p) },
+                    { content: 'Export', onClick: () => handleExport(p.id, p.name) },
                     { content: 'Delete', onClick: () => handleDelete(p.id, p.name) },
                   ]} />
                 </div>
@@ -132,6 +150,12 @@ export default function ProjectList() {
             </p>
           )}
         </ZestResponsiveLayout>
+        {importOpen && (
+          <ImportProjectDialog
+            onClose={() => setImportOpen(false)}
+            onImported={() => load()}
+          />
+        )}
       </AppShell>
     </>
   );

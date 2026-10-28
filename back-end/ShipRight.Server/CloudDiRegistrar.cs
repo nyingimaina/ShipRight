@@ -20,6 +20,7 @@ using ShipRight.Modules.System.WslDisk;
 using ShipRight.Modules.Resources.Stores;
 using ShipRight.Modules.Scheduler;
 using ShipRight.Modules.Servers;
+using ShipRight.Modules.Transfer;
 using ShipRight.Modules.Services;
 using ShipRight.Modules.Ssh;
 using ShipRight.Modules.WatchBranch;
@@ -120,6 +121,7 @@ public static class CloudDiRegistrar
             sp.GetService<IProcessRunner>()));
         services.AddSingleton<AwsProfileValidator>();
         services.AddSingleton<ResourceResolutionService>();
+        services.AddProjectBundle();
         services.AddSingleton<ScriptExecutor>();
         services.AddSingleton<RegistryRotationCoordinator>();
         services.AddSingleton<BuildMachineImagePruner>();

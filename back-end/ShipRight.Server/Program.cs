@@ -30,6 +30,7 @@ using ShipRight.Modules.Scheduler;
 using ShipRight.Modules.WatchBranch;
 using ShipRight.Modules.Services;
 using ShipRight.Modules.Servers;
+using ShipRight.Modules.Transfer;
 using ShipRight.Modules.Ssh;
 using ShipRight.Modules.System;
 using ShipRight.Modules.System.WslDisk;
@@ -183,6 +184,7 @@ try
     app.MapFsRemoteMkdirRoute();
     app.MapProjectRoutes();
     app.MapProjectPathRefreshRoutes();
+    app.MapProjectBundleRoutes();
     app.MapProjectSummaryRoutes();
     app.MapBuildRoutes();
     app.MapDatabaseRoutes();
@@ -328,6 +330,7 @@ static void RegisterDesktopServices(IServiceCollection services, string dataDir)
         sp.GetService<IProcessRunner>()));
     services.AddSingleton<AwsProfileValidator>();
     services.AddSingleton<ResourceResolutionService>();
+    services.AddProjectBundle();
     services.AddSingleton<ScriptExecutor>();
     services.AddSingleton<RegistryRotationCoordinator>();
     services.AddSingleton<BuildMachineImagePruner>();
