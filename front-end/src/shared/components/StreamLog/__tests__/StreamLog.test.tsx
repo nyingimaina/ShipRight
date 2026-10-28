@@ -73,6 +73,64 @@ describe('StreamLog', () => {
     expect(screen.getByRole('button', { name: 'Resume auto-scroll' })).toBeInTheDocument();
   });
 
+  describe('following and scroll lock', () => {
+    const geometry = (el: HTMLElement) => {
+      Object.defineProperty(el, 'scrollHeight', { value: 1000, configurable: true });
+      Object.defineProperty(el, 'clientHeight', { value: 200, configurable: true });
+    };
+    const scrollTo = (el: HTMLElement, top: number) => { el.scrollTop = top; fireEvent.scroll(el); };
+
+    it('follows new output down to the bottom', () => {
+      const { rerender } = render(<StreamLog lines={[L(1, 'a')]} />);
+      const log = screen.getByTestId('stream-log-body');
+      geometry(log);
+      rerender(<StreamLog lines={[L(1, 'a'), L(2, 'b')]} />);
+      expect(log.scrollTop).toBe(1000);
+    });
+
+    it('stops following when you scroll up, and follows again once you scroll back to the bottom', () => {
+      const { rerender } = render(<StreamLog lines={[L(1, 'a')]} />);
+      const log = screen.getByTestId('stream-log-body');
+      geometry(log);
+
+      scrollTo(log, 100);
+      expect(screen.getByRole('button', { name: 'Resume auto-scroll' })).toBeInTheDocument();
+      rerender(<StreamLog lines={[L(1, 'a'), L(2, 'b')]} />);
+      expect(log.scrollTop).toBe(100);
+
+      scrollTo(log, 800); // gap = 1000 - 800 - 200 = 0, back at the bottom
+      expect(screen.getByRole('button', { name: 'Pause auto-scroll' })).toBeInTheDocument();
+      rerender(<StreamLog lines={[L(1, 'a'), L(2, 'b'), L(3, 'c')]} />);
+      expect(log.scrollTop).toBe(1000);
+    });
+
+    it('a lock set with the button holds even when you scroll to the bottom', () => {
+      const { rerender } = render(<StreamLog lines={[L(1, 'a')]} />);
+      const log = screen.getByTestId('stream-log-body');
+      geometry(log);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Pause auto-scroll' }));
+      scrollTo(log, 800);
+      expect(screen.getByRole('button', { name: 'Resume auto-scroll' })).toBeInTheDocument();
+      rerender(<StreamLog lines={[L(1, 'a'), L(2, 'b')]} />);
+      expect(log.scrollTop).toBe(800);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Resume auto-scroll' }));
+      expect(log.scrollTop).toBe(1000);
+    });
+
+    it('a scroll-up pause still offers Jump to latest, which also follows again', () => {
+      const { rerender } = render(<StreamLog lines={[L(1, 'a')]} />);
+      const log = screen.getByTestId('stream-log-body');
+      geometry(log);
+      scrollTo(log, 100);
+      rerender(<StreamLog lines={[L(1, 'a'), L(2, 'b')]} />);
+      fireEvent.click(screen.getByRole('button', { name: /Jump to latest \(1 new\)/ }));
+      expect(log.scrollTop).toBe(1000);
+      expect(screen.getByRole('button', { name: 'Pause auto-scroll' })).toBeInTheDocument();
+    });
+  });
+
   it('downloads using the given filename', () => {
     (URL as any).createObjectURL = jest.fn(() => 'blob:x');
     (URL as any).revokeObjectURL = jest.fn();

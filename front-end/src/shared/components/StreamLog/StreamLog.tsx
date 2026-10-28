@@ -51,14 +51,17 @@ async function copyText(text: string): Promise<boolean> {
 export default function StreamLog({ lines, isLive, filename = 'shipright.log', emptyText = 'Waiting for output…', onClear }: Props) {
   const bodyRef = useRef<HTMLDivElement>(null);
   const [paused, setPaused] = useState(false);
+  // Set by the Pause button: the reader asked to stay put, so reaching the bottom must not resume.
+  const [locked, setLocked] = useState(false);
   const [pausedAtCount, setPausedAtCount] = useState(0);
   const [wrap, setWrap] = useState(true);
   const [errorsOnly, setErrorsOnly] = useState(false);
   const [query, setQuery] = useState('');
   const [copied, setCopied] = useState(false);
 
-  const pause = () => { setPaused(true); setPausedAtCount(lines.length); };
-  const resume = () => setPaused(false);
+  const autoPause = () => { setPaused(true); setPausedAtCount(lines.length); };
+  const pause = () => { autoPause(); setLocked(true); };
+  const resume = () => { setPaused(false); setLocked(false); };
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -71,10 +74,13 @@ export default function StreamLog({ lines, isLive, filename = 'shipright.log', e
     if (!paused && bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
   }, [visible, paused]);
 
+  // Scrolling up stops following; scrolling back to the bottom follows again unless the reader locked it.
   const onScroll = () => {
     const el = bodyRef.current;
-    if (!el || paused) return;
-    if (el.scrollHeight - el.scrollTop - el.clientHeight > NEAR_BOTTOM_PX) pause();
+    if (!el) return;
+    const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (!paused) { if (gap > NEAR_BOTTOM_PX) autoPause(); }
+    else if (!locked && gap <= NEAR_BOTTOM_PX) resume();
   };
 
   const allText = () => lines.map(l => l.text).join('\n');
