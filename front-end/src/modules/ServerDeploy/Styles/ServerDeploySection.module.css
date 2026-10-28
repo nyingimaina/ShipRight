@@ -34,3 +34,6 @@
 .line { display: block; white-space: pre-wrap; word-break: break-word; color: var(--text-secondary); }
 .ok   { color: #4ADE80; }
 .err  { color: #F87171; }
+
+.envWarn { margin-top: 6px; padding: 8px 12px; border: 1px solid var(--warning); border-radius: 6px; color: var(--warning); font-size: 12px; }
+.envWarn ul { margin: 6px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }

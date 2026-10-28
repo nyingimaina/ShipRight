@@ -3,6 +3,7 @@ import ZestButton from 'jattac.libs.web.zest-button';
 import ZestTextbox from 'jattac.libs.web.zest-textbox';
 import { api, sseUrl } from '@/shared/ApiService';
 import HoverTip from '@/shared/components/HoverTip';
+import { envFileWarnings } from './envFileWarnings';
 import styles from './Styles/ServerDeploySection.module.css';
 
 export interface IServerDeployValues {
@@ -84,6 +85,8 @@ export default function ServerDeploySection({ serverId, values, onChange, showAc
     </div>
   );
 
+  const envWarnings = envFileWarnings(values.envFile ?? '');
+
   return (
     <div className={styles.section}>
       <h4 className={styles.title}>Remote deploy (EC2)</h4>
@@ -133,6 +136,12 @@ export default function ServerDeploySection({ serverId, values, onChange, showAc
           value={values.envFile ?? ''} placeholder={'KEY=value\nANOTHER=value'}
           onChange={e => onChange('envFile', e.target.value)} />
         <span className={styles.hint}>Written to the working directory as .env (chmod 600) on every prepare/deploy.</span>
+        {envWarnings.length > 0 && (
+          <div className={styles.envWarn} role="status">
+            <strong>Check these values — a character may be read as something else:</strong>
+            <ul>{envWarnings.map((w, i) => <li key={i}>{w.message}</li>)}</ul>
+          </div>
+        )}
       </div>
 
       {showActions && <div className={styles.actions}>
