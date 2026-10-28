@@ -92,6 +92,8 @@ export interface IProject {
 gitPushTimeoutSeconds?: number;
   timeZone?: string;
   localCachePruneKeepGb?: number;
+  /** Absent/null builds from the project folder as it always has; CleanSnapshot builds a clean copy of the committed code. */
+  buildSource?: 'InPlace' | 'CleanSnapshot' | null;
   createdAt: string;
   modifiedAt: string;
 }

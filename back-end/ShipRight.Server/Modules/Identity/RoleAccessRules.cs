@@ -18,6 +18,7 @@ public static class RoleAccessRules
         R(null, @"/api/team(/.*)?", AppRoles.Admin),
         R(null, @"/api/system/(shutdown|wsl-disk(/.*)?)", AppRoles.Admin),
         R(null, @"/api/fs(/.*)?", AppRoles.Admin),
+        R(null, @"/api/setup(/.*)?", AppRoles.Admin),
 
         // Sign-in plumbing for an already signed-in person.
         R(null, @"/api/auth/(me|logout|change-password)", AppRoles.Viewer),
@@ -44,6 +45,7 @@ public static class RoleAccessRules
 
         // Project settings are Admin only; building and deploying is Operator.
         R("POST", @"/api/projects/[^/]+/(repos/[^/]+/(purge-history|delete-files)|compose-repo/clone-url|ssh-key/(generate|authorize))", AppRoles.Admin),
+        R("POST", @"/api/projects/[^/]+/build-source", AppRoles.Admin),
         R("POST", @"/api/projects", AppRoles.Admin),
         R("POST", @"/api/projects/detect", AppRoles.Admin),
         R("PUT", @"/api/projects/[^/]+", AppRoles.Admin),

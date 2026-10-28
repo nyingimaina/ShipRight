@@ -27,6 +27,7 @@ using ShipRight.Modules.Resources;
 using ShipRight.Modules.Resources.Models;
 using ShipRight.Modules.Resources.Stores;
 using ShipRight.Modules.Scheduler;
+using ShipRight.Modules.Setup;
 using ShipRight.Modules.WatchBranch;
 using ShipRight.Modules.Services;
 using ShipRight.Modules.Servers;
@@ -184,6 +185,8 @@ try
     app.MapFsRemoteMkdirRoute();
     app.MapProjectRoutes();
     app.MapProjectPathRefreshRoutes();
+    app.MapSetupRoutes();
+    app.MapProjectBuildSourceRoutes();
     app.MapProjectBundleRoutes();
     app.MapProjectSummaryRoutes();
     app.MapBuildRoutes();
@@ -281,7 +284,8 @@ static void RegisterDesktopServices(IServiceCollection services, string dataDir)
 {
     services.AddSingleton<SqliteProjectStore>(_ => new SqliteProjectStore(dataDir));
     services.AddSingleton<IProjectStore>(sp =>
-        new DockerCredentialPreservingProjectStore(sp.GetRequiredService<SqliteProjectStore>()));
+        new BuildSourcePreservingProjectStore(
+            new DockerCredentialPreservingProjectStore(sp.GetRequiredService<SqliteProjectStore>())));
     services.AddSingleton<IBuildStore>(_ => new SqliteBuildStore(dataDir));
     services.AddSingleton<BuildEventBus>();
     services.AddSingleton<IProcessRunner, ProcessRunner>();
@@ -299,7 +303,8 @@ static void RegisterDesktopServices(IServiceCollection services, string dataDir)
         sp.GetRequiredService<ISshRunner>()));
     services.AddSingleton<AwsCliInstaller>();
 
-    services.AddSingleton<BuildOrchestrator>();
+    // Builds in place unless a project opts into clean-snapshot builds (see SnapshotBuildOrchestrator).
+    services.AddSingleton<BuildOrchestrator, SnapshotBuildOrchestrator>();
     services.AddSingleton<ComposeRepoService>();
     services.AddSingleton<MariaDbProvider>();
     services.AddSingleton<SqlServerProvider>();

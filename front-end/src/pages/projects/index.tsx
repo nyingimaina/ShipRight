@@ -6,7 +6,7 @@ import { ZestResponsiveLayout } from 'jattac.libs.web.zest-responsive-layout';
 import AppShell from '@/modules/AppShell/AppShell';
 import OverflowMenu from 'jattac.libs.web.overflow-menu';
 import ZestButton from 'jattac.libs.web.zest-button';
-import ProjectSetupWizard from '@/modules/ProjectConfig/ProjectSetupWizard';
+import ProjectPane from '@/modules/ProjectConfig/QuickSetup/ProjectPane';
 import ProjectDetailPanel from '@/modules/ProjectDetail/ProjectDetailPanel';
 import ImportProjectDialog from '@/modules/ProjectTransfer/ImportProjectDialog';
 import { exportProject } from '@/modules/ProjectTransfer/exportProject';
@@ -79,7 +79,7 @@ export default function ProjectList() {
             title: wizardTarget ? `Edit: ${wizardTarget.name}` : 'New Project',
             onClose: closePane,
             content: paneOpen ? (
-              <ProjectSetupWizard
+              <ProjectPane
                 existing={wizardTarget ?? undefined}
                 onSaved={project => {
                   closePane();

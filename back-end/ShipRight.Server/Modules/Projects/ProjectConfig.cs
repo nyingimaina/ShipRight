@@ -163,8 +163,20 @@ public record FreeformFeatures
     public bool Database { get; init; }
 }
 
+/// <summary>
+/// Where a build's source code comes from. InPlace builds straight from the project folder on disk
+/// (how ShipRight has always worked). CleanSnapshot builds a throwaway Linux-side checkout of the exact
+/// committed version, so uncommitted files can never end up in an image.
+/// </summary>
+public enum BuildSource { InPlace, CleanSnapshot }
+
 public record ProjectConfig
 {
+    /// <summary>
+    /// Null means "never chosen" and behaves as InPlace. Kept nullable so a client that does not know
+    /// about this setting (it simply omits it) can be told apart from one that chose InPlace on purpose.
+    /// </summary>
+    public BuildSource? BuildSource { get; init; }
     public string Id { get; init; } = string.Empty;
     public string Name { get; init; } = string.Empty;
     public int Version { get; init; } = 2;
