@@ -74,7 +74,7 @@ public class ProjectBundleTests : IDisposable
         await _source.Servers.SaveAsync(new ServerConfig
         {
             Id = "srv-1", Name = "Prod box", Host = "10.0.0.5", Username = "ubuntu", SshKeyPath = @"C:\Users\me\.ssh\prod.pem",
-            RemoteWorkingDir = "/srv/app", EnvFile = "DB_PASSWORD=hunter2", ManagedSshKey = true, ManagedSshKeyAuthorized = true,
+            RemoteWorkingDir = "/srv/app", EnvFile = "DB_PASSWORD=hunter2", ComposeRepoUrl = "https://ghp_urltoken@github.com/acme/compose.git", ManagedSshKey = true, ManagedSshKeyAuthorized = true,
             RebuildScriptResourceId = RebuildScriptId, PipelineResourceId = PipelineId,
         });
         await _source.Projects.SaveAsync(new ProjectConfig
@@ -89,7 +89,7 @@ public class ProjectBundleTests : IDisposable
                 },
             ],
             GitRepos = [new GitConfig { RepoPath = @"D:\work\app", CredentialResourceId = CredId }],
-            Wsl = new WslConfig { WorkingDir = "/mnt/d/work/app-compose" },
+            Wsl = new WslConfig { WorkingDir = "/mnt/d/work/app-compose", ComposeRepoUrl = "https://user:urlpass@github.com/acme/compose.git" },
             Database = new DatabaseConfig { ContainerName = "db", DatabaseName = "app", RootPassword = "db-secret" },
         });
     }
@@ -169,7 +169,7 @@ public class ProjectBundleTests : IDisposable
         {
             using var r = new StreamReader(entry.Open());
             var text = r.ReadToEnd();
-            foreach (var secret in new[] { "svc-secret", "reg-secret", "aws-secret", "AKIA-SECRET", "ghp_secret", "db-secret", "hunter2" })
+            foreach (var secret in new[] { "svc-secret", "reg-secret", "aws-secret", "AKIA-SECRET", "ghp_secret", "db-secret", "hunter2", "ghp_urltoken", "urlpass" })
                 Assert.IsFalse(text.Contains(secret), $"{entry.FullName} leaked '{secret}'");
         }
     }
@@ -185,6 +185,31 @@ public class ProjectBundleTests : IDisposable
         Assert.IsTrue(warnings.Any(w => w.Code == "path" && w.Message.Contains(@"D:\work\app\api")), "service build path not flagged");
         Assert.IsTrue(warnings.Any(w => w.Code == "path" && w.Message.Contains(@"C:\Users\me\.ssh\prod.pem")), "ssh key path not flagged");
         Assert.IsTrue(warnings.Any(w => w.Code == "secret-omitted" && w.Location.Contains("github-pat")), "credential not flagged");
+    }
+
+    [TestMethod]
+    public async Task Export_KeepsTheRepoAddressButDropsTheCredentialsEmbeddedInIt()
+    {
+        await SeedAsync();
+        var bundle = await ExportAsync();
+        Assert.AreEqual("https://github.com/acme/compose.git",
+            JsonConvert.DeserializeObject<ServerConfig>(ReadEntry(bundle, "server.json"))!.ComposeRepoUrl);
+        Assert.AreEqual("https://github.com/acme/compose.git",
+            JsonConvert.DeserializeObject<ProjectConfig>(ReadEntry(bundle, "project.json"))!.Wsl.ComposeRepoUrl);
+
+        var warnings = JsonConvert.DeserializeObject<BundleManifest>(ReadEntry(bundle, "manifest.json"))!.Warnings;
+        Assert.IsTrue(warnings.Any(w => w.Code == "secret-omitted" && w.Message.Contains("repository URL")));
+    }
+
+    [TestMethod]
+    public async Task Export_LeavesAnSshRepoAddressUntouched()
+    {
+        await SeedAsync();
+        var server = (await _source.Servers.GetByIdAsync("srv-1"))! with { ComposeRepoUrl = "ssh://git@github.com/acme/compose.git" };
+        await _source.Servers.SaveAsync(server);
+        var bundle = await ExportAsync();
+        Assert.AreEqual("ssh://git@github.com/acme/compose.git",
+            JsonConvert.DeserializeObject<ServerConfig>(ReadEntry(bundle, "server.json"))!.ComposeRepoUrl);
     }
 
     // ── Inspect ───────────────────────────────────────────────────────────────

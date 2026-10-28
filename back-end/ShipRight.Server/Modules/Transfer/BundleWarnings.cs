@@ -21,6 +21,7 @@ internal static class BundleWarnings
         foreach (var g in p.GitRepos)
             foreach (var w in Path($"git repo '{g.RepoPath}'", "repository path", g.RepoPath)) yield return w;
         foreach (var w in Path("project", "compose working directory", p.Wsl.WorkingDir)) yield return w;
+        if (BundleSecrets.HasUrlCredentials(p.Wsl.ComposeRepoUrl)) yield return Secret("project", "compose repository URL token or password");
         if (p.Database is not null)
             foreach (var w in Secret("database", "root password", p.Database.RootPassword)) yield return w;
     }
@@ -29,6 +30,7 @@ internal static class BundleWarnings
     {
         var at = $"server '{s.Name}'";
         foreach (var w in Path(at, "SSH key file", s.SshKeyPath)) yield return w;
+        if (BundleSecrets.HasUrlCredentials(s.ComposeRepoUrl)) yield return Secret(at, "compose repository URL token or password");
         if (s.ManagedSshKey)
             yield return new BundleWarning
             {
@@ -74,6 +76,12 @@ internal static class BundleWarnings
             Message = $"{at}: {what} is '{value}' — a location on the original machine. Update it if this machine differs.",
         };
     }
+
+    private static BundleWarning Secret(string at, string what) => new()
+    {
+        Code = "secret-omitted", Location = at,
+        Message = $"{at}: the {what} is never exported. Enter it again after importing.",
+    };
 
     private static IEnumerable<BundleWarning> Secret(string at, string what, string? value)
     {
