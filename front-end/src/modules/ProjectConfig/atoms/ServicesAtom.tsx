@@ -228,7 +228,16 @@ export default function ServicesAtom({
           </div>
           <div className={styles.fieldRow}>
             <span className={styles.fieldLabel}>Build context</span>
-            <div className={styles.fieldValue}>{svc.buildContextPath}</div>
+            <ZestTextbox value={svc.buildContextPath ?? ''}
+              onChange={e => updateService(i, { buildContextPath: e.target.value })}
+              placeholder="Folder docker build runs from (where the Dockerfile and its files live)"
+              zest={{ stretch: true, zSize: 'sm' }} />
+            {errors[`services[${i}].buildContextPath`] && (
+              <p className={styles.errorText}>{errors[`services[${i}].buildContextPath`]}</p>
+            )}
+            <p style={{ margin: '3px 0 0', fontSize: 11, color: '#637389' }}>
+              The folder passed to docker build. Change it if the Dockerfile copies files from a parent folder.
+            </p>
           </div>
         </div>
       ))}

@@ -27,6 +27,39 @@ function svc(overrides: Partial<ServiceDraft> = {}): ServiceDraft {
   return { ...emptyServiceDraft(), ...overrides };
 }
 
+describe('ServicesAtom build context path', () => {
+  const renderAtom = (services: ServiceDraft[], onServicesChange = jest.fn(), errors: Record<string, string> = {}) =>
+    render(
+      <ServicesAtom
+        services={services}
+        composeNames={[]}
+        registries={[]}
+        errors={errors}
+        onServicesChange={onServicesChange}
+        onRegistriesChange={jest.fn()}
+      />
+    );
+
+  it('shows the current build context in an editable field', () => {
+    renderAtom([svc({ buildContextPath: 'D:\\r\\S\\P' })]);
+    expect(screen.getByDisplayValue('D:\\r\\S\\P')).toBeTruthy();
+  });
+
+  it('reports the new build context when edited, leaving the other fields alone', () => {
+    const onChange = jest.fn();
+    renderAtom([svc({ name: 'api', versionFilePath: 'v.txt', buildContextPath: 'D:\\r\\S\\P' })], onChange);
+    fireEvent.change(screen.getByDisplayValue('D:\\r\\S\\P'), { target: { value: 'D:\\r\\S' } });
+    expect(onChange).toHaveBeenCalledWith([
+      expect.objectContaining({ name: 'api', versionFilePath: 'v.txt', buildContextPath: 'D:\\r\\S' }),
+    ]);
+  });
+
+  it('shows the validation error for the build context', () => {
+    renderAtom([svc({ buildContextPath: 'x' })], jest.fn(), { 'services[0].buildContextPath': 'Path does not exist.' });
+    expect(screen.getByText('Path does not exist.')).toBeTruthy();
+  });
+});
+
 describe('ServicesAtom registry picker', () => {
   it('renders saved registry resource dropdown', () => {
     render(
