@@ -5,6 +5,8 @@ import dynamic from 'next/dynamic';
 import AppShell from '@/modules/AppShell/AppShell';
 import BuildWizard from '@/modules/BuildWizard/BuildWizard';
 import ComposeRepoCard from '@/modules/ProjectDetail/ComposeRepoCard';
+import ProjectDeployTab from '@/modules/ProjectDetail/ProjectDeployTab';
+import { withDeployTab } from '@/modules/ProjectDetail/deployTab';
 import { ProjectSummary } from '@/modules/Dashboard/ProjectCard';
 import LogViewer, { LogEntry } from '@/modules/BuildWizard/LogViewer';
 import ZestButton from 'jattac.libs.web.zest-button';
@@ -18,7 +20,7 @@ import { IDatabaseConfig, IProject } from '@/shared/types/IProject';
 import { IDeployment, IServiceVersion } from '@/shared/types/IBuildRecord';
 import styles from './ProjectDetailPanel.module.css';
 
-type Tab = 'overview' | 'build' | 'database' | 'logs' | 'terminal';
+type Tab = 'overview' | 'build' | 'deploy' | 'database' | 'logs' | 'terminal';
 
 function projectTabs(project: IProject): ZestTabItem<Tab>[] {
   const hasServer   = !!project.server.host;
@@ -325,10 +327,16 @@ export default function ProjectDetailPanel({ projectId, onBack }: Props) {
 
         <ZestTabs
           id="project-detail"
-          items={projectTabs(project)}
+          items={withDeployTab(projectTabs(project), project)}
           activeValue={activeTab}
           onChange={setActiveTab}
         />
+
+        {activeTab === 'deploy' && (
+          <section className={styles.section}>
+            <ProjectDeployTab serverId={project.serverId} projectName={project.name} />
+          </section>
+        )}
 
         {activeTab === 'overview' && (
           <section className={styles.section}>
