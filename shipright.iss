@@ -3,7 +3,7 @@
 ; Builds frontend + server + desktop from source, then packages into setup.exe
 
 #define AppName "ShipRight"
-#define AppVersion "4.5.0"
+#define AppVersion "4.6.1"
 #define AppPublisher "ShipRight"
 #define OutputDir "installer"
 #define S SourcePath

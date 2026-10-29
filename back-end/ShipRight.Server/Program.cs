@@ -35,6 +35,7 @@ using ShipRight.Modules.Transfer;
 using ShipRight.Modules.Ssh;
 using ShipRight.Modules.System;
 using ShipRight.Modules.System.DockerCleanup;
+using ShipRight.Modules.System.SystemCheck;
 using ShipRight.Modules.System.WslDisk;
 using ShipRight.Shared.CommandExecution;
 using ShipRight.Shared.Events;
@@ -183,6 +184,9 @@ try
     app.MapSystemRoutes();
     app.MapWslDiskRoutes();
     app.MapDockerCleanupRoutes();
+    app.MapSystemCheckRoutes();
+    app.MapDiskJobRoutes();
+    app.MapBuildForceAbortRoutes();
     app.MapWslDiskShrinkRoutes();
     app.MapFsRoutes();
     app.MapFsRemoteMkdirRoute();
@@ -245,6 +249,7 @@ try
     using (app.Services.GetService<ICompanyContext>()?.BeginSystemScope())
     {
         await app.Services.GetRequiredService<IBuildStore>().MarkInterruptedAsync();
+        await StaleBuilds.SweepAtStartupAsync(app.Services.GetRequiredService<IBuildStore>());
 
         var projectCount = app.Services.GetRequiredService<IProjectStore>().Count;
         var buildCount   = app.Services.GetRequiredService<IBuildStore>().Count;
@@ -350,6 +355,8 @@ static void RegisterDesktopServices(IServiceCollection services, string dataDir)
     services.AddSingleton<WslDiskService>();
     services.AddSingleton<WslDiskShrinker>();
     services.AddSingleton<DockerCleanupService>();
+    services.AddSingleton<SystemCheckService>();
+    services.AddSingleton(DiskJobRegistration.Create);
 }
 
 // Lets WebApplicationFactory start the real app in tests.

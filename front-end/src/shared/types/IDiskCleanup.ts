@@ -44,3 +44,68 @@ export interface IWslShrinkResult {
   files: { path: string; beforeBytes: number; afterBytes: number }[];
   messages: string[];
 }
+
+export interface IActiveBuild {
+  id: string;
+  projectName: string;
+  status: 'Running' | 'Paused' | 'Pending';
+  step?: string | null;
+  startedAt: string;
+  canAbort: boolean;
+}
+
+export type DiskStepStatus = 'Pending' | 'Running' | 'Done' | 'Failed' | 'Skipped';
+export type DiskJobStatus = 'Running' | 'Succeeded' | 'Failed' | 'Blocked';
+
+export interface IDiskJobStep {
+  id: string;
+  label: string;
+  status: DiskStepStatus;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  estimatedSeconds: number;
+  detail?: string | null;
+}
+
+export interface IDiskJob {
+  id: string;
+  status: DiskJobStatus;
+  startedAt: string;
+  finishedAt?: string | null;
+  steps: IDiskJobStep[];
+  blockers: IActiveBuild[];
+  cleanup?: ICleanupResult | null;
+  shrink?: IWslShrinkResult | null;
+  error?: string | null;
+}
+
+export interface IDiskJobRequest {
+  images: string[];
+  pruneDangling: boolean;
+  pruneBuildCache: boolean;
+  shrink: boolean;
+}
+
+export type CheckStatus = 'Ok' | 'Warning' | 'Problem' | 'Skipped';
+
+export interface ISystemCheckItem {
+  id: string;
+  title: string;
+  status: CheckStatus;
+  detail: string;
+  fixId?: string | null;
+  fixLabel?: string | null;
+  manualSteps?: string | null;
+}
+
+export interface ISystemCheckReport {
+  items: ISystemCheckItem[];
+  healthy: boolean;
+}
+
+export interface ISystemFixResult {
+  succeeded: boolean;
+  message: string;
+  output: string;
+  report: ISystemCheckReport;
+}

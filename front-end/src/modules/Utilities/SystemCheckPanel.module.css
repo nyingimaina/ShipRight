@@ -1,0 +1,53 @@
+/* Mobile first. */
+.panel {
+  padding: clamp(14px, 3.5vw, 22px);
+  border-radius: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+}
+
+.head { display: flex; flex-direction: column; gap: 12px; margin-bottom: 8px; }
+.title { font-size: clamp(16px, 3.5vw, 18px); margin: 0 0 4px; color: var(--text-primary); }
+.summary { margin: 0; font-size: 13px; color: var(--text-muted); }
+.head button { min-height: 44px; width: 100%; }
+
+.list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+
+.item {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 12px 0; border-top: 1px solid var(--border-subtle);
+}
+.itemMain { display: flex; align-items: flex-start; gap: 12px; }
+.itemText { display: flex; flex-direction: column; gap: 3px; min-width: 0; font-size: 13px; }
+.detail { color: var(--text-muted); line-height: 1.5; }
+
+.chip {
+  flex: 0 0 auto; min-width: 96px; text-align: center;
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+  border-radius: 999px; padding: 3px 10px; border: 1px solid var(--border-subtle); color: var(--text-muted);
+}
+.sOk .chip { color: #6fcf97; border-color: #6fcf97; }
+.sWarning .chip { color: #e8a838; border-color: #e8a838; }
+.sProblem .chip { color: #eb6b6b; border-color: #eb6b6b; }
+.sSkipped { opacity: 0.6; }
+
+.itemActions { display: flex; flex-direction: column; gap: 10px; }
+.itemActions button { min-height: 44px; width: 100%; }
+.steps, .output {
+  margin: 0; padding: 10px 12px; border-radius: 8px; overflow-x: auto;
+  background: rgba(0, 0, 0, 0.25); font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+}
+.working { font-size: 12px; color: var(--text-muted); }
+
+.result { margin-top: 12px; border-top: 1px solid var(--border-subtle); padding-top: 10px; }
+.ok { color: #6fcf97; font-size: 13px; margin: 0 0 6px; }
+.warn { color: #e8a838; font-size: 13px; margin: 0 0 6px; }
+
+@media (min-width: 600px) {
+  .head { flex-direction: row; align-items: center; justify-content: space-between; }
+  .head button { width: auto; }
+  .item { flex-direction: row; align-items: flex-start; justify-content: space-between; gap: 20px; }
+  .itemMain { flex: 1 1 55%; }
+  .itemActions { flex: 0 1 300px; }
+  .itemActions button { width: 100%; }
+}

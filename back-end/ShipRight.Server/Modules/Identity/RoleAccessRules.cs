@@ -18,6 +18,9 @@ public static class RoleAccessRules
         R(null, @"/api/team(/.*)?", AppRoles.Admin),
         R(null, @"/api/system/(shutdown|wsl-disk(/.*)?)", AppRoles.Admin),
         R(null, @"/api/system/docker-cleanup(/.*)?", AppRoles.Admin),
+        R(null, @"/api/system/check(/.*)?", AppRoles.Admin),
+        R(null, @"/api/system/disk-job(/.*)?", AppRoles.Admin),
+        R("POST", @"/api/builds/[^/]+/force-abort", AppRoles.Admin),
         R(null, @"/api/fs(/.*)?", AppRoles.Admin),
         R(null, @"/api/setup(/.*)?", AppRoles.Admin),
 

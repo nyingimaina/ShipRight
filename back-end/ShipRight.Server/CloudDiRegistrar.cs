@@ -128,6 +128,8 @@ public static class CloudDiRegistrar
         services.AddSingleton<WslDiskService>();
         services.AddSingleton<WslDiskShrinker>();
         services.AddSingleton<ShipRight.Modules.System.DockerCleanup.DockerCleanupService>();
+        services.AddSingleton<ShipRight.Modules.System.SystemCheck.SystemCheckService>();
+        services.AddSingleton(ShipRight.Modules.System.DockerCleanup.DiskJobRegistration.Create);
 
         // ── Scheduler (cloud: MariaDB-backed history) ──────────────────────────
         CloudSchedulerRegistrar.Register(services);
