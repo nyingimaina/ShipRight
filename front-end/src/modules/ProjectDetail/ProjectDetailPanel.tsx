@@ -6,6 +6,7 @@ import AppShell from '@/modules/AppShell/AppShell';
 import BuildWizard from '@/modules/BuildWizard/BuildWizard';
 import ComposeRepoCard from '@/modules/ProjectDetail/ComposeRepoCard';
 import BuildSourceCard from '@/modules/ProjectDetail/BuildSourceCard';
+import LocalCleanupCard from '@/modules/ProjectDetail/LocalCleanupCard';
 import ProjectDeployTab from '@/modules/ProjectDetail/ProjectDeployTab';
 import { withDeployTab } from '@/modules/ProjectDetail/deployTab';
 import { ProjectSummary } from '@/modules/Dashboard/ProjectCard';
@@ -375,6 +376,7 @@ export default function ProjectDetailPanel({ projectId, onBack }: Props) {
             </div>
             <ComposeRepoCard projectId={project.id} />
             <BuildSourceCard projectId={project.id} buildSource={project.buildSource} />
+            <LocalCleanupCard projectId={project.id} services={project.services} />
           </section>
         )}
 

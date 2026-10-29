@@ -11,7 +11,7 @@ namespace ShipRight.Modules.Resources;
 /// dangling images, and trims the BuildKit cache to the configured budget.
 /// Never throws — failures are logged per image and execution continues.
 /// </summary>
-public sealed class BuildMachineImagePruner
+public class BuildMachineImagePruner
 {
     public const int DefaultLocalImageKeepCount = 2;
 
@@ -24,7 +24,7 @@ public sealed class BuildMachineImagePruner
         _executor = executor ?? (runner is null ? null! : CommandExecutor.PassthroughLocal(runner));
     }
 
-    public async Task PruneLocalImagesAsync(
+    public virtual async Task PruneLocalImagesAsync(
         ProjectConfig project, ServiceConfig svc, ServiceVersion sv,
         Func<string, Task> emitLog, CancellationToken ct = default)
     {

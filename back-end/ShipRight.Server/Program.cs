@@ -34,6 +34,7 @@ using ShipRight.Modules.Servers;
 using ShipRight.Modules.Transfer;
 using ShipRight.Modules.Ssh;
 using ShipRight.Modules.System;
+using ShipRight.Modules.System.DockerCleanup;
 using ShipRight.Modules.System.WslDisk;
 using ShipRight.Shared.CommandExecution;
 using ShipRight.Shared.Events;
@@ -181,12 +182,15 @@ try
     app.MapHealthRoutes(profile, cloudMode ? AppMode.Cloud : AppMode.Desktop);
     app.MapSystemRoutes();
     app.MapWslDiskRoutes();
+    app.MapDockerCleanupRoutes();
+    app.MapWslDiskShrinkRoutes();
     app.MapFsRoutes();
     app.MapFsRemoteMkdirRoute();
     app.MapProjectRoutes();
     app.MapProjectPathRefreshRoutes();
     app.MapSetupRoutes();
     app.MapProjectBuildSourceRoutes();
+    app.MapProjectLocalCleanupRoutes();
     app.MapProjectBundleRoutes();
     app.MapProjectSummaryRoutes();
     app.MapBuildRoutes();
@@ -284,13 +288,16 @@ static void RegisterDesktopServices(IServiceCollection services, string dataDir)
 {
     services.AddSingleton<SqliteProjectStore>(_ => new SqliteProjectStore(dataDir));
     services.AddSingleton<IProjectStore>(sp =>
-        new BuildSourcePreservingProjectStore(
-            new DockerCredentialPreservingProjectStore(sp.GetRequiredService<SqliteProjectStore>())));
+        new ServiceSettingsPreservingProjectStore(
+            new BuildSourcePreservingProjectStore(
+                new DockerCredentialPreservingProjectStore(sp.GetRequiredService<SqliteProjectStore>()))));
     services.AddSingleton<IBuildStore>(_ => new SqliteBuildStore(dataDir));
     services.AddSingleton<BuildEventBus>();
-    services.AddSingleton<IProcessRunner, ProcessRunner>();
+    services.AddSingleton<PushLedger>();
+    services.AddSingleton<IProcessRunner>(sp => new PushRecordingProcessRunner(new ProcessRunner(), sp.GetRequiredService<PushLedger>()));
     services.AddSingleton<KnownHostsStore>();
-    services.AddSingleton<ISshRunner, SshRunner>();
+    services.AddSingleton<ISshRunner>(sp => new ComposeProvisioningSshRunner(
+        new SshRunner(sp.GetRequiredService<KnownHostsStore>()), sp.GetRequiredService<IProjectStore>()));
 
     // Command resolution layer (native / WSL / SSH)
     services.AddSingleton<IExecutionTargetProvider, ExecutionTargetProvider>();
@@ -338,8 +345,11 @@ static void RegisterDesktopServices(IServiceCollection services, string dataDir)
     services.AddProjectBundle();
     services.AddSingleton<ScriptExecutor>();
     services.AddSingleton<RegistryRotationCoordinator>();
-    services.AddSingleton<BuildMachineImagePruner>();
+    services.AddSingleton<BuildMachineImagePruner>(sp => new PushAwareImagePruner(
+        sp.GetRequiredService<IProcessRunner>(), sp.GetService<IBuildStore>(), sp.GetRequiredService<PushLedger>()));
     services.AddSingleton<WslDiskService>();
+    services.AddSingleton<WslDiskShrinker>();
+    services.AddSingleton<DockerCleanupService>();
 }
 
 // Lets WebApplicationFactory start the real app in tests.

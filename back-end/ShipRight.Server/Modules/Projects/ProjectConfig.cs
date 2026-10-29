@@ -36,6 +36,8 @@ public record ServiceConfig
     /// instead of bringing the whole stack down and up.
     /// </summary>
     public string ComposeServiceName { get; init; } = string.Empty;
+    /// <summary>Port the container listens on; used only when ShipRight writes the docker-compose.yml itself.</summary>
+    public int? ContainerPort { get; init; }
     /// <summary>
     /// Pre-configured Docker registry username. When set alongside DockerPassword,
     /// the build pipeline uses these credentials directly instead of prompting.
@@ -64,6 +66,8 @@ public record ServiceConfig
     /// When null, defaults to 2.
     /// </summary>
     public int? LocalImageKeepCount { get; init; }
+    /// <summary>True = never delete this service's images from the build machine, whatever the keep count says.</summary>
+    public bool? SkipLocalCleanup { get; init; }
 }
 
 public record GitConfig

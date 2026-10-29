@@ -68,6 +68,8 @@ describe('buildProjectInput', () => {
     expect(s.versionFilePath).toBe('D:\\work\\shop\\Api\\version.txt');
     expect(s.buildContextPath).toBe('D:\\work\\shop\\Api');
     expect(s.composeServiceName).toBe('api');
+    expect(s.containerPort).toBe(8080);
+    expect(s.localImageKeepCount).toBe(0);
   });
 
   it('suggests an owner/app image name that is valid for Docker', () => {

@@ -12,6 +12,7 @@ import {
   RiBox3Line,
   RiListCheck,
   RiTeamLine,
+  RiHardDriveLine,
   RiLogoutCircleLine,
 } from "react-icons/ri";
 import ThemeToggle from "@/shared/theme/ThemeToggle";
@@ -103,6 +104,13 @@ export default function AppShell({ children }: Props) {
       icon: <RiCalendarCheckLine size={18} />,
       searchTerms: "backups scheduler",
       onClick: () => router.push("/backups"),
+    },
+    {
+      id: "utilities",
+      label: "Utilities",
+      icon: <RiHardDriveLine size={18} />,
+      searchTerms: "utilities disk space clean prune docker free storage",
+      onClick: () => router.push("/utilities"),
     },
     {
       id: "watch-branch",

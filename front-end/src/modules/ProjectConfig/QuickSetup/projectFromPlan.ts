@@ -73,6 +73,9 @@ export function buildProjectInput(plan: ISetupPlan, name: string, timeZone: stri
       dockerImageName: `${owner}/${slug(serviceName)}`,
       dockerRegistry: '',
       composeServiceName: slug(serviceName),
+      // Guided projects push to a registry, so the local copy is only taking up space once it is pushed.
+      localImageKeepCount: 0,
+      ...(c.port != null ? { containerPort: c.port } : {}),
     }];
   });
 

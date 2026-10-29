@@ -5,11 +5,13 @@ export interface IServiceConfig {
   dockerImageName: string;
   dockerRegistry?: string;
   composeServiceName: string;
+  containerPort?: number;
   dockerUsername?: string;
   dockerPassword?: string;
   dockerRegistryResourceId?: string;
   imageRetentionCount?: number;
   localImageKeepCount?: number;
+  skipLocalCleanup?: boolean;
 }
 
 export interface IGitConfig {
