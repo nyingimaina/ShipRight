@@ -62,6 +62,33 @@ public class PushAwareImagePruner : BuildMachineImagePruner
         _ledger = ledger;
     }
 
+    /// <summary>
+    /// After a build that failed or was cancelled: remove untagged layers and trim the build cache. Tagged images are
+    /// not touched. Skipped when every service has opted out of local clean-up. Never throws.
+    /// </summary>
+    public async Task PruneAfterFailureAsync(ProjectConfig project, Func<string, Task> emitLog)
+    {
+        try
+        {
+            if (project.Services.Count > 0 && project.Services.All(s => s.SkipLocalCleanup == true)) return;
+
+            var dangling = await _docker.RunAsync("docker", ["image", "prune", "-f"], null, timeout: TimeSpan.FromSeconds(60));
+            if (dangling.Success)
+                await emitLog("[ShipRight] The build failed - cleared the leftover layers it created. " +
+                              dangling.StdOut.Trim().Split('\n').LastOrDefault()?.Trim());
+
+            if (project.LocalCachePruneKeepGb > 0)
+            {
+                await _docker.RunAsync("docker", ["builder", "prune", "-f", "--keep-storage", $"{project.LocalCachePruneKeepGb}gb"], null,
+                    timeout: TimeSpan.FromSeconds(120));
+            }
+        }
+        catch (Exception ex)
+        {
+            await emitLog($"[ShipRight] Could not clean up after the failed build: {ex.Message}");
+        }
+    }
+
     public override async Task PruneLocalImagesAsync(
         ProjectConfig project, ServiceConfig svc, ServiceVersion sv,
         Func<string, Task> emitLog, CancellationToken ct = default)

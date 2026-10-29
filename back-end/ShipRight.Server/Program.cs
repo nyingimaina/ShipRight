@@ -195,6 +195,7 @@ try
     app.MapSetupRoutes();
     app.MapProjectBuildSourceRoutes();
     app.MapProjectLocalCleanupRoutes();
+    app.MapProjectSpaceRoutes();
     app.MapProjectBundleRoutes();
     app.MapProjectSummaryRoutes();
     app.MapBuildRoutes();
@@ -316,7 +317,7 @@ static void RegisterDesktopServices(IServiceCollection services, string dataDir)
     services.AddSingleton<AwsCliInstaller>();
 
     // Builds in place unless a project opts into clean-snapshot builds (see SnapshotBuildOrchestrator).
-    services.AddSingleton<BuildOrchestrator, SnapshotBuildOrchestrator>();
+    services.AddSingleton<BuildOrchestrator, FailureCleaningBuildOrchestrator>();
     services.AddSingleton<ComposeRepoService>();
     services.AddSingleton<MariaDbProvider>();
     services.AddSingleton<SqlServerProvider>();
@@ -356,6 +357,7 @@ static void RegisterDesktopServices(IServiceCollection services, string dataDir)
     services.AddSingleton<WslDiskShrinker>();
     services.AddSingleton<DockerCleanupService>();
     services.AddSingleton<SystemCheckService>();
+    services.AddSingleton<ProjectSpaceService>();
     services.AddSingleton(DiskJobRegistration.Create);
 }
 

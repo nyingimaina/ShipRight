@@ -51,6 +51,7 @@ public static class RoleAccessRules
         R("POST", @"/api/projects/[^/]+/(repos/[^/]+/(purge-history|delete-files)|compose-repo/clone-url|ssh-key/(generate|authorize))", AppRoles.Admin),
         R("POST", @"/api/projects/[^/]+/build-source", AppRoles.Admin),
         R("POST", @"/api/projects/[^/]+/local-cleanup", AppRoles.Admin),
+        R("POST", @"/api/projects/[^/]+/(space/clean|local-cleanup-policy)", AppRoles.Admin),
         R("POST", @"/api/projects", AppRoles.Admin),
         R("POST", @"/api/projects/detect", AppRoles.Admin),
         R("PUT", @"/api/projects/[^/]+", AppRoles.Admin),
