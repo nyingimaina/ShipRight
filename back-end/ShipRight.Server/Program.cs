@@ -354,6 +354,7 @@ static void RegisterDesktopServices(IServiceCollection services, string dataDir)
     services.AddSingleton<BuildMachineImagePruner>(sp => new PushAwareImagePruner(
         sp.GetRequiredService<IProcessRunner>(), sp.GetService<IBuildStore>(), sp.GetRequiredService<PushLedger>()));
     services.AddSingleton<WslDiskService>();
+    services.AddSingleton<WslVhdxLocator>();
     services.AddSingleton<WslDiskShrinker>();
     services.AddSingleton<DockerCleanupService>();
     services.AddSingleton<SystemCheckService>();

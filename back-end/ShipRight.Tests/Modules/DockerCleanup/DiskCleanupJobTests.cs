@@ -115,6 +115,52 @@ public class DiskCleanupJobTests
     }
 
     [TestMethod]
+    public async Task ShrinkRequestedButNoDiskFileExists_StopsBeforeDeletingAnything_AndSaysWhereItLooked()
+    {
+        var docker = new Docker();
+        var svc = new DiskCleanupJobService(
+            new DockerCleanupService(docker, new Store()), new Builds(),
+            (_, _) => Task.FromResult(Shrunk(1, 1)), _ => Task.FromResult(0L),
+            () => [@"D:\wsl\ubuntu", @"C:\Users\x\AppData\Local\wsl"]);
+
+        var job = await svc.StartAndWaitAsync(Everything);
+
+        Assert.AreEqual(DiskJobStatus.Failed, job.Status);
+        StringAssert.Contains(job.Error, "could not find the WSL disk file");
+        StringAssert.Contains(job.Error, @"D:\wsl\ubuntu");
+        StringAssert.Contains(job.Error, "Nothing was");
+        Assert.IsFalse(docker.Calls.Any(c => c.Contains("rmi") || c.Contains("prune")), "nothing may be deleted when the job cannot finish");
+        Assert.IsTrue(job.Steps.All(s => s.Status == DiskStepStatus.Skipped));
+    }
+
+    [TestMethod]
+    public async Task AJobWithoutAShrink_DoesNotNeedADiskFile()
+    {
+        var svc = new DiskCleanupJobService(
+            new DockerCleanupService(new Docker(), new Store()), new Builds(),
+            (_, _) => Task.FromResult(Shrunk(1, 1)), _ => Task.FromResult(0L));
+
+        var job = await svc.StartAndWaitAsync(new DiskJobRequest([], false, true, false));
+
+        Assert.AreEqual(DiskJobStatus.Succeeded, job.Status);
+    }
+
+    [TestMethod]
+    public async Task IfTheDiskSizeCannotBeRead_TheJobStillTriesTheShrink()
+    {
+        var shrinkCalls = 0;
+        var svc = new DiskCleanupJobService(
+            new DockerCleanupService(new Docker(), new Store()), new Builds(),
+            (_, _) => { shrinkCalls++; return Task.FromResult(Shrunk(100 * Gb, 30 * Gb)); },
+            _ => throw new InvalidOperationException("wsl is slow"));
+
+        var job = await svc.StartAndWaitAsync(Everything);
+
+        Assert.AreEqual(DiskJobStatus.Succeeded, job.Status);
+        Assert.AreEqual(1, shrinkCalls);
+    }
+
+    [TestMethod]
     public async Task AJobWithoutAShrink_IgnoresRunningBuilds()
     {
         var (svc, _, _) = Build([Active(BuildStatus.Running)]);

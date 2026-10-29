@@ -126,6 +126,7 @@ public static class CloudDiRegistrar
         services.AddSingleton<RegistryRotationCoordinator>();
         services.AddSingleton<BuildMachineImagePruner>();
         services.AddSingleton<WslDiskService>();
+        services.AddSingleton<ShipRight.Modules.System.WslDisk.WslVhdxLocator>();
         services.AddSingleton<WslDiskShrinker>();
         services.AddSingleton<ShipRight.Modules.System.DockerCleanup.DockerCleanupService>();
         services.AddSingleton<ShipRight.Modules.System.SystemCheck.SystemCheckService>();

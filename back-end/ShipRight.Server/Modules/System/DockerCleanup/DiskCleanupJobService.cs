@@ -72,18 +72,21 @@ public class DiskCleanupJobService
     private readonly IBuildStore _builds;
     private readonly Func<CancellationToken, Action<string>, Task<WslCompactResult>> _shrink;
     private readonly Func<CancellationToken, Task<long>> _diskBytes;
+    private readonly Func<IReadOnlyList<string>>? _searchedPlaces;
     private readonly object _gate = new();
     private Job? _latest;
 
     public DiskCleanupJobService(
         DockerCleanupService cleanup, IBuildStore builds,
         Func<CancellationToken, Action<string>, Task<WslCompactResult>> shrink,
-        Func<CancellationToken, Task<long>> diskBytes)
+        Func<CancellationToken, Task<long>> diskBytes,
+        Func<IReadOnlyList<string>>? searchedPlaces = null)
     {
         _cleanup = cleanup;
         _builds = builds;
         _shrink = shrink;
         _diskBytes = diskBytes;
+        _searchedPlaces = searchedPlaces;
     }
 
     public DiskJob Start(DiskJobRequest request)
@@ -164,8 +167,26 @@ public class DiskCleanupJobService
                     }
                     return;
                 }
-                var bytes = await _diskBytes(CancellationToken.None);
-                lock (_gate) job.Steps.First(s => s.Id == "shrink").EstimatedSeconds = 60 + (int)(4 * (bytes / (1024.0 * 1024 * 1024)));
+                long? bytes = null;
+                try { bytes = await _diskBytes(CancellationToken.None); }
+                catch (Exception) { /* size unknown: still try the shrink, it will report its own problem */ }
+
+                if (bytes is <= 0)
+                {
+                    // No disk file means the shrink cannot work, so stop before deleting anything for nothing.
+                    var where = _searchedPlaces?.Invoke() ?? [];
+                    lock (_gate)
+                    {
+                        foreach (var st in job.Steps) st.Status = DiskStepStatus.Skipped;
+                        job.Error = "ShipRight could not find the WSL disk file, so there is nothing to shrink." +
+                                    (where.Count > 0 ? " It looked in: " + string.Join("; ", where) + "." : "") +
+                                    " Nothing was stopped or deleted.";
+                        job.Status = DiskJobStatus.Failed;
+                    }
+                    return;
+                }
+                if (bytes is { } known)
+                    lock (_gate) job.Steps.First(s => s.Id == "shrink").EstimatedSeconds = 60 + (int)(4 * (known / (1024.0 * 1024 * 1024)));
             }
 
             var items = new List<CleanupItemResult>();

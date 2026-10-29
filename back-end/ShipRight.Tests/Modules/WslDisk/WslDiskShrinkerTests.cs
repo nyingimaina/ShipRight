@@ -146,6 +146,88 @@ public class WslDiskShrinkerTests
         finally { Directory.Delete(root, true); }
     }
 
+    // ── a disk the Store folder does not know about ──────────────────
+
+    private static (WslDiskShrinker Shrinker, string Root, string Elsewhere) BuildWithLocator(
+        Func<string, string[], ProcessResult> respond, Func<IEnumerable<(string, string?)>> registered, out Handler runner)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "shipright-shrink-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var elsewhere = Path.Combine(root, "elsewhere");
+        Directory.CreateDirectory(elsewhere);
+        runner = new Handler(respond);
+        var shrinker = new WslDiskShrinker(new WslDiskService(runner, new NoBuilds(), [Path.Combine(root, "Packages")]), runner,
+            new WslVhdxLocator(registered, []));
+        return (shrinker, root, elsewhere);
+    }
+
+    [TestMethod]
+    public async Task ADiskTheStoreFolderDoesNotKnow_IsFoundThroughWsl_AndShrunkWithDiskpart()
+    {
+        string? vhdx = null;
+        string? script = null;
+        var (shrinker, root, elsewhere) = BuildWithLocator((exe, args) =>
+        {
+            var joined = string.Join(" ", args);
+            if (exe == "powershell" && joined.Contains("diskpart"))
+            {
+                script = File.ReadAllText(Regex.Match(joined, "/s','\"(?<p>[^\"]+)\"'").Groups["p"].Value);
+                File.WriteAllBytes(vhdx!, new byte[1024]);
+                return Ok();
+            }
+            return Wsl(exe, args);
+        }, () => [], out var runner);
+        try
+        {
+            vhdx = Path.Combine(elsewhere, "ext4.vhdx");
+            File.WriteAllBytes(vhdx, new byte[1_000_000]);
+            var withDisk = new WslDiskShrinker(new WslDiskService(runner, new NoBuilds(), [Path.Combine(root, "Packages")]), runner,
+                new WslVhdxLocator(() => [(elsewhere, null)], []));
+
+            var result = await withDisk.ShrinkAsync(default, _ => { });
+
+            Assert.IsTrue(result.Succeeded, string.Join(" | ", result.Messages));
+            StringAssert.Contains(script, $"select vdisk file=\"{vhdx}\"");
+            Assert.AreEqual(1024, result.Files.Single().AfterBytes);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [TestMethod]
+    public async Task WhenNothingIsFoundAnywhere_SaysWhereItLooked_AndPromisesNothingWasChanged()
+    {
+        var (shrinker, root, _) = BuildWithLocator(Wsl, () => [(@"D:\wsl\ubuntu", null)], out _);
+        try
+        {
+            var result = await shrinker.ShrinkAsync(default, _ => { });
+
+            Assert.IsFalse(result.Succeeded);
+            Assert.AreEqual("No WSL virtual disk found", result.BlockedReason);
+            Assert.IsTrue(result.Messages.Any(m => m.Contains(@"D:\wsl\ubuntu")), string.Join(" | ", result.Messages));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [TestMethod]
+    public async Task WhenTheStoreFolderFindsTheDisk_TheNewLookupIsNeverConsulted()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "shipright-shrink-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            SeedVhdx(root, 4096);
+            var runner = new Handler(Wsl);
+            var shrinker = new WslDiskShrinker(new WslDiskService(runner, new NoBuilds(), [root]), runner,
+                new WslVhdxLocator(() => throw new InvalidOperationException("must not be asked"), []));
+
+            var result = await shrinker.ShrinkAsync(default, _ => { });
+
+            Assert.IsTrue(result.Succeeded);
+            Assert.IsTrue(runner.Calls.Any(c => c.Contains("Optimize-VHD -Path")), "the original path ran as before");
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
     [TestMethod]
     public async Task OtherBlockers_PassStraightThrough_WithoutTryingDiskpart()
     {
