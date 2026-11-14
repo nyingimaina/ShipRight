@@ -20,6 +20,7 @@ using ShipRight.Modules.Database;
 using ShipRight.Modules.Database.Providers;
 using ShipRight.Modules.Filesystem;
 using ShipRight.Modules.Identity;
+using ShipRight.Modules.ConnectionTest;
 using ShipRight.Modules.JitDeploy;
 using ShipRight.Modules.Projects;
 using ShipRight.Modules.RepoMaintenance;
@@ -214,6 +215,8 @@ try
     app.MapServerLogRoutes();
     app.MapServerSwapRoutes();
     app.MapServerFilesRoutes();
+    app.MapConnectionTestRoutes();
+    app.MapHostKeyRoutes();
     if (cloudMode)
     {
         app.MapSchedulerCoreRoutes();

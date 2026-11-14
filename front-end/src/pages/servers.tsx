@@ -13,6 +13,7 @@ import { IServerConfig, IProject, DeployMode } from '@/shared/types/IProject';
 import SshKeySection from '@/modules/ProjectConfig/SshKeySection';
 import BrowsePathField from '@/modules/FilePicker/BrowsePathField';
 import ServerDeploySection from '@/modules/ServerDeploy/ServerDeploySection';
+import ServerWizardLauncher, { requestConnectionFix } from '@/modules/ServerWizard/ServerWizardLauncher';
 import styles from './Styles/Servers.module.css';
 
 export type ServerInput = Omit<IServerConfig, 'id'> & { id?: string };
@@ -91,10 +92,13 @@ export default function ServersPage() {
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
             <h1 className={styles.heading}>Servers</h1>
-            <ZestButton onClick={openNew}
-              zest={{ visualOptions: { variant: 'standard' }, semanticType: 'add' }}>
-              New Server
-            </ZestButton>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <ServerWizardLauncher onFinished={load} />
+              <ZestButton onClick={openNew}
+                zest={{ visualOptions: { variant: 'standard' }, semanticType: 'add' }}>
+                New Server
+              </ZestButton>
+            </div>
           </div>
 
           <div className={styles.grid}>
@@ -121,6 +125,7 @@ export default function ServersPage() {
                     <OverflowMenu items={[
                       { content: 'Open', onClick: () => openDetail(s) },
                       { content: 'Edit', onClick: () => openEdit(s) },
+                      { content: 'Test / fix connection', onClick: () => requestConnectionFix(s.id!) },
                       { content: 'Delete', onClick: () => handleDelete(s) },
                     ]} />
                   </div>
