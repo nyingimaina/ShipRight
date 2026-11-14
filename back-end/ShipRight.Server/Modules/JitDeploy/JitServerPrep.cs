@@ -1,7 +1,7 @@
 namespace ShipRight.Modules.JitDeploy;
 
 /// <summary>What a build-on-server deploy needs on the server.</summary>
-public enum ServerTool { Git, Docker, Daemon, Compose }
+public enum ServerTool { Git, Docker, Daemon, Compose, Buildx }
 
 /// <summary>One thing to do to get the server ready. <see cref="Title"/> is shown to the user.</summary>
 public sealed record PrepareStep(ServerTool Tool, string Title, string Command);
@@ -30,6 +30,7 @@ public static class JitServerPrep
         "if command -v docker >/dev/null 2>&1; then " +
         "docker info >/dev/null 2>&1 || echo 'missing:daemon'; " +
         "docker compose version >/dev/null 2>&1 || echo 'missing:compose'; " +
+        "docker buildx version >/dev/null 2>&1 || echo 'missing:buildx'; " +
         "else echo 'missing:docker'; fi; true";
 
     public static IReadOnlyCollection<ServerTool> ParseMissing(IEnumerable<string> lines)
@@ -56,6 +57,8 @@ public static class JitServerPrep
             steps.Add(new(ServerTool.Daemon, "Starting Docker and allowing this user to use it", StartDocker()));
         if (m.Contains(ServerTool.Docker) || m.Contains(ServerTool.Compose))
             steps.Add(new(ServerTool.Compose, "Installing the Docker Compose plugin", InstallCompose()));
+        if (m.Contains(ServerTool.Docker) || m.Contains(ServerTool.Buildx))
+            steps.Add(new(ServerTool.Buildx, "Installing Docker BuildKit (buildx)", InstallBuildx()));
         return steps;
     }
 
@@ -65,6 +68,7 @@ public static class JitServerPrep
         ServerTool.Docker => "Docker",
         ServerTool.Daemon => "a running Docker this user can use",
         ServerTool.Compose => "Docker Compose",
+        ServerTool.Buildx => "Docker BuildKit (buildx)",
         _ => tool.ToString(),
     };
 
@@ -87,6 +91,21 @@ public static class JitServerPrep
         "if docker info >/dev/null 2>&1; then echo 'Docker is already running and usable.'; else " + NeedSudo("and starting Docker") + "; " +
         "sudo -n systemctl enable --now docker && sudo -n usermod -aG docker \"$USER\" && sleep 2 && " +
         "echo 'Docker is started. This user can use it from the next connection.'; fi";
+
+    /// <summary>
+    /// BuildKit lets a Dockerfile use features like RUN --mount. Docker needs the buildx plugin for it. The plugin is added next to
+    /// Docker's other plugins, only when missing; nothing else on the server is touched.
+    /// </summary>
+    private static string InstallBuildx() =>
+        Marker("buildx") +
+        "if docker buildx version >/dev/null 2>&1; then echo 'Docker BuildKit (buildx) is already installed.'; else " + NeedSudo("Docker BuildKit (buildx)") + "; " +
+        "if ! command -v curl >/dev/null 2>&1; then " +
+        "if command -v dnf >/dev/null 2>&1; then sudo -n dnf install -y curl; else sudo -n apt-get install -y curl; fi; fi; " +
+        "case \"$(uname -m)\" in x86_64) a=amd64;; aarch64|arm64) a=arm64;; armv7l) a=arm-v7;; *) echo 'This kind of computer is not supported for the BuildKit plugin.'; exit 1;; esac; " +
+        "ver=$(curl -fsSL https://api.github.com/repos/docker/buildx/releases/latest | grep -m1 '\"tag_name\"' | cut -d '\"' -f4) && [ -n \"$ver\" ] && " +
+        "sudo -n mkdir -p /usr/local/lib/docker/cli-plugins && " +
+        "sudo -n curl -fsSL \"https://github.com/docker/buildx/releases/download/$ver/buildx-$ver.linux-$a\" -o /usr/local/lib/docker/cli-plugins/docker-buildx && " +
+        "sudo -n chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx && docker buildx version; fi";
 
     private static string InstallCompose() =>
         Marker("compose") +

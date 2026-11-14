@@ -18,7 +18,7 @@ import {
 import ThemeToggle from "@/shared/theme/ThemeToggle";
 import { authApi, useAuthStore } from "@/shared/auth";
 import styles from "./Styles/AppShell.module.css";
-import packageJson from "../../../package.json";
+import { useServerVersion } from "@/shared/serverInfo";
 
 interface Props {
   children: React.ReactNode;
@@ -29,6 +29,7 @@ export default function AppShell({ children }: Props) {
   const clearAuth = useAuthStore((s) => s.clearAuth);
   const role = useAuthStore((s) => s.user?.role);
   const isAdmin = role === 'Admin';
+  const version = useServerVersion();
 
   const handleLogout = async () => {
     // Desktop mode has no sign-in endpoints; the call fails harmlessly and we clear anyway.
@@ -138,7 +139,7 @@ export default function AppShell({ children }: Props) {
         side="left"
         headerContent={
           <div className={styles.header}>
-            <div className={styles.headerTitle}>ShipRight</div>
+            <div className={styles.headerTitle}>ShipRight{version && <span className={styles.headerVersion}>v{version}</span>}</div>
             <div className={styles.headerSub}>Build. Ship. Done.</div>
           </div>
         }
@@ -152,7 +153,6 @@ export default function AppShell({ children }: Props) {
             >
               <RiLogoutCircleLine size={16} />
             </button>
-            <div className={styles.footerVersion}>v{packageJson.version}</div>
           </div>
         }
       />

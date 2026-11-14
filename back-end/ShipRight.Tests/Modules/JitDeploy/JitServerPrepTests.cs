@@ -54,11 +54,11 @@ public class JitServerPrepTests
 
     [TestMethod]
     public void Plan_NoDocker_AlsoStartsItAndAddsCompose_InOrder() =>
-        CollectionAssert.AreEqual(new[] { "Docker", "Daemon", "Compose" }, PlanOf(ServerTool.Docker));
+        CollectionAssert.AreEqual(new[] { "Docker", "Daemon", "Compose", "Buildx" }, PlanOf(ServerTool.Docker));
 
     [TestMethod]
     public void Plan_Everything_GitFirstThenDockerThenStartThenCompose() =>
-        CollectionAssert.AreEqual(new[] { "Git", "Docker", "Daemon", "Compose" },
+        CollectionAssert.AreEqual(new[] { "Git", "Docker", "Daemon", "Compose", "Buildx" },
             PlanOf(ServerTool.Compose, ServerTool.Daemon, ServerTool.Docker, ServerTool.Git));
 
     [TestMethod]

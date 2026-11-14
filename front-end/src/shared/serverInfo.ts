@@ -17,6 +17,42 @@ export function loadServerMode(): Promise<ServerMode> {
   return cached;
 }
 
+let cachedVersion: Promise<string | null> | null = null;
+
+/** The version of the running ShipRight, as the server itself reports it; null when it cannot say. */
+export function loadServerVersion(): Promise<string | null> {
+  if (!cachedVersion) {
+    cachedVersion = fetch('/api/health')
+      .then((res) => {
+        if (!res.ok) throw new Error('Health check failed');
+        return res.json() as Promise<{ serverVersion?: string }>;
+      })
+      .then((data) => (typeof data?.serverVersion === 'string' && data.serverVersion ? data.serverVersion : null))
+      .catch(() => null);
+  }
+  return cachedVersion;
+}
+
+export function resetServerVersionCache(): void {
+  cachedVersion = null;
+}
+
+export function useServerVersion(): string | null {
+  const [version, setVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    loadServerVersion().then((v) => {
+      if (mounted) setVersion(v);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  return version;
+}
+
 export function resetServerModeCache(): void {
   cached = null;
 }

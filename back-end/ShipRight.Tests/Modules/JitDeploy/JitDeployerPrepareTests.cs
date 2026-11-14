@@ -56,7 +56,7 @@ public class JitDeployerPrepareTests
 
         Assert.AreEqual(JitOutcome.Deployed, r.Outcome, r.Message);
         CollectionAssert.AreEqual(
-            new[] { "prepare-detect", "prepare:git", "prepare:docker", "prepare:daemon", "prepare:compose", "prepare-detect" },
+            new[] { "prepare-detect", "prepare:git", "prepare:docker", "prepare:daemon", "prepare:compose", "prepare:buildx", "prepare-detect" },
             Prep(rig));
         var events = rig.Remote.Events;
         Assert.IsTrue(events.LastIndexOf("prepare-detect") < events.IndexOf("docker-check"), "preparation finishes before the normal checks");

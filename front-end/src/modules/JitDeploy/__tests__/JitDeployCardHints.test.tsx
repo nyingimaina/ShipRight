@@ -74,6 +74,7 @@ describe('turning it on for a project that was never set up', () => {
     fireEvent.click(await screen.findByLabelText(TOGGLE));
     await waitFor(() => expect(value(/^Git address/)).toBe(SSH));
     expect(value(/^Branch/)).toBe('main');
+    fireEvent.click(screen.getByRole('button', { name: /advanced settings/i }));
     expect(value(/^Env file on the server/)).toBe('/home/u/shop/.env');
     expect(screen.getByText(/you have unsaved changes/i)).toBeInTheDocument();
   });
@@ -159,45 +160,10 @@ describe('the git address', () => {
   });
 });
 
-describe('the branch', () => {
-  it('cannot look for branches until there is an address', async () => {
-    setup({ enabled: true });
-    expect(await screen.findByRole('button', { name: /find branches on the server/i })).toBeDisabled();
-  });
-
-  it('asks the server and offers the real branches while typing', async () => {
-    setup({ ...ON });
-    fireEvent.click(await screen.findByRole('button', { name: /find branches on the server/i }));
-    await waitFor(() => expect(mockApi.post).toHaveBeenCalledWith('/api/jit/p1/branches', { url: SSH }));
-    await waitFor(() => expect(document.querySelectorAll('#jit-branches option')).toHaveLength(2));
-    expect(screen.getByLabelText(/^Branch/)).toHaveAttribute('list', 'jit-branches');
-  });
-
-  it('suggests the real default branch when the typed one does not exist', async () => {
-    setup({ ...ON, branch: 'master' });
-    fireEvent.click(await screen.findByRole('button', { name: /find branches on the server/i }));
-    fireEvent.click(await screen.findByRole('button', { name: /use main/i }));
-    expect(value(/^Branch/)).toBe('main');
-  });
-
-  it('says why when the server could not read the branches', async () => {
-    branches = { branches: [], defaultBranch: null, error: 'the server cannot reach that repository yet. It may need a deploy key.' };
-    setup({ ...ON });
-    fireEvent.click(await screen.findByRole('button', { name: /find branches on the server/i }));
-    expect(await screen.findByText(/may need a deploy key/i)).toBeInTheDocument();
-  });
-
-  it('shows the server\'s refusal as plain words', async () => {
-    mockApi.post.mockRejectedValueOnce({ isError: true, message: 'Choose the server this project deploys to first.' });
-    setup({ ...ON });
-    fireEvent.click(await screen.findByRole('button', { name: /find branches on the server/i }));
-    expect(await screen.findByText(/choose the server this project deploys to first/i)).toBeInTheDocument();
-  });
-});
-
 describe('the env file', () => {
   it('offers the one from the server settings when empty, and fills it on request', async () => {
     setup({ ...ON });
+    fireEvent.click(await screen.findByRole('button', { name: /advanced settings/i }));
     fireEvent.click(await screen.findByRole('button', { name: /use \/home\/u\/shop\/\.env/i }));
     expect(value(/^Env file on the server/)).toBe('/home/u/shop/.env');
     expect(screen.queryByRole('button', { name: /use \/home\/u\/shop\/\.env/i })).not.toBeInTheDocument();
@@ -205,19 +171,13 @@ describe('the env file', () => {
 
   it('offers nothing when it is already filled', async () => {
     setup({ ...ON, envFile: '/mine/.env' });
+    fireEvent.click(await screen.findByRole('button', { name: /advanced settings/i }));
     await screen.findByLabelText(/^Env file on the server/);
     expect(screen.queryByRole('button', { name: /use \/home\/u\/shop\/\.env/i })).not.toBeInTheDocument();
   });
 });
 
 describe('the stack name', () => {
-  it('lists the stacks that already run on the server', async () => {
-    stacks = stacksResp({ stacks: [{ name: 'blog', status: 'running(1)', configFiles: ['/srv/blog/c.yml'] }] });
-    setup({ ...ON });
-    await waitFor(() => expect(document.querySelectorAll('#jit-stacks option')).toHaveLength(1));
-    expect(screen.getByLabelText(/^Compose project name/)).toHaveAttribute('list', 'jit-stacks');
-    expect(screen.getByText(/already on the server: blog/i)).toBeInTheDocument();
-  });
 
   it('warns about a second copy, and offers to take the running stack over', async () => {
     stacks = stacksResp({
@@ -228,6 +188,7 @@ describe('the stack name', () => {
     setup({ ...ON });
     expect(await screen.findByText(/second copy of everything/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /take over 'shop-old'/i }));
+    fireEvent.click(screen.getByRole('button', { name: /advanced settings/i }));
     expect(value(/^Compose project name/)).toBe('shop-old');
   });
 
@@ -237,14 +198,9 @@ describe('the stack name', () => {
     expect(await screen.findByText(/relative paths/i)).toBeInTheDocument();
   });
 
-  it('says so quietly when the stacks could not be listed', async () => {
-    stacks = stacksResp({ error: 'Could not list the stacks on the server. Docker may not be installed yet.' });
-    setup({ ...ON });
-    expect(await screen.findByText(/could not list the stacks/i)).toBeInTheDocument();
-  });
-
   it('suggests the default name as a placeholder', async () => {
     setup({ ...ON });
+    fireEvent.click(await screen.findByRole('button', { name: /advanced settings/i }));
     expect(await screen.findByPlaceholderText('shop')).toBeInTheDocument();
   });
 
@@ -325,7 +281,7 @@ describe('the compose file and a saved credential', () => {
     expect(screen.getByLabelText('Saved credential')).toHaveValue('');
   });
 
-  it('uses the chosen credential when checking access and when looking for branches', async () => {
+  it('uses the chosen credential when checking access', async () => {
     withCredentials();
     setup({ enabled: true, repoUrl: 'https://github.com/o/shop.git', branch: 'main', credentialResourceId: 'c1' });
     await screen.findByLabelText('Saved credential');
@@ -335,8 +291,6 @@ describe('the compose file and a saved credential', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: /check access/i }));
     await waitFor(() => expect(mockApi.post).toHaveBeenCalledWith('/api/jit/p1/git-access', { repoUrl: 'https://github.com/o/shop.git', useDeployKey: false, credentialId: 'c1' }));
-    fireEvent.click(screen.getByRole('button', { name: /find branches on the server/i }));
-    await waitFor(() => expect(mockApi.post).toHaveBeenCalledWith('/api/jit/p1/branches', { url: 'https://github.com/o/shop.git', credentialId: 'c1' }));
   });
 });
 
@@ -404,6 +358,7 @@ describe('the Dockerfile and image name of each service', () => {
   it('shows each service with its Dockerfile, and a change is an unsaved change that is saved with the settings', async () => {
     setup({ ...ON, composeFile: 'docker-compose.yml', composeServices: [{ name: 'api', imageRef: 'shop/api', tagVariable: 'API_TAG', dockerfile: 'api/Dockerfile', context: 'api' }] });
     expect(await screen.findByText('Dockerfile: api/Dockerfile')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Details for api' }));
     fireEvent.change(screen.getByLabelText('Image name for api'), { target: { value: 'shop/api2' } });
     expect(screen.getByText(/you have unsaved changes/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /save settings/i }));

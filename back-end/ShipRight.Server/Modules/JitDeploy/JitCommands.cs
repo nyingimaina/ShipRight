@@ -81,7 +81,8 @@ public static class JitCommands
         if (services.Count == 0) throw new ArgumentException("There is nothing to build.", nameof(services));
         if (niceLevel is < 0 or > 19) throw new ArgumentOutOfRangeException(nameof(niceLevel), "The build priority must be between 0 and 19.");
         var names = string.Join(" ", services.Select(s => Q(JitNames.Service(s))));
-        return Prefix(ctx, bindings, tag) + Compose(ctx, niceLevel, $"build --progress=plain {names}");
+        // BuildKit is asked for explicitly: a Dockerfile may use features (RUN --mount) that the old builder cannot run.
+        return Prefix(ctx, bindings, tag) + "export DOCKER_BUILDKIT=1 && " + Compose(ctx, niceLevel, $"build --progress=plain {names}");
     }
 
     public static string StopService(ComposeContext ctx, string service, int graceSeconds, IReadOnlyList<TagBinding> bindings, string tag)

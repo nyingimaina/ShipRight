@@ -53,11 +53,13 @@ describe('JitCredentialPicker', () => {
     expect(screen.getByLabelText('Saved credential')).toHaveValue('c2');
   });
 
-  it('says plainly where the token goes, and what it costs', async () => {
+  it('says plainly where the token goes, and what it costs, in a tip instead of a paragraph', async () => {
     setup();
     await screen.findByLabelText('Saved credential');
-    expect(screen.getByText(/never saved in the address/i)).toBeInTheDocument();
-    expect(screen.getByText(/anyone with administrator access to the server could see it/i)).toBeInTheDocument();
+    expect(screen.queryByText(/anyone with administrator access/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Help: Saved credential/ }));
+    expect(screen.getByRole('tooltip')).toHaveTextContent(/never saved in the address/i);
+    expect(screen.getByRole('tooltip')).toHaveTextContent(/administrator access to the server could see it/i);
   });
 
   it('does not appear for an SSH address, where a deploy key is the way', () => {

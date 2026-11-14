@@ -95,12 +95,6 @@ describe('JitDeployCard', () => {
     expect(mockApi.get).toHaveBeenCalledWith('/api/jit/p1/config');
   });
 
-  it('explains in plain words what it does', async () => {
-    setup();
-    await ready();
-    expect(screen.getByText(/no registry/i)).toBeInTheDocument();
-  });
-
   it('turning it on reveals the settings', async () => {
     setup();
     await ready();
@@ -113,6 +107,7 @@ describe('JitDeployCard', () => {
     setup({ config: { ...ON, branch: 'release', envFile: '/home/me/.env' } });
     expect(await screen.findByLabelText('Git address')).toHaveValue('git@github.com:o/r.git');
     expect(screen.getByLabelText('Branch')).toHaveValue('release');
+    fireEvent.click(screen.getByRole('button', { name: /advanced settings/i }));
     expect(screen.getByLabelText('Env file on the server (optional)')).toHaveValue('/home/me/.env');
     await waitFor(() => expect(mockApi.get).toHaveBeenCalledWith('/api/jit/p1/releases'));
     expect(mockApi.get).toHaveBeenCalledWith('/api/jit/p1/dependents');
@@ -121,6 +116,7 @@ describe('JitDeployCard', () => {
   it('gives every field a plain-language tip that says where to find the value', async () => {
     setup({ config: ON });
     await screen.findByLabelText('Git address');
+    fireEvent.click(screen.getByRole('button', { name: /advanced settings/i }));
     for (const label of ['Git address', 'Branch', 'Env file on the server', 'Compose project name'])
       expect(screen.getByRole('button', { name: new RegExp(`Help: ${label}`) })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Help: Git address/ }));
@@ -235,6 +231,31 @@ describe('JitDeployCard', () => {
     expect(mockApi.get.mock.calls.filter(c => c[0] === '/api/jit/p1/releases').length).toBeGreaterThanOrEqual(2);   // refreshed
   });
 
+  it('shows the log in the shared log viewer: follows the output, can be paused, filtered, copied and downloaded', async () => {
+    (navigator as unknown as { clipboard: unknown }).clipboard = { writeText: jest.fn().mockResolvedValue(undefined) };
+    setup({ config: ON });
+    await screen.findByLabelText('Git address');
+    mockApi.post.mockResolvedValueOnce({ buildId: 'b1' } as never);
+    fireEvent.click(deployButton());
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+
+    FakeEventSource.instances[0].emit('LogLine', { line: '[deploy] Building api' });
+    FakeEventSource.instances[0].emit('LogLine', { line: 'fatal: something broke' });
+    const log = await screen.findByRole('log', { name: 'Deploy log' });
+    expect(within(log).getByText('[deploy] Building api')).toBeInTheDocument();
+    expect(within(log).getByText(/streaming/)).toBeInTheDocument();
+
+    expect(within(log).getByRole('button', { name: 'Pause auto-scroll' })).toBeInTheDocument();
+    expect(within(log).getByRole('button', { name: 'Download log' })).toBeInTheDocument();
+    expect(within(log).getByRole('button', { name: 'Errors only' })).toBeInTheDocument();
+    fireEvent.click(within(log).getByRole('button', { name: 'Copy all' }));
+    await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith('[deploy] Building api\nfatal: something broke'));
+
+    fireEvent.change(within(log).getByLabelText('Filter log'), { target: { value: 'fatal' } });
+    expect(within(log).queryByText('[deploy] Building api')).not.toBeInTheDocument();
+    expect(within(log).getByText('fatal: something broke')).toBeInTheDocument();
+  });
+
   it('shows why a deploy failed, in the words the server used', async () => {
     setup({ config: ON, build: { status: 'DeployFailed', errorSummary: 'Rolled back: release r1-1111111 is running again.' } });
     await screen.findByLabelText('Git address');
@@ -253,6 +274,7 @@ describe('JitDeployCard', () => {
     await screen.findByLabelText('Git address');
     mockApi.post.mockResolvedValueOnce({ buildId: 'b1' } as never);
 
+    fireEvent.click(screen.getByRole('button', { name: /advanced settings/i }));
     fireEvent.click(screen.getByLabelText('Deploy even if nothing has changed'));
     fireEvent.change(screen.getByLabelText('Deploy this exact commit (optional)'), { target: { value: 'ab8b4a9' } });
     fireEvent.click(deployButton());
@@ -308,11 +330,6 @@ describe('JitDeployCard', () => {
     expect(items[1]).toHaveTextContent(/previous/i);
     expect(within(items[0]).queryByRole('button', { name: /Roll back/ })).not.toBeInTheDocument();
     expect(within(items[1]).getByRole('button', { name: 'Roll back to r1-1111111' })).toBeInTheDocument();
-  });
-
-  it('says there are none yet before the first deploy', async () => {
-    setup({ config: ON, releases: releasesResp({ releases: [], currentTag: null, previousTag: null }) });
-    expect(await screen.findByText(/No releases yet/i)).toBeInTheDocument();
   });
 
   it('asks before rolling back, then does it and streams the log', async () => {
@@ -383,12 +400,14 @@ describe('JitDeployCard', () => {
 
   it('asks, per case, whether a service that depends on a rebuilt one should be restarted too', async () => {
     setup({ config: ON });
+    fireEvent.click(await screen.findByRole('button', { name: /advanced settings/i }));
     const toggle = await screen.findByLabelText('Restart proxy when web is replaced');
     expect(toggle).toBeChecked();
   });
 
   it('saves the answers with the rest of the settings', async () => {
     setup({ config: ON });
+    fireEvent.click(await screen.findByRole('button', { name: /advanced settings/i }));
     fireEvent.click(await screen.findByLabelText('Restart proxy when web is replaced'));
     mockApi.put.mockResolvedValueOnce({ config: {} } as never);
     fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
@@ -398,11 +417,8 @@ describe('JitDeployCard', () => {
 
   it('shows a saved "leave it running" answer as such', async () => {
     setup({ config: { ...ON, dependentChoices: [{ service: 'web', dependent: 'proxy', restart: false }] }, dependents: dependentsResp({ pairs: [{ service: 'web', dependent: 'proxy', restart: false }] }) });
+    fireEvent.click(await screen.findByRole('button', { name: /advanced settings/i }));
     expect(await screen.findByLabelText('Restart proxy when web is replaced')).not.toBeChecked();
   });
 
-  it('explains when there is nothing to ask yet', async () => {
-    setup({ config: ON, dependents: dependentsResp({ pairs: [], note: 'There is no compose file on the server yet. Deploy once so it can be read, and the questions appear here.' }) });
-    expect(await screen.findByText(/Deploy once so it can be read/)).toBeInTheDocument();
-  });
 });

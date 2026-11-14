@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import FilePicker from '@/modules/FilePicker/FilePicker';
 import { api } from '@/shared/ApiService';
+import styles from './Styles/JitDeploy.module.css';
 
 export interface ComposeCandidate {
   name: string;
@@ -64,14 +65,6 @@ interface Props {
   onUpdate: (name: string, patch: Partial<ConfiguredService>) => void;
 }
 
-const box: React.CSSProperties = { marginTop: 8, padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border-subtle)', fontSize: 13 };
-const muted: React.CSSProperties = { margin: '6px 0 0', fontSize: 12, color: 'var(--text-muted)' };
-const btn: React.CSSProperties = { padding: '6px 14px', borderRadius: 6, border: '1px solid var(--border-subtle)', background: 'transparent', color: 'inherit', cursor: 'pointer', fontSize: 13 };
-const primary: React.CSSProperties = { ...btn, background: 'var(--accent, #C9A84C)', color: '#10192E', border: 'none', fontWeight: 600 };
-const input: React.CSSProperties = {
-  padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border-subtle)', background: 'var(--bg-input, transparent)',
-  color: 'inherit', fontSize: 13, maxWidth: 420, width: '100%', boxSizing: 'border-box',
-};
 
 const messageOf = (e: unknown, fallback: string) =>
   e && typeof e === 'object' && 'message' in e && typeof (e as { message: unknown }).message === 'string' ? (e as { message: string }).message : fallback;
@@ -91,8 +84,12 @@ const toConfigured = (c: ComposeCandidate): ConfiguredService => ({
 
 function ServiceRow({ base, service, onUpdate }: { base: string; service: ConfiguredService; onUpdate: Props['onUpdate'] }) {
   const [picking, setPicking] = useState(false);
+  const [details, setDetails] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const args = service.args ?? {};
+  // An argument that still needs a value is always in view; the rest (and the image name) stay tucked away.
+  const needValue = Object.keys(args).filter(k => args[k] === '');
+  const shownArgs = details ? Object.keys(args) : needValue;
 
   const pick = async (path: string) => {
     setPicking(false); setError(null);
@@ -105,38 +102,44 @@ function ServiceRow({ base, service, onUpdate }: { base: string; service: Config
   };
 
   return (
-    <li style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--border-subtle)' }}>
-      <strong>{service.name}</strong>
-      <div style={{ marginTop: 4 }}>
-        <label htmlFor={`img-${service.name}`} style={muted}>Image name (the part before the tag)</label>
-        <input id={`img-${service.name}`} aria-label={`Image name for ${service.name}`} style={input} value={service.imageRef}
-          onChange={e => onUpdate(service.name, { imageRef: e.target.value })} />
-      </div>
+    <li className={styles.service}>
+      <strong className={styles.serviceName}>{service.name}</strong>
       {service.dockerfile ? (
-        <div style={{ marginTop: 6 }}>
+        <div className={styles.mt6}>
           <div>Dockerfile: {service.dockerfile}</div>
-          <div style={muted}>Built from: {!service.context || service.context === '.' ? 'the repository root' : service.context}</div>
+          <div className={styles.muted}>Built from: {!service.context || service.context === '.' ? 'the repository root' : service.context}</div>
         </div>
       ) : (
-        <div role="alert" style={{ ...muted, color: '#E08A8A' }}>Pick this service&apos;s Dockerfile.</div>
+        <div role="alert" className={`${styles.muted} ${styles.bad}`}>Pick this service&apos;s Dockerfile.</div>
       )}
       {picking ? (
-        <div style={{ marginTop: 6 }}>
+        <div className={styles.mt6}>
           <FilePicker storageKey="jit-dockerfile" label={`Dockerfile for ${service.name}`} onSelect={pick} />
-          <button type="button" style={{ ...btn, marginTop: 6 }} onClick={() => setPicking(false)}>Cancel</button>
+          <button type="button" className={`${styles.btn} ${styles.mt6}`} onClick={() => setPicking(false)}>Cancel</button>
         </div>
       ) : (
-        <div style={{ marginTop: 6 }}>
-          <button type="button" style={btn} aria-label={`Browse for Dockerfile for ${service.name}`} onClick={() => setPicking(true)}>
+        <div className={styles.mt6}>
+          <button type="button" className={styles.btn} aria-label={`Browse for Dockerfile for ${service.name}`} onClick={() => setPicking(true)}>
             {service.dockerfile ? 'Choose a different Dockerfile' : 'Browse for the Dockerfile'}
           </button>
         </div>
       )}
-      {error && <p role="alert" style={{ ...muted, color: '#E08A8A' }}>{error}</p>}
-      {Object.keys(args).map(k => (
-        <div key={k} style={{ marginTop: 6 }}>
-          <label htmlFor={`arg-${service.name}-${k}`} style={muted}>Build argument {k}{args[k] === '' ? ' (needs a value)' : ''}</label>
-          <input id={`arg-${service.name}-${k}`} aria-label={`Value for ${k} in ${service.name}`} style={input} value={args[k]}
+      {error && <p role="alert" className={`${styles.muted} ${styles.bad}`}>{error}</p>}
+      <div className={styles.mt6}>
+        <button type="button" className={`${styles.btn} ${styles.small}`} aria-label={`Details for ${service.name}`} aria-expanded={details}
+          onClick={() => setDetails(d => !d)}>{details ? 'Hide details' : 'Details'}</button>
+      </div>
+      {details && (
+        <div className={styles.mt4}>
+          <label htmlFor={`img-${service.name}`} className={styles.muted}>Image name (the part before the tag)</label>
+          <input id={`img-${service.name}`} aria-label={`Image name for ${service.name}`} className={styles.input} value={service.imageRef}
+            onChange={e => onUpdate(service.name, { imageRef: e.target.value })} />
+        </div>
+      )}
+      {shownArgs.map(k => (
+        <div key={k} className={styles.mt6}>
+          <label htmlFor={`arg-${service.name}-${k}`} className={styles.muted}>Build argument {k}{args[k] === '' ? ' (needs a value)' : ''}</label>
+          <input id={`arg-${service.name}-${k}`} aria-label={`Value for ${k} in ${service.name}`} className={styles.input} value={args[k]}
             onChange={e => onUpdate(service.name, { args: { ...args, [k]: e.target.value } })} />
         </div>
       ))}
@@ -172,87 +175,80 @@ export default function JitComposeServices({ base, needsServices, current, help,
   return (
     <div>
       {help && (
-        <div style={{ ...box, borderColor: '#C9A84C' }} role="note" aria-label="Why there are no services">
+        <div className={styles.boxNote} role="note" aria-label="Why there are no services">
           <strong>Why this cannot deploy yet</strong>
-          <p style={muted}>{help.explanation}</p>
-          <ol style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 12 }}>
-            {help.steps.map(s => <li key={s} style={{ marginTop: 3 }}>{s}</li>)}
+          <p className={styles.muted}>{help.explanation}</p>
+          <ol className={styles.steps}>
+            {help.steps.map(s => <li key={s} className={styles.mt4}>{s}</li>)}
           </ol>
           {help.found && help.found.services.length > 0 && (
-            <div style={{ marginTop: 8 }}>
-              <span style={muted}>Found in {help.found.relativePath}: {help.found.services.map(s => s.name).join(', ')}</span>{' '}
-              <button type="button" style={primary} onClick={() => onApply(help.found!.relativePath, help.found!.services.map(toConfigured))}>Use these services</button>
+            <div className={styles.mt8}>
+              <span className={styles.muted}>Found in {help.found.relativePath}: {help.found.services.map(s => s.name).join(', ')}</span>{' '}
+              <button type="button" className={styles.primary} onClick={() => onApply(help.found!.relativePath, help.found!.services.map(toConfigured))}>Use these services</button>
             </div>
           )}
         </div>
       )}
 
       {current.length > 0 && (
-        <div style={box}>
-          <p style={{ ...muted, marginTop: 0 }}>
+        <div className={styles.box}>
+          <p className={`${styles.muted} ${styles.mt0}`}>
             Services to build, from your compose file: {current.map(s => s.name).join(', ')}{' '}
-            <button type="button" style={btn} onClick={onClear}>Clear these services</button>
+            <button type="button" className={styles.btn} onClick={onClear}>Clear these services</button>
           </p>
-          <p style={muted}>
-            ShipRight gives every image a tag by itself, like r12-ab12cd3 (a release number and the commit it was built from).
-          </p>
-          <p style={muted}>
-            You do not need to change the image lines in your compose file or type anything for the tag: ShipRight tells compose which image
-            name and which tag to build and run.
-          </p>
-          <ul style={{ listStyle: 'none', padding: 0, margin: '6px 0 0' }}>
+          <p className={styles.muted}>Tags are added for you (like r12-ab12cd3: a release number and the commit); your compose file needs no changes.</p>
+          <ul className={styles.list}>
             {current.map(s => <ServiceRow key={s.name} base={base} service={s} onUpdate={onUpdate} />)}
           </ul>
         </div>
       )}
 
       {picking ? (
-        <div style={{ marginTop: 8 }}>
+        <div className={styles.mt8}>
           <FilePicker storageKey="compose-file" label="Your compose file" onSelect={read} />
-          <button type="button" style={{ ...btn, marginTop: 6 }} onClick={() => setPicking(false)}>Cancel</button>
+          <button type="button" className={`${styles.btn} ${styles.mt6}`} onClick={() => setPicking(false)}>Cancel</button>
         </div>
       ) : (
-        <div style={{ marginTop: 8 }}>
-          <button type="button" style={btn} disabled={busy} onClick={() => setPicking(true)}>{busy ? 'Reading…' : 'Browse for the compose file'}</button>
+        <div className={styles.mt8}>
+          <button type="button" className={styles.btn} disabled={busy} onClick={() => setPicking(true)}>{busy ? 'Reading…' : 'Browse for the compose file'}</button>
         </div>
       )}
 
-      {error && <p role="alert" style={{ ...muted, color: '#E08A8A' }}>{error}</p>}
+      {error && <p role="alert" className={`${styles.muted} ${styles.bad}`}>{error}</p>}
 
       {reading && (
-        <div style={box}>
+        <div className={styles.box}>
           <strong>{reading.relativePath}</strong>
-          <span style={muted}> (its place in your repository)</span>
+          <span className={styles.muted}> (its place in your repository)</span>
           {reading.services.length > 0 && needsServices && (
             <>
-              <p style={muted}>ShipRight found these services to build:</p>
-              <ul style={{ listStyle: 'none', padding: 0, margin: '6px 0 0' }}>
+              <p className={styles.muted}>ShipRight found these services to build:</p>
+              <ul className={styles.list}>
                 {reading.services.map(s => (
-                  <li key={s.name} style={{ marginTop: 6 }}>
-                    <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <li key={s.name} className={styles.mt6}>
+                    <label className={styles.check}>
                       <input type="checkbox" aria-label={`Build ${s.name}`} checked={ticked.has(s.name)} onChange={() => toggle(s.name)} />
-                      <strong>{s.name}</strong> <span style={muted}>{s.imageRef}</span>
+                      <strong>{s.name}</strong> <span className={styles.muted}>{s.imageRef}</span>
                     </label>
-                    <div style={muted}>{s.dockerfile ? `Dockerfile: ${s.dockerfile}` : 'No Dockerfile found yet: you will pick it next.'}</div>
+                    <div className={styles.muted}>{s.dockerfile ? `Dockerfile: ${s.dockerfile}` : 'No Dockerfile found yet: you will pick it next.'}</div>
                   </li>
                 ))}
               </ul>
             </>
           )}
           {reading.services.length > 0 && !needsServices && (
-            <p style={muted}>This file builds: {reading.services.map(s => s.name).join(', ')}.</p>
+            <p className={styles.muted}>This file builds: {reading.services.map(s => s.name).join(', ')}.</p>
           )}
-          {reading.leftAlone.length > 0 && <p style={muted}>Left alone (not built by ShipRight): {reading.leftAlone.join(', ')}</p>}
-          {reading.notes.map(n => <p key={n} style={muted}>{n}</p>)}
+          {reading.services.length === 0 && reading.notes.map(n => <p key={n} className={styles.muted}>{n}</p>)}
           {reading.services.length > 0 && (
-            <div style={{ marginTop: 8 }}>
+            <div className={styles.mt8}>
               {needsServices ? (
-                <button type="button" style={primary} disabled={ticked.size === 0}
+                <button type="button" className={styles.primary} disabled={ticked.size === 0}
                   onClick={() => onApply(reading.relativePath, reading.services.filter(s => ticked.has(s.name)).map(toConfigured))}>
                   Use this compose file and these services
                 </button>
               ) : (
-                <button type="button" style={primary} onClick={() => onApply(reading.relativePath, null)}>Use this compose file</button>
+                <button type="button" className={styles.primary} onClick={() => onApply(reading.relativePath, null)}>Use this compose file</button>
               )}
             </div>
           )}

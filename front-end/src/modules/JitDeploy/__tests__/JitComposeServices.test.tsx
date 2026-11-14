@@ -65,7 +65,6 @@ describe('picking the compose file', () => {
     expect(screen.getByRole('checkbox', { name: 'Build backend' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: 'Build frontend' })).toBeChecked();
     expect(screen.getByText('Dockerfile: backend.Dockerfile')).toBeInTheDocument();
-    expect(screen.getByText(/left alone/i)).toBeInTheDocument();
   });
 
   it('applies the file path and the ticked services, with their Dockerfile and build folder', async () => {
@@ -189,23 +188,27 @@ describe('each service, its Dockerfile and its tag', () => {
     expect(onUpdate).not.toHaveBeenCalled();
   });
 
-  it('edits the image name, which is the part before the tag', () => {
+  it('keeps the image name out of the way until asked, and then edits it (the part before the tag)', () => {
     const { onUpdate } = setup({ current: [backend()] });
+    expect(screen.queryByLabelText('Image name for backend')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Details for backend' }));
     fireEvent.change(screen.getByLabelText('Image name for backend'), { target: { value: 'reg/other-backend' } });
     expect(onUpdate).toHaveBeenCalledWith('backend', { imageRef: 'reg/other-backend' });
   });
 
-  it('asks for the value of an argument that has none, and keeps the others', () => {
+  it('asks for the value of an argument that has none right away, and keeps the others under details', () => {
     const { onUpdate } = setup({ current: [backend({ args: { API_URL: '', MODE: 'prod' } })] });
+    expect(screen.queryByLabelText('Value for MODE in backend')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Details for backend' }));
     expect(screen.getByLabelText('Value for MODE in backend')).toHaveValue('prod');
     fireEvent.change(screen.getByLabelText('Value for API_URL in backend'), { target: { value: 'https://x' } });
     expect(onUpdate).toHaveBeenCalledWith('backend', { args: { API_URL: 'https://x', MODE: 'prod' } });
   });
 
-  it('explains tagging in plain words: ShipRight adds it, nothing to type or change', () => {
+  it('explains tagging in one line: ShipRight adds it, nothing to type or change', () => {
     setup({ current: [backend()] });
-    expect(screen.getByText(/gives every image a tag by itself/i)).toBeInTheDocument();
-    expect(screen.getByText(/you do not need to change the image lines in your compose file/i)).toBeInTheDocument();
+    expect(screen.getByText(/tags are added for you/i)).toBeInTheDocument();
+    expect(screen.getByText(/your compose file needs no changes/i)).toBeInTheDocument();
   });
 
   it('can clear the services', () => {

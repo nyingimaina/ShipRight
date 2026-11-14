@@ -523,7 +523,7 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
             var buildNames = _req.Services.Select(s => s.Name).ToList();
             await Say($"Building {string.Join(", ", buildNames)} (the running release keeps serving until every build has finished)…");
             var build = await Exec(JitCommands.Build(_ctx, buildNames, _bindings, tag, _s.BuildNice), true, ct, mergeStderr: true);
-            if (build.Exit != 0) return await FailBuildAsync(tag, $"The build failed, so nothing was changed: {Tail(build.Lines)}");
+            if (build.Exit != 0) return await FailBuildAsync(tag, $"The build failed, so nothing was changed: {Tail(build.Lines)}{JitBuildAdvice.For(build.Lines)}");
 
             var check = await Exec(JitCommands.EnsureImagesExist(ExpectedRefs(tag)), false, ct);
             if (check.Exit != 0) return await FailBuildAsync(tag, "The build finished but its images are missing, so nothing was changed.");

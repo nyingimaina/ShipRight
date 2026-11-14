@@ -48,6 +48,7 @@ public sealed class FakeRemote : ISshRunner
     public bool KeepImagesAfterBuild { get; set; } = true;
     public string? OverrideYaml { get; private set; }
     public string[]? SyncFailureLines { get; set; }
+    public string[]? BuildFailureLines { get; set; }
     public string[]? ExtraBuildLines { get; set; }
     public bool FailStateWrite { get; set; }
     public bool ConfigFails { get; set; }
@@ -199,7 +200,7 @@ public sealed class FakeRemote : ISshRunner
             var names = Regex.Matches(cmd[(cmd.IndexOf("--progress=plain", StringComparison.Ordinal) + 16)..], @"'([^']+)'")
                 .Select(x => x.Groups[1].Value).ToList();
             Events.Add($"build:{string.Join(",", names)}");
-            if (!BuildOk) return Fail("ERROR: failed to solve: process \"/bin/sh -c npm ci\" did not complete successfully");
+            if (!BuildOk) return Fail(BuildFailureLines ?? ["ERROR: failed to solve: process \"/bin/sh -c npm ci\" did not complete successfully"]);
             if (KeepImagesAfterBuild)
                 foreach (var n in names)
                 {
