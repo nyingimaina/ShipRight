@@ -7,6 +7,8 @@ interface Props {
   base: string;
   repoUrl: string;
   useDeployKey: boolean;
+  /** The saved credential chosen for this project, used for the check when there is one. */
+  credentialId?: string | null;
   /** Turning the deploy key on or off is part of the settings, so it is saved with them. */
   onUseDeployKey: (on: boolean) => void;
 }
@@ -25,7 +27,7 @@ const messageOf = (e: unknown, fallback: string) =>
  * "Can the server read your code?": checks it, and when it cannot, makes a read-only key on the server itself and shows it
  * so it can be pasted into the git host. No password or token is ever involved, and nothing leaves the server but the public half.
  */
-export default function JitGitAccess({ base, repoUrl, useDeployKey, onUseDeployKey }: Props) {
+export default function JitGitAccess({ base, repoUrl, useDeployKey, credentialId, onUseDeployKey }: Props) {
   const [access, setAccess] = useState<AccessResult | null>(null);
   const [key, setKey] = useState<KeyResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -36,7 +38,7 @@ export default function JitGitAccess({ base, repoUrl, useDeployKey, onUseDeployK
   const check = async () => {
     setBusy(true); setError(null);
     try {
-      setAccess(await api.post<AccessResult>(`${base}/git-access`, { repoUrl, useDeployKey }));
+      setAccess(await api.post<AccessResult>(`${base}/git-access`, { repoUrl, useDeployKey, ...(credentialId ? { credentialId } : {}) }));
     } catch (e) {
       setAccess(null);
       setError(messageOf(e, 'Could not check.'));

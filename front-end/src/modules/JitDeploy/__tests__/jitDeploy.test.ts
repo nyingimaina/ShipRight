@@ -30,6 +30,19 @@ describe('validateJitConfig', () => {
     }
   });
 
+  it('accepts a compose file inside the repository and refuses anything that could leave it', () => {
+    for (const f of ['', 'docker-compose.yml', 'deploy/docker-compose.yml', 'ops/prod/compose.yaml'])
+      expect(validateJitConfig(valid({ composeFile: f })).composeFile).toBeUndefined();
+    for (const f of ['../x.yml', '/etc/x.yml', 'x.txt', 'my compose.yml', 'deploy//c.yml', 'a;b.yml'])
+      expect(validateJitConfig(valid({ composeFile: f })).composeFile).toMatch(/inside your repository/i);
+  });
+
+  it('only lets a saved credential go with an https address, and not together with a deploy key', () => {
+    expect(validateJitConfig(valid({ repoUrl: 'git@github.com:o/r.git', credentialResourceId: 'c1' })).credentialResourceId).toMatch(/https/i);
+    expect(validateJitConfig(valid({ repoUrl: 'https://github.com/o/r.git', credentialResourceId: 'c1' })).credentialResourceId).toBeUndefined();
+    expect(validateJitConfig(valid({ repoUrl: 'https://github.com/o/r.git', credentialResourceId: 'c1', useDeployKey: true })).credentialResourceId).toMatch(/either/i);
+  });
+
   it('accepts ordinary addresses', () => {
     for (const url of ['git@github.com:o/r.git', 'https://github.com/o/r.git', 'ssh://git@host/o/r.git'])
       expect(validateJitConfig(valid({ repoUrl: url })).repoUrl).toBeUndefined();

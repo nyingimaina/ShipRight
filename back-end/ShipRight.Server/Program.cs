@@ -206,6 +206,7 @@ try
         app.MapJitDeployRoutes();   // build-on-server deploys: their own paths, off unless a project turns them on
         app.MapJitHintRoutes();
         app.MapJitDeployKeyRoutes();
+        app.MapJitCredentialRoutes();
     }
     app.MapProjectBundleRoutes();
     app.MapProjectSummaryRoutes();

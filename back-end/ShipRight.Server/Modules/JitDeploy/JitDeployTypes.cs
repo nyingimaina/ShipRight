@@ -28,6 +28,10 @@ public sealed record JitDeployRequest
     public string? EnvFile { get; init; }
     /// <summary>Name of the key in the user's ~/.ssh that git uses to reach the git host; null uses whatever the server already has.</summary>
     public string? DeployKeyName { get; init; }
+    /// <summary>A saved access token for reading a private https repository. Used for one command at a time and never stored.</summary>
+    public JitGitSecret? GitCredential { get; init; }
+    /// <summary>The compose file inside the repository; null = the usual file in its top folder.</summary>
+    public string? ComposeFile { get; init; }
     public JitDeploySettings Settings { get; init; } = new();
     /// <summary>(service, dependent) → restart the dependent when the service is replaced. Unanswered pairs restart.</summary>
     public IReadOnlyDictionary<(string Service, string Dependent), bool>? DependentChoices { get; init; }

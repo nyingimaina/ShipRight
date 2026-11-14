@@ -7,6 +7,7 @@ import {
   describeAge, phaseSummary, setDependentChoice, shortSha, validateJitConfig,
 } from './jitDeploy';
 import JitGitAccess from './JitGitAccess';
+import JitCredentialPicker, { isHttps } from './JitCredentialPicker';
 import {
   addressOptions, addressWarning, branchAfterPick, defaultBranchSuggestion, JitBranchesResponse, JitHintsResponse, JitStacksResponse, prefillPatch,
 } from './jitHints';
@@ -154,14 +155,14 @@ export default function JitDeployCard({ projectId }: Props) {
 
   const pickAddress = (value: string) => {
     const picked = addressOptions(hints).find(o => o.value === value);
-    setCfg(c => ({ ...c, repoUrl: value, ...branchAfterPick(c, picked) }));
+    setCfg(c => ({ ...c, repoUrl: value, credentialResourceId: isHttps(value) ? c.credentialResourceId : null, ...branchAfterPick(c, picked) }));
     setBranchList(null);
   };
 
   const findBranches = async () => {
     setFindingBranches(true);
     try {
-      setBranchList(await api.post<JitBranchesResponse>(`${base}/branches`, { url: cfg.repoUrl }));
+      setBranchList(await api.post<JitBranchesResponse>(`${base}/branches`, { url: cfg.repoUrl, ...(cfg.credentialResourceId ? { credentialId: cfg.credentialResourceId } : {}) }));
     } catch (e) {
       setBranchList({ branches: [], defaultBranch: null, error: (e as { message?: string })?.message ?? 'Could not read the branches.' });
     } finally {
@@ -270,13 +271,16 @@ export default function JitDeployCard({ projectId }: Props) {
                 </select>
               )}
               <input id="jit-repo" style={input} value={cfg.repoUrl} placeholder="git@github.com:you/your-app.git"
-                onChange={e => { set('repoUrl', e.target.value); setBranchList(null); }} />
+                onChange={e => { const v = e.target.value; setCfg(c => ({ ...c, repoUrl: v, credentialResourceId: isHttps(v) ? c.credentialResourceId : null })); setBranchList(null); }} />
               {addressWarning(cfg.repoUrl) && <span style={err}>{addressWarning(cfg.repoUrl)}</span>}
               {hints?.notes.map(n => <span key={n} style={muted}>{n}</span>)}
             </>
           </Field>
 
-          <JitGitAccess base={base} repoUrl={cfg.repoUrl} useDeployKey={cfg.useDeployKey} onUseDeployKey={on => set('useDeployKey', on)} />
+          <JitCredentialPicker base={base} repoUrl={cfg.repoUrl} value={cfg.credentialResourceId}
+            onChange={id => setCfg(c => ({ ...c, credentialResourceId: id, useDeployKey: id ? false : c.useDeployKey }))} />
+          <JitGitAccess base={base} repoUrl={cfg.repoUrl} useDeployKey={cfg.useDeployKey} credentialId={cfg.credentialResourceId}
+            onUseDeployKey={on => setCfg(c => ({ ...c, useDeployKey: on, credentialResourceId: on ? null : c.credentialResourceId }))} />
 
           <Field id="jit-branch" label="Branch" error={errors.branch}
             tip={'Which branch to deploy. Whatever is newest on this branch when you press Deploy is what goes live. Usually master or main.'}>
@@ -308,6 +312,11 @@ export default function JitDeployCard({ projectId }: Props) {
                 </div>
               )}
             </>
+          </Field>
+
+          <Field id="jit-compose" label="Compose file in your repository (optional)" tipLabel="Compose file in your repository" error={errors.composeFile}
+            tip={'Where the docker-compose file is inside your repository, for example deploy/docker-compose.yml. Leave it empty if it is in the top folder (docker-compose.yml or compose.yaml).'}>
+            <input id="jit-compose" style={input} value={cfg.composeFile} placeholder="docker-compose.yml" onChange={e => set('composeFile', e.target.value)} />
           </Field>
 
           <Field id="jit-project" label="Compose project name (optional)" tipLabel="Compose project name" error={errors.composeProject}

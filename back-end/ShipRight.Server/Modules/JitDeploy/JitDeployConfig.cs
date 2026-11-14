@@ -27,6 +27,10 @@ public sealed record JitDeployConfig
     public int? BuildNice { get; init; }
     /// <summary>Use a read-only key made on the server (never a password or token) to read the repository.</summary>
     public bool UseDeployKey { get; init; }
+    /// <summary>A saved credential (access token) to read a private https repository. Never part of the address.</summary>
+    public Guid? CredentialResourceId { get; init; }
+    /// <summary>Path of the compose file inside the repository. Empty = the usual file in the repository's top folder.</summary>
+    public string ComposeFile { get; init; } = string.Empty;
     public IReadOnlyList<JitDependentChoice> DependentChoices { get; init; } = [];
 }
 
@@ -139,6 +143,11 @@ public static class JitDeployConfigValidator
         }
         else Safe("repoUrl", "git address", JitNames.RepoUrl, c.RepoUrl);
 
+        if (c.UseDeployKey && c.CredentialResourceId is not null)
+            p.Add(new("Choose either a deploy key or a saved credential, not both.", "credentialResourceId"));
+        else if (c.CredentialResourceId is not null && !string.IsNullOrWhiteSpace(c.RepoUrl) && !global::System.Text.RegularExpressions.Regex.IsMatch(c.RepoUrl.Trim(), "^https://", global::System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+            p.Add(new("A saved credential only works with an https address. Use the SSH form with a deploy key instead.", "credentialResourceId"));
+        if (!string.IsNullOrWhiteSpace(c.ComposeFile)) Safe("composeFile", "compose file", JitNames.RepoFile, c.ComposeFile.Trim());
         if (!string.IsNullOrWhiteSpace(c.ComposeProject)) Safe("composeProject", "compose project name", JitNames.Project, c.ComposeProject);
         if (!string.IsNullOrWhiteSpace(c.EnvFile)) Safe("envFile", "env file path", JitNames.Path, c.EnvFile);
 

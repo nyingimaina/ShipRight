@@ -46,6 +46,14 @@ public static class JitNames
     public static string TagVariable(string v) =>
         Check(TagVarRx.IsMatch(v ?? string.Empty), v, "tag variable name", "UPPER_CASE letters, digits and '_'");
 
+    private static readonly global::System.Text.RegularExpressions.Regex RepoFileRx =
+        new(@"^[A-Za-z0-9._][A-Za-z0-9._/-]*\.(yml|yaml)$", global::System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>A compose file inside the repository: a relative path ending in .yml or .yaml, with no '..', no empty parts and nothing a shell would treat specially.</summary>
+    public static string RepoFile(string v) =>
+        Check(RepoFileRx.IsMatch(v ?? string.Empty) && !v!.Split('/').Any(p => p.Length == 0 || p == ".."), v, "compose file",
+            "a path inside your repository ending in .yml or .yaml, such as deploy/docker-compose.yml");
+
     public static string Project(string v) =>
         Check(ProjectRx.IsMatch(v ?? string.Empty), v, "compose project name", "lower-case letters, digits, '_' and '-'");
 

@@ -26,6 +26,7 @@ const stacksResp = (over: Partial<JitStacksResponse> = {}): JitStacksResponse =>
 
 let hints: JitHintsResponse | Error = hintsResp();
 let stacks: JitStacksResponse | Error = stacksResp();
+let credentialList: unknown[] = [];
 let branches: unknown = { branches: ['main', 'dev'], defaultBranch: 'main', error: null };
 
 function setup(config: Partial<JitConfig> = {}) {
@@ -35,6 +36,7 @@ function setup(config: Partial<JitConfig> = {}) {
     if (path.endsWith('/dependents')) return { pairs: [], note: null } as never;
     if (path.endsWith('/hints')) { if (hints instanceof Error) throw hints; return hints as never; }
     if (path.endsWith('/stacks')) { if (stacks instanceof Error) throw stacks; return stacks as never; }
+    if (path.endsWith('/credentials')) return credentialList as never;
     throw new Error('unexpected GET ' + path);
   });
   mockApi.post.mockImplementation(async (path: string) => {
@@ -46,7 +48,7 @@ function setup(config: Partial<JitConfig> = {}) {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  hints = hintsResp(); stacks = stacksResp();
+  hints = hintsResp(); stacks = stacksResp(); credentialList = [];
   branches = { branches: ['main', 'dev'], defaultBranch: 'main', error: null };
 });
 
@@ -239,6 +241,90 @@ describe('the stack name', () => {
     setup({ enabled: false });
     await screen.findByLabelText(TOGGLE);
     expect(mockApi.get.mock.calls.some(c => String(c[0]).endsWith('/stacks'))).toBe(false);
+  });
+});
+
+describe('the compose file and a saved credential', () => {
+  const credentials = [{ id: 'c1', name: 'GitHub PAT', hostPattern: 'github.com' }];
+
+  const withCredentials = () => { credentialList = credentials; };
+
+  it('has a compose file field, kept in the settings', async () => {
+    setup({ ...ON });
+    const field = await screen.findByLabelText(/^Compose file in your repository/);
+    expect(field).toHaveValue('');
+    fireEvent.change(field, { target: { value: 'deploy/docker-compose.yml' } });
+    expect(screen.getByText(/you have unsaved changes/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /save settings/i }));
+    await waitFor(() => expect(mockApi.put).toHaveBeenCalledWith('/api/jit/p1/config', expect.objectContaining({ composeFile: 'deploy/docker-compose.yml' })));
+  });
+
+  it('refuses a compose file that is not inside the repository, before saving', async () => {
+    setup({ ...ON });
+    fireEvent.change(await screen.findByLabelText(/^Compose file in your repository/), { target: { value: '../x.yml' } });
+    fireEvent.click(screen.getByRole('button', { name: /save settings/i }));
+    expect(await screen.findByText(/inside your repository/i)).toBeInTheDocument();
+    expect(mockApi.put).not.toHaveBeenCalled();
+  });
+
+  it('offers the saved credentials for an https address, and choosing one is an unsaved change', async () => {
+    withCredentials();
+    setup({ enabled: true, repoUrl: 'https://github.com/o/shop.git', branch: 'main' });
+    const select = await screen.findByLabelText('Saved credential');
+    await screen.findByRole('option', { name: /GitHub PAT/ });
+    fireEvent.change(select, { target: { value: 'c1' } });
+    expect(screen.getByText(/you have unsaved changes/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /save settings/i }));
+    await waitFor(() => expect(mockApi.put).toHaveBeenCalledWith('/api/jit/p1/config', expect.objectContaining({ credentialResourceId: 'c1' })));
+  });
+
+  it('does not offer them for an SSH address', async () => {
+    withCredentials();
+    setup({ ...ON });
+    await screen.findByLabelText(/^Git address/);
+    expect(screen.queryByLabelText('Saved credential')).not.toBeInTheDocument();
+  });
+
+  it('forgets the chosen credential when the address stops being https', async () => {
+    withCredentials();
+    setup({ enabled: true, repoUrl: 'https://github.com/o/shop.git', branch: 'main', credentialResourceId: 'c1' });
+    await screen.findByLabelText('Saved credential');
+    fireEvent.change(screen.getByLabelText(/^Git address/), { target: { value: 'git@github.com:o/shop.git' } });
+    fireEvent.click(screen.getByRole('button', { name: /save settings/i }));
+    await waitFor(() => expect(mockApi.put).toHaveBeenCalledWith('/api/jit/p1/config', expect.objectContaining({ repoUrl: 'git@github.com:o/shop.git', credentialResourceId: null })));
+  });
+
+  it('chooses either a credential or a deploy key, never both', async () => {
+    withCredentials();
+    mockApi.post.mockImplementation(async (path: string) => {
+      if (path.endsWith('/git-access')) return { ok: false, usesDeployKey: false, message: 'Cannot reach the git repository.' } as never;
+      if (path.endsWith('/deploy-key')) return { publicKey: 'ssh-ed25519 AAAAexample deploy_shop@box', created: true, keyName: 'deploy_shop', hostLabel: 'GitHub', pageUrl: null, error: null } as never;
+      return {} as never;
+    });
+    setup({ enabled: true, repoUrl: 'https://github.com/o/shop.git', branch: 'main', credentialResourceId: 'c1' });
+    await screen.findByLabelText('Saved credential');
+    mockApi.post.mockImplementation(async (path: string) => {
+      if (path.endsWith('/git-access')) return { ok: false, usesDeployKey: false, message: 'Cannot reach the git repository.' } as never;
+      return { publicKey: 'ssh-ed25519 AAAAexample deploy_shop@box', created: true, keyName: 'deploy_shop', hostLabel: 'GitHub', pageUrl: null, error: null } as never;
+    });
+    fireEvent.click(screen.getByRole('button', { name: /check access/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /create a deploy key/i }));
+    await screen.findByText('ssh-ed25519 AAAAexample deploy_shop@box');
+    expect(screen.getByLabelText('Saved credential')).toHaveValue('');
+  });
+
+  it('uses the chosen credential when checking access and when looking for branches', async () => {
+    withCredentials();
+    setup({ enabled: true, repoUrl: 'https://github.com/o/shop.git', branch: 'main', credentialResourceId: 'c1' });
+    await screen.findByLabelText('Saved credential');
+    mockApi.post.mockImplementation(async (path: string) => {
+      if (path.endsWith('/git-access')) return { ok: true, usesDeployKey: false, message: 'The server can read your repository.' } as never;
+      return { branches: ['main'], defaultBranch: 'main', error: null } as never;
+    });
+    fireEvent.click(screen.getByRole('button', { name: /check access/i }));
+    await waitFor(() => expect(mockApi.post).toHaveBeenCalledWith('/api/jit/p1/git-access', { repoUrl: 'https://github.com/o/shop.git', useDeployKey: false, credentialId: 'c1' }));
+    fireEvent.click(screen.getByRole('button', { name: /find branches on the server/i }));
+    await waitFor(() => expect(mockApi.post).toHaveBeenCalledWith('/api/jit/p1/branches', { url: 'https://github.com/o/shop.git', credentialId: 'c1' }));
   });
 });
 

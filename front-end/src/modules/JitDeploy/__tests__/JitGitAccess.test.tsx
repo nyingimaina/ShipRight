@@ -68,6 +68,22 @@ describe('checking that the server can read the code', () => {
   });
 });
 
+describe('using a saved credential', () => {
+  it('sends the chosen credential with the check', async () => {
+    setup({ credentialId: 'c1' });
+    fireEvent.click(screen.getByRole('button', { name: /check access/i }));
+    await screen.findByText(/the server can read your repository/i);
+    expect(mockApi.post).toHaveBeenCalledWith('/api/jit/p1/git-access', { repoUrl: URL_, useDeployKey: false, credentialId: 'c1' });
+  });
+
+  it('sends nothing extra when there is none', async () => {
+    setup({ credentialId: null });
+    fireEvent.click(screen.getByRole('button', { name: /check access/i }));
+    await screen.findByText(/the server can read your repository/i);
+    expect(mockApi.post).toHaveBeenCalledWith('/api/jit/p1/git-access', { repoUrl: URL_, useDeployKey: false });
+  });
+});
+
 describe('making a deploy key', () => {
   async function failThenCreate() {
     access = { ok: false, usesDeployKey: false, message: 'Cannot reach the git repository.' };

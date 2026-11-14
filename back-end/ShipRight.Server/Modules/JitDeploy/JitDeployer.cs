@@ -15,7 +15,7 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
     private readonly JitDeployLock _locks = locks ?? JitDeployLock.Shared;
 
     public async Task<JitDeployResult> DeployAsync(JitDeployRequest request, Func<string, Task> onLine, CancellationToken ct = default) =>
-        Scrub(await DeployScrubbedAsync(request, Scrubbed(onLine), ct));
+        Scrub(await DeployScrubbedAsync(request, Scrubbed(onLine, request), ct), request);
 
     private async Task<JitDeployResult> DeployScrubbedAsync(JitDeployRequest request, Func<string, Task> onLine, CancellationToken ct)
     {
@@ -31,7 +31,7 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
 
     /// <summary>Finishes or undoes whatever a crashed or failed deploy left behind. Safe to run on a healthy server.</summary>
     public async Task<JitDeployResult> RecoverAsync(JitDeployRequest request, Func<string, Task> onLine, CancellationToken ct = default) =>
-        Scrub(await RecoverScrubbedAsync(request, Scrubbed(onLine), ct));
+        Scrub(await RecoverScrubbedAsync(request, Scrubbed(onLine, request), ct), request);
 
     private async Task<JitDeployResult> RecoverScrubbedAsync(JitDeployRequest request, Func<string, Task> onLine, CancellationToken ct)
     {
@@ -50,12 +50,18 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
     /// build. If it fails, the release that was running is put back and the one you tried is kept.
     /// </summary>
     public async Task<JitDeployResult> RollbackToAsync(JitDeployRequest request, string targetTag, Func<string, Task> onLine, CancellationToken ct = default) =>
-        Scrub(await RollbackToScrubbedAsync(request, targetTag, Scrubbed(onLine), ct));
+        Scrub(await RollbackToScrubbedAsync(request, targetTag, Scrubbed(onLine, request), ct), request);
 
     /// <summary>Whatever a server or a library says can contain a password or token; none of it may reach the log or the history.</summary>
-    private static Func<string, Task> Scrubbed(Func<string, Task> sink) => line => sink(GitAddressForms.Redact(line));
+    private static Func<string, Task> Scrubbed(Func<string, Task> sink, JitDeployRequest request) =>
+        line => sink(GitAddressForms.Redact(line, SecretsOf(request)));
 
-    private static JitDeployResult Scrub(JitDeployResult r) => r with { Message = GitAddressForms.Redact(r.Message) };
+    private static JitDeployResult Scrub(JitDeployResult r, JitDeployRequest request) =>
+        r with { Message = GitAddressForms.Redact(r.Message, SecretsOf(request)) };
+
+    /// <summary>Anything the deploy was given that must never be shown, whatever shape it has.</summary>
+    private static IReadOnlyCollection<string> SecretsOf(JitDeployRequest request) =>
+        request.GitCredential is { } g ? [g.Token] : [];
 
     private async Task<JitDeployResult> RollbackToScrubbedAsync(JitDeployRequest request, string targetTag, Func<string, Task> onLine, CancellationToken ct)
     {
@@ -80,13 +86,18 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
             throw new ArgumentException("A timeout or count in the settings is out of range.");
         if (r.Commit is null) JitNames.Branch(r.Branch); else JitNames.Sha(r.Commit);
 
-        var ctx = new ComposeContext(r.Target, r.Project, r.EnvFile);
+        var ctx = new ComposeContext(r.Target, r.Project, r.EnvFile, r.ComposeFile);
         var bindings = Bind(r.Services);
         const string dummy = "r1-0000000";
         JitCommands.CheckDisk(r.Target, s.MinFreeDiskMb);
         JitCommands.CheckGit(r.RepoUrl);
         JitCommands.SyncRepo(r.Target, r.RepoUrl);
         if (r.DeployKeyName is { } deployKey) JitDeployKey.GitSshPrefix(deployKey);
+        if (r.GitCredential is { } credential)
+        {
+            if (r.DeployKeyName is not null) throw new ArgumentException("Choose either a deploy key or a saved credential, not both.");
+            JitGitCredential.Wrap("true", credential);
+        }
         JitCommands.Build(ctx, r.Services.Select(x => x.Name).ToList(), bindings, dummy, s.BuildNice);
         JitCommands.StopService(ctx, r.Services[0].Name, s.StopGraceSeconds, bindings, dummy);
         JitCommands.RemoveImages(r.Services.Select(x => $"{x.ImageRef}:{dummy}"));
@@ -114,7 +125,7 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
         {
             _ssh = ssh; _clock = clock; _req = req; _log = log;
             _t = req.Target;
-            _ctx = new ComposeContext(req.Target, req.Project, req.EnvFile);
+            _ctx = new ComposeContext(req.Target, req.Project, req.EnvFile, req.ComposeFile);
             _bindings = Bind(req.Services);
             _store = new ReleaseStateStore(ssh);
             _s = req.Settings;
@@ -123,7 +134,10 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
         private Task Say(string message) => _log("[deploy] " + message);
 
         /// <summary>Commands that reach the git host use the deploy key when one is set; nothing else is touched.</summary>
-        private string WithKey(string command) => _req.DeployKeyName is { } key ? JitDeployKey.GitSshPrefix(key) + command : command;
+        private string WithKey(string command) =>
+            _req.GitCredential is { } secret ? JitGitCredential.Wrap(command, secret)
+            : _req.DeployKeyName is { } key ? JitDeployKey.GitSshPrefix(key) + command
+            : command;
 
         private static JitDeployResult Failed(string message) => new(JitOutcome.FailedBeforeChange, message);
 

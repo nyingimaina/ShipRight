@@ -71,6 +71,14 @@ public static class GitAddressForms
     public static string Redact(string? text) =>
         string.IsNullOrEmpty(text) ? string.Empty : TokenShapes.Replace(UserInfo.Replace(text, "${scheme}***@"), "***");
 
+    /// <summary>Also hides each given secret wherever it appears, whatever shape it has.</summary>
+    public static string Redact(string? text, IReadOnlyCollection<string> secrets)
+    {
+        var t = Redact(text);
+        foreach (var s in secrets.Where(x => x.Length >= 8)) t = t.Replace(s, "***", StringComparison.Ordinal);
+        return t;
+    }
+
     private static GitAddressForm Plain(string s) => new(s, null, null, false, s.ToLowerInvariant());
 
     private static bool IsUnusualHost(string host) =>

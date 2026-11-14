@@ -62,7 +62,7 @@ public static class JitDeployKey
 
 public sealed record DeployKeyRequest(string? RepoUrl);
 
-public sealed record GitAccessRequest(string? RepoUrl, bool UseDeployKey);
+public sealed record GitAccessRequest(string? RepoUrl, bool UseDeployKey, Guid? CredentialId = null);
 
 /// <summary>
 /// Endpoints behind the "give the server access to your code" panel: check that the server can read the repository, and make
@@ -75,8 +75,8 @@ public static class JitDeployKeyRoutes
     {
         app.MapPost("/api/jit/{id}/deploy-key", (string id, DeployKeyRequest req, IProjectStore projects, IJitConfigStore configs, ISshRunner ssh) =>
             HandleCreateKeyAsync(id, req, projects, configs, ssh));
-        app.MapPost("/api/jit/{id}/git-access", (string id, GitAccessRequest req, IProjectStore projects, IJitConfigStore configs, ISshRunner ssh) =>
-            HandleGitAccessAsync(id, req, projects, configs, ssh));
+        app.MapPost("/api/jit/{id}/git-access", (string id, GitAccessRequest req, IProjectStore projects, IJitConfigStore configs, ISshRunner ssh, ShipRight.Modules.Resources.Stores.ICredentialResourceStore credentials) =>
+            HandleGitAccessAsync(id, req, projects, configs, ssh, credentials));
     }
 
     private static object Err(string message) => ProjectRouter.Error(message, null);
@@ -125,7 +125,8 @@ public static class JitDeployKeyRoutes
         static IResult Failure(string message) => Results.Ok(new { publicKey = (string?)null, created = false, keyName = (string?)null, hostLabel = "", pageUrl = (string?)null, error = message });
     }
 
-    internal static async Task<IResult> HandleGitAccessAsync(string id, GitAccessRequest req, IProjectStore projects, IJitConfigStore configs, ISshRunner ssh)
+    internal static async Task<IResult> HandleGitAccessAsync(string id, GitAccessRequest req, IProjectStore projects, IJitConfigStore configs, ISshRunner ssh,
+        ShipRight.Modules.Resources.Stores.ICredentialResourceStore? credentials = null)
     {
         var project = await projects.GetByIdAsync(id);
         if (project is null) return Results.NotFound(Err($"Project '{id}' not found."));
@@ -144,7 +145,14 @@ public static class JitDeployKeyRoutes
 
         var target = JitDeployMapper.TargetOf(project);
         if (target is null) return Results.BadRequest(Err(NoServer));
-        if (req.UseDeployKey)
+        if (req.CredentialId is { } credentialId)
+        {
+            if (req.UseDeployKey) return Results.BadRequest(Err("Choose either a deploy key or a saved credential, not both."));
+            var (secret, credentialProblem) = await JitCredentialResolver.ResolveAsync(credentialId, req.RepoUrl.Trim(), credentials, id);
+            if (credentialProblem is not null) return Results.BadRequest(Err(credentialProblem));
+            command = JitGitCredential.Wrap(command, secret!);
+        }
+        else if (req.UseDeployKey)
         {
             var (_, stack) = await StackOf(project, id, configs);
             command = JitDeployKey.GitSshPrefix(JitDeployKey.KeyName(stack)) + command;

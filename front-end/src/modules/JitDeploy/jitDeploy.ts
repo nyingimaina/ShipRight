@@ -20,6 +20,10 @@ export interface JitConfig {
   buildNice: number | null;
   /** Read the repository with a key made on the server (never a password or token). */
   useDeployKey: boolean;
+  /** A saved access token (Resources, then Credentials) for reading a private https repository. Never part of the address. */
+  credentialResourceId: string | null;
+  /** The compose file inside the repository. Empty = the usual file in its top folder. */
+  composeFile: string;
   dependentChoices: JitDependentChoice[];
 }
 
@@ -36,6 +40,8 @@ export const DEFAULT_JIT_CONFIG: JitConfig = {
   minFreeDiskMb: 3000,
   buildNice: null,
   useDeployKey: false,
+  credentialResourceId: null,
+  composeFile: '',
   dependentChoices: [],
 };
 
@@ -109,6 +115,14 @@ export function validateJitConfig(c: JitConfig): Record<string, string> {
   } else if (!BRANCH.test(c.branch) || c.branch.includes('..') || c.branch.includes('//') || c.branch.endsWith('/') || c.branch.endsWith('.lock')) {
     e.branch = 'That branch name is not valid. Use letters, digits and / . _ - only.';
   }
+
+  const file = c.composeFile.trim();
+  if (file && (!/^[A-Za-z0-9._][A-Za-z0-9._/-]*\.(yml|yaml)$/.test(file) || file.split('/').some(p => p === '' || p === '..')))
+    e.composeFile = 'Give a path inside your repository ending in .yml or .yaml, for example deploy/docker-compose.yml (or leave it empty).';
+
+  if (c.credentialResourceId && c.useDeployKey) e.credentialResourceId = 'Choose either a deploy key or a saved credential, not both.';
+  else if (c.credentialResourceId && c.repoUrl.trim() && !/^https:\/\//i.test(c.repoUrl.trim()))
+    e.credentialResourceId = 'A saved credential only works with an https address. Use the SSH form with a deploy key instead.';
 
   if (c.composeProject.trim() && !PROJECT.test(c.composeProject))
     e.composeProject = 'Use lower-case letters, digits, _ and - only (or leave it empty).';

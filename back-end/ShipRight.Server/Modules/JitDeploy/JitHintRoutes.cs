@@ -5,7 +5,7 @@ using ShipRight.Shared.SshRunner;
 
 namespace ShipRight.Modules.JitDeploy;
 
-public sealed record BranchesRequest(string? Url);
+public sealed record BranchesRequest(string? Url, Guid? CredentialId = null);
 
 /// <summary>
 /// Endpoints that let the build-on-server card offer what is already known (git addresses, branch, env file, existing
@@ -20,8 +20,8 @@ public static class JitHintRoutes
             HandleHintsAsync(id, projects, runner));
         app.MapGet("/api/jit/{id}/stacks", (string id, IProjectStore projects, IJitConfigStore configs, ISshRunner ssh) =>
             HandleStacksAsync(id, projects, configs, ssh));
-        app.MapPost("/api/jit/{id}/branches", (string id, BranchesRequest req, IProjectStore projects, ISshRunner ssh) =>
-            HandleBranchesAsync(id, req, projects, ssh));
+        app.MapPost("/api/jit/{id}/branches", (string id, BranchesRequest req, IProjectStore projects, ISshRunner ssh, ShipRight.Modules.Resources.Stores.ICredentialResourceStore credentials) =>
+            HandleBranchesAsync(id, req, projects, ssh, credentials));
     }
 
     private static object Err(string message) => ProjectRouter.Error(message, null);
@@ -66,7 +66,8 @@ public static class JitHintRoutes
         });
     }
 
-    internal static async Task<IResult> HandleBranchesAsync(string id, BranchesRequest req, IProjectStore projects, ISshRunner ssh)
+    internal static async Task<IResult> HandleBranchesAsync(string id, BranchesRequest req, IProjectStore projects, ISshRunner ssh,
+        ShipRight.Modules.Resources.Stores.ICredentialResourceStore? credentials = null)
     {
         var project = await projects.GetByIdAsync(id);
         if (project is null) return Results.NotFound(Err($"Project '{id}' not found."));
@@ -84,6 +85,13 @@ public static class JitHintRoutes
 
         var target = JitDeployMapper.TargetOf(project);
         if (target is null) return Results.BadRequest(Err(NoServer));
+
+        if (req.CredentialId is { } credentialId)
+        {
+            var (secret, why) = await JitCredentialResolver.ResolveAsync(credentialId, req.Url!.Trim(), credentials, id);
+            if (why is not null) return Results.BadRequest(Err(why));
+            command = JitGitCredential.Wrap(command, secret!);
+        }
 
         var (exit, lines, failed) = await RunAsync(ssh, target, command);
         if (failed)

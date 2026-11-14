@@ -52,6 +52,7 @@ public static class JitDeployMapper
             Branch = cfg.Branch,
             Commit = string.IsNullOrWhiteSpace(commit) ? null : commit,
             EnvFile = string.IsNullOrWhiteSpace(cfg.EnvFile) ? null : cfg.EnvFile,
+            ComposeFile = string.IsNullOrWhiteSpace(cfg.ComposeFile) ? null : cfg.ComposeFile.Trim(),
             DeployKeyName = cfg.UseDeployKey ? JitDeployKey.KeyName(ComposeProjectName(project, cfg)) : null,
             Services = services,
             Force = force,

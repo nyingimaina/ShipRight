@@ -406,3 +406,22 @@ missing, in the user's `~/.ssh`, named `deploy_<stack>`) and returns the public 
 GitLab and Bitbucket. The setting `UseDeployKey` makes the deploy's git commands (the access check and the sync) run with
 `GIT_SSH_COMMAND` pointing at that key, with `IdentitiesOnly`, `BatchMode` and `StrictHostKeyChecking=accept-new`; nothing else is
 touched and nothing on the server names the deployer. No password or token is involved and nothing but the public key leaves the server.
+
+### Saved credentials and the compose file path
+- **Saved credential (personal access token).** For a private **https** repository the card can use a token already saved under
+  Resources, Credentials. The token is never part of an address, a saved remote, the settings, a log or a message. For each git
+  command that reaches the host (the access check, the branch list, the sync) it is written into a helper file in a private
+  temporary folder (`mktemp -d`, mode 700, helper mode 700), git asks the helper for it through `GIT_ASKPASS`, git's own credential
+  helpers are switched off for the command (`GIT_CONFIG_COUNT/KEY_0/VALUE_0`), and the folder is removed when the command ends,
+  however it ends (`trap ... EXIT`). Tokens may only contain ordinary token characters, so quoting cannot go wrong. The exact token is
+  also scrubbed from every log line and message, whatever its shape. A credential and a deploy key cannot both be chosen, and a
+  credential needs an https address. **Cost, stated on screen:** while the command runs the token is in the command sent to the server
+  and in that file, so anyone with administrator access to the server could see it then; a deploy key avoids that. The user name is
+  `token` (`pat` for Azure DevOps); hosts that need the real account name (for example Bitbucket app passwords) are not covered yet.
+- **Endpoints:** `GET /api/jit/{id}/credentials` lists names only (credentials that are global or belong to this project);
+  `git-access` and `branches` accept `credentialId`.
+- **Compose file path.** The setting `ComposeFile` names the compose file inside the repository (for example
+  `deploy/docker-compose.yml`); empty keeps the usual file in the top folder. Every compose command gets `-f '<path>'` after the stack
+  name. The path must be relative, end in `.yml` or `.yaml`, and contain no `..` or empty parts. Relative `build.context` paths in that
+  file resolve from the file's own folder, as compose always does. One repository still has to hold the compose file and the code
+  of every service.

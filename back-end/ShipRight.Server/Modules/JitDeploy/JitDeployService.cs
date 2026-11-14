@@ -25,7 +25,7 @@ public sealed record JitReleasesView(
 /// </summary>
 public sealed class JitDeployService(
     IProjectStore projects, IJitConfigStore configs, IBuildStore builds, BuildEventBus bus,
-    ISshRunner ssh, IJitClock clock, JitDeployLock? locks = null)
+    ISshRunner ssh, IJitClock clock, JitDeployLock? locks = null, ShipRight.Modules.Resources.Stores.ICredentialResourceStore? credentials = null)
 {
     private readonly JitDeployer _deployer = new(ssh, clock, locks);
 
@@ -58,6 +58,9 @@ public sealed class JitDeployService(
 
         var map = JitDeployMapper.Map(project, cfg, options.Commit, options.Force, options.AllowWithoutRollback);
         if (!map.Ok) return new(null, string.Join(" ", map.Problems), null);
+        var (withCredential, credentialError) = await JitCredentialResolver.ApplyAsync(map.Request!, cfg, credentials, projectId);
+        if (credentialError is not null) return new(null, credentialError, null);
+        var request = withCredential!;
 
         var record = new BuildRecord
         {
@@ -67,7 +70,7 @@ public sealed class JitDeployService(
             Initiator = initiator,
             IsRollback = isRollback,
             GitTag = rollbackTag ?? string.Empty,
-            Versions = map.Request!.Services.Select(s => new ServiceVersion
+            Versions = request.Services.Select(s => new ServiceVersion
             {
                 ServiceName = s.Name, DockerImageName = s.ImageRef, NewVersion = rollbackTag ?? string.Empty,
             }).ToList(),
@@ -75,7 +78,7 @@ public sealed class JitDeployService(
         await builds.SaveAsync(record);
         bus.Register(record.Id);
 
-        var completion = Task.Run(() => ExecuteAsync(record, map.Request!, action));
+        var completion = Task.Run(() => ExecuteAsync(record, request, action));
         return new(record, null, completion);
     }
 
@@ -151,7 +154,8 @@ public sealed class JitDeployService(
         {
             var cfg = await configs.GetAsync(projectId) ?? new JitDeployConfig();
             var services = JitDeployMapper.Services(project);
-            var ctx = new ComposeContext(target, JitDeployMapper.ComposeProjectName(project, cfg), string.IsNullOrWhiteSpace(cfg.EnvFile) ? null : cfg.EnvFile);
+            var ctx = new ComposeContext(target, JitDeployMapper.ComposeProjectName(project, cfg), string.IsNullOrWhiteSpace(cfg.EnvFile) ? null : cfg.EnvFile,
+                string.IsNullOrWhiteSpace(cfg.ComposeFile) ? null : cfg.ComposeFile.Trim());
             var bindings = services.Select(s => new TagBinding(s.TagVariable, s.ImageRef)).ToList();
 
             var lines = new List<string>();
