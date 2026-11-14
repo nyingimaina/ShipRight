@@ -7,6 +7,7 @@ import AppShell from '@/modules/AppShell/AppShell';
 import OverflowMenu from 'jattac.libs.web.overflow-menu';
 import ZestButton from 'jattac.libs.web.zest-button';
 import ProjectPane from '@/modules/ProjectConfig/QuickSetup/ProjectPane';
+import AdoptLauncher from '@/modules/AdoptSetup/AdoptLauncher';
 import ProjectDetailPanel from '@/modules/ProjectDetail/ProjectDetailPanel';
 import ImportProjectDialog from '@/modules/ProjectTransfer/ImportProjectDialog';
 import { exportProject } from '@/modules/ProjectTransfer/exportProject';
@@ -99,6 +100,7 @@ export default function ProjectList() {
           <div className={styles.header}>
             <h1 className={styles.heading}>Projects</h1>
             <div style={{ display: 'flex', gap: 8 }}>
+              <AdoptLauncher onSaved={load} />
               <ZestButton onClick={() => setImportOpen(true)} zest={{ buttonStyle: 'outline' }}>
                 Import
               </ZestButton>

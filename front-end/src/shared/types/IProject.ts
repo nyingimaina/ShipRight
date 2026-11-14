@@ -12,6 +12,12 @@ export interface IServiceConfig {
   imageRetentionCount?: number;
   localImageKeepCount?: number;
   skipLocalCleanup?: boolean;
+  /** Which Dockerfile builds it (relative to the build context). Empty = the file named Dockerfile, as always. */
+  dockerfilePath?: string;
+  /** Which stage of a multi-stage Dockerfile to build. */
+  buildTarget?: string;
+  /** Docker build arguments (NAME to value). */
+  buildArgs?: Record<string, string>;
 }
 
 export interface IGitConfig {
