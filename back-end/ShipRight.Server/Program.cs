@@ -20,6 +20,7 @@ using ShipRight.Modules.Database;
 using ShipRight.Modules.Database.Providers;
 using ShipRight.Modules.Filesystem;
 using ShipRight.Modules.Identity;
+using ShipRight.Modules.JitDeploy;
 using ShipRight.Modules.Projects;
 using ShipRight.Modules.RepoMaintenance;
 using ShipRight.Modules.RemoteHost;
@@ -196,6 +197,10 @@ try
     app.MapProjectBuildSourceRoutes();
     app.MapProjectLocalCleanupRoutes();
     app.MapProjectSpaceRoutes();
+    if (!cloudMode)
+    {
+        app.MapJitDeployRoutes();   // build-on-server deploys: their own paths, off unless a project turns them on
+    }
     app.MapProjectBundleRoutes();
     app.MapProjectSummaryRoutes();
     app.MapBuildRoutes();
@@ -319,6 +324,10 @@ static void RegisterDesktopServices(IServiceCollection services, string dataDir)
     // Builds in place unless a project opts into clean-snapshot builds (see SnapshotBuildOrchestrator).
     services.AddSingleton<BuildOrchestrator, FailureCleaningBuildOrchestrator>();
     services.AddSingleton<ComposeRepoService>();
+    // Build-on-server deploys (opt-in per project; stored apart from the project so nothing about it changes).
+    services.AddSingleton<IJitConfigStore>(_ => new JsonJitConfigStore(dataDir));
+    services.AddSingleton<IJitClock, SystemJitClock>();
+    services.AddSingleton<JitDeployService>();
     services.AddSingleton<MariaDbProvider>();
     services.AddSingleton<SqlServerProvider>();
     services.AddSingleton<IDbProviderResolver>(sp => new DbProviderResolver(
