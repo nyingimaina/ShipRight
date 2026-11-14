@@ -61,7 +61,7 @@ public class ShellSyntaxTests
             ["CheckDisk"] = JitCommands.CheckDisk(Target, 3000),
             ["CheckGit"] = JitCommands.CheckGit("git@github.com:o/r.git"),
             ["EnsureImagesExist"] = JitCommands.EnsureImagesExist(["shop/api:r41-aaaaaaa", "shop/web:r41-aaaaaaa"]),
-            ["SyncRepo"] = JitCommands.SyncRepo(Target, "https://user:tok@github.com/o/r.git"),
+            ["SyncRepo"] = JitCommands.SyncRepo(Target, "https://github.com/o/r.git"),
             ["ResolveBranch"] = JitCommands.ResolveBranch(Target, "release/1.2"),
             ["ResolveCommit"] = JitCommands.ResolveCommit(Target, "ab8b4a9"),
             ["Checkout"] = JitCommands.Checkout(Target, "ab8b4a9f3c1d2e5f6a7b8c9d0e1f2a3b4c5d6e7f"),

@@ -58,11 +58,11 @@ public class JitCommandsTests
     [TestMethod]
     public void CheckGit_TriesTheRemoteWithATimeout_AndNeverEchoesTheUrl()
     {
-        var url = "https://user:secret-token@github.com/o/r.git";
+        var url = "git@github.com:secret-org/r.git";
         var c = JitCommands.CheckGit(url);
-        StringAssert.Contains(c, "timeout 30 git ls-remote --heads -- 'https://user:secret-token@github.com/o/r.git'");
+        StringAssert.Contains(c, "timeout 30 git ls-remote --heads -- 'git@github.com:secret-org/r.git'");
         var echoed = c[(c.IndexOf("||", StringComparison.Ordinal))..];
-        Assert.IsFalse(echoed.Contains("secret-token"), "the failure message must not leak credentials");
+        Assert.IsFalse(echoed.Contains("secret-org"), "the failure message must not repeat the address");
         StringAssert.Contains(c, "[preflight]");
         AssertSafe(c);
     }

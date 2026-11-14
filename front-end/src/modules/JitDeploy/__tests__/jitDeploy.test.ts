@@ -21,6 +21,20 @@ describe('validateJitConfig', () => {
     expect(validateJitConfig(valid())).toEqual({});
   });
 
+  it('refuses an address with a password or token in it, without repeating it', () => {
+    for (const url of ['https://me:ghp_secret@github.com/o/r.git', 'https://ghp_tok@github.com/o/r.git', 'ssh://git:hunter2@host/o/r.git']) {
+      const e = validateJitConfig(valid({ repoUrl: url }));
+      expect(e.repoUrl).toMatch(/password or token/i);
+      expect(e.repoUrl).toMatch(/deploy key/i);
+      expect(e.repoUrl).not.toMatch(/ghp_|hunter2|me:/);
+    }
+  });
+
+  it('accepts ordinary addresses', () => {
+    for (const url of ['git@github.com:o/r.git', 'https://github.com/o/r.git', 'ssh://git@host/o/r.git'])
+      expect(validateJitConfig(valid({ repoUrl: url })).repoUrl).toBeUndefined();
+  });
+
   it('lets a switched-off configuration be incomplete', () => {
     expect(validateJitConfig(DEFAULT_JIT_CONFIG)).toEqual({});
   });

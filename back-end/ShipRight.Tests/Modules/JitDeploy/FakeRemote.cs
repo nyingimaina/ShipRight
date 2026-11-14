@@ -46,6 +46,8 @@ public sealed class FakeRemote : ISshRunner
     public bool SyncOk { get; set; } = true;
     public bool BuildOk { get; set; } = true;
     public bool KeepImagesAfterBuild { get; set; } = true;
+    public string[]? SyncFailureLines { get; set; }
+    public string[]? ExtraBuildLines { get; set; }
     public bool FailStateWrite { get; set; }
     public bool ConfigFails { get; set; }
     public Dictionary<string, string> Branches { get; } = new() { ["master"] = Sha1 };
@@ -156,7 +158,7 @@ public sealed class FakeRemote : ISshRunner
         if (cmd.Contains("git clone") || cmd.Contains("fetch --prune"))
         {
             Events.Add("sync");
-            return SyncOk ? Ok() : Fail("fatal: unable to access the repository");
+            return SyncOk ? Ok() : Fail(SyncFailureLines ?? ["fatal: unable to access the repository"]);
         }
         if (cmd.Contains("refs/remotes/origin/"))
         {
@@ -197,7 +199,7 @@ public sealed class FakeRemote : ISshRunner
                     var r = Tags(cmd).GetValueOrDefault(svc.Var ?? "");
                     if (r is not null) Images.Add(r);
                 }
-            return Ok("#1 building...", "#9 naming to image done");
+            return Ok(new[] { "#1 building..." }.Concat(ExtraBuildLines ?? []).Append("#9 naming to image done").ToArray());
         }
         if (cmd.Contains(" stop -t "))
         {

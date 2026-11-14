@@ -377,3 +377,24 @@ Linux host) is not done: everything was verified against a pretend server and a 
 8. Fill the disk below the minimum: the deploy refuses before touching anything.
 9. Confirm `docker image ls` after several deploys keeps only the configured number of releases.
 10. Confirm no container, image, label or file on the server mentions ShipRight.
+
+### Offering what is already known (step 1 of the follow-up plan)
+The card no longer asks for things ShipRight already has. All three endpoints only read, and the server's connection always comes from the stored project.
+
+| Method and path | Purpose |
+|---|---|
+| `GET /api/jit/{id}/hints` | the project's git addresses (each repo's `origin`, in SSH and HTTPS form, never with a password or token), its deploy branch, its env file and its default stack name |
+| `GET /api/jit/{id}/stacks` | the compose stacks already running on the server; warns about a second copy (same project folder, different name) and about relative paths moving when a same-named stack is adopted from another folder |
+| `POST /api/jit/{id}/branches` | `{url}`: the repository's real branches as the server sees them (needs the server to have access); refuses addresses carrying a secret |
+
+On the card: a dropdown of known addresses (both forms, saying what each needs), a branch list with "Find branches on the server", the env file from the server settings, and existing stacks with a "take over" button. Turning the mode on for a never-configured project fills the empty fields from what is known (SSH form preferred; never a guess when there are several repositories). Nothing is looked up while the mode is off.
+
+Still to do from that discussion: scrub addresses and tokens from sync logs and never save a token in the server's git remote; the deploy-key wizard step; "send from this computer"; per-service build recipes; rebuild only what changed.
+
+### Secrets (step 2 of the follow-up plan)
+- A git address carrying a password or token (`https://user:token@host/...`, `ssh://git:pw@host/...`) is refused everywhere: saving the settings (server and screen), every command, and every deploy, recover and roll back. The message never repeats it. Deploy keys (SSH form) are the supported way for a server to read a private repository.
+- A setting saved before this rule that holds a secret blocks the deploy with a plain message, and the settings screen is sent the address with the secret removed.
+- The server's saved git remote is rewritten to the clean address on every sync, so a token can never persist in `.git/config`.
+- Every line of the live log and every final message passes through `GitAddressForms.Redact`, which hides `scheme://user:secret@` and well-known token shapes (GitHub `ghp_`/`github_pat_`, GitLab `glpat-`, AWS `AKIA...`) wherever they appear, including in git or build output.
+- If personal access tokens are ever wanted for the server-side clone, the safe design is a temporary `chmod 600` credential file removed right after the clone, never an address or a saved remote.
+- Not covered: other ShipRight modules (for example the compose repo's clone address) have their own logging and were not changed.

@@ -51,6 +51,8 @@ public static class JitNames
 
     public static string RepoUrl(string v)
     {
+        if (!string.IsNullOrEmpty(v) && GitAddressForms.Analyse(v).HadCredentials)
+            throw new ArgumentException("The git address contains a password or token. ShipRight does not keep secrets inside an address. Use the SSH form (git@host:owner/repo.git) with a deploy key.");
         var ok = !string.IsNullOrEmpty(v) && !v.StartsWith('-') && !v.Contains("::")
                  && !v.Any(c => char.IsControl(c) || char.IsWhiteSpace(c));
         return Check(ok, v, "git address", "an ordinary git URL without spaces or control characters, not starting with '-'");

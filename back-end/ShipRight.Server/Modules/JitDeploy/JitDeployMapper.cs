@@ -24,6 +24,8 @@ public static class JitDeployMapper
             problems.Add("Choose the server this project deploys to (its address, user, SSH key and folder).");
         if (string.IsNullOrWhiteSpace(cfg.RepoUrl))
             problems.Add("Enter the git address the server should fetch your code from.");
+        else if (GitAddressForms.Analyse(cfg.RepoUrl).HadCredentials)
+            problems.Add("The saved git address contains a password or token. ShipRight does not keep secrets inside an address. Use the SSH form (git@host:owner/repo.git) with a deploy key.");
         if (project.Services.Count == 0)
             problems.Add("This project has no services to deploy.");
 

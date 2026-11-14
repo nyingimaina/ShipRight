@@ -14,7 +14,10 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
 {
     private readonly JitDeployLock _locks = locks ?? JitDeployLock.Shared;
 
-    public async Task<JitDeployResult> DeployAsync(JitDeployRequest request, Func<string, Task> onLine, CancellationToken ct = default)
+    public async Task<JitDeployResult> DeployAsync(JitDeployRequest request, Func<string, Task> onLine, CancellationToken ct = default) =>
+        Scrub(await DeployScrubbedAsync(request, Scrubbed(onLine), ct));
+
+    private async Task<JitDeployResult> DeployScrubbedAsync(JitDeployRequest request, Func<string, Task> onLine, CancellationToken ct)
     {
         try { Validate(request); }
         catch (ArgumentException ex) { return new(JitOutcome.FailedBeforeChange, $"The deploy settings are not valid: {ex.Message}"); }
@@ -27,7 +30,10 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
     }
 
     /// <summary>Finishes or undoes whatever a crashed or failed deploy left behind. Safe to run on a healthy server.</summary>
-    public async Task<JitDeployResult> RecoverAsync(JitDeployRequest request, Func<string, Task> onLine, CancellationToken ct = default)
+    public async Task<JitDeployResult> RecoverAsync(JitDeployRequest request, Func<string, Task> onLine, CancellationToken ct = default) =>
+        Scrub(await RecoverScrubbedAsync(request, Scrubbed(onLine), ct));
+
+    private async Task<JitDeployResult> RecoverScrubbedAsync(JitDeployRequest request, Func<string, Task> onLine, CancellationToken ct)
     {
         try { Validate(request); }
         catch (ArgumentException ex) { return new(JitOutcome.FailedBeforeChange, $"The deploy settings are not valid: {ex.Message}"); }
@@ -43,7 +49,15 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
     /// Goes back to a release still kept on the server, on purpose: the same all-or-nothing swap as a deploy, with no
     /// build. If it fails, the release that was running is put back and the one you tried is kept.
     /// </summary>
-    public async Task<JitDeployResult> RollbackToAsync(JitDeployRequest request, string targetTag, Func<string, Task> onLine, CancellationToken ct = default)
+    public async Task<JitDeployResult> RollbackToAsync(JitDeployRequest request, string targetTag, Func<string, Task> onLine, CancellationToken ct = default) =>
+        Scrub(await RollbackToScrubbedAsync(request, targetTag, Scrubbed(onLine), ct));
+
+    /// <summary>Whatever a server or a library says can contain a password or token; none of it may reach the log or the history.</summary>
+    private static Func<string, Task> Scrubbed(Func<string, Task> sink) => line => sink(GitAddressForms.Redact(line));
+
+    private static JitDeployResult Scrub(JitDeployResult r) => r with { Message = GitAddressForms.Redact(r.Message) };
+
+    private async Task<JitDeployResult> RollbackToScrubbedAsync(JitDeployRequest request, string targetTag, Func<string, Task> onLine, CancellationToken ct)
     {
         try { Validate(request); }
         catch (ArgumentException ex) { return new(JitOutcome.FailedBeforeChange, $"The deploy settings are not valid: {ex.Message}"); }

@@ -6,6 +6,9 @@ import {
   DEFAULT_JIT_CONFIG, JitConfig, JitConfigResponse, JitDependents, JitReleases, JitServiceHint,
   describeAge, phaseSummary, setDependentChoice, shortSha, validateJitConfig,
 } from './jitDeploy';
+import {
+  addressOptions, addressWarning, branchAfterPick, defaultBranchSuggestion, JitBranchesResponse, JitHintsResponse, JitStacksResponse, prefillPatch,
+} from './jitHints';
 
 interface Props {
   projectId: string;
@@ -57,6 +60,14 @@ export default function JitDeployCard({ projectId }: Props) {
   const [advanced, setAdvanced] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // What ShipRight already knows (offered instead of asked). All of it is optional: the card works without it.
+  const [hints, setHints] = useState<JitHintsResponse | null>(null);
+  const [stacks, setStacks] = useState<JitStacksResponse | null>(null);
+  const [branchList, setBranchList] = useState<JitBranchesResponse | null>(null);
+  const [findingBranches, setFindingBranches] = useState(false);
+  const prefillPending = useRef(false);
+  const savedRef = useRef<JitConfig>(DEFAULT_JIT_CONFIG);
+
   const [releases, setReleases] = useState<JitReleases | null>(null);
   const [dependents, setDependents] = useState<JitDependents | null>(null);
 
@@ -106,6 +117,56 @@ export default function JitDeployCard({ projectId }: Props) {
     })();
     return () => { cancelled = true; };
   }, [loadConfig, loadServer]);
+
+  savedRef.current = saved;
+
+  // Only looked up once building on the server is switched on, so a project that is off is left completely alone.
+  useEffect(() => {
+    if (!loaded || unavailable || !cfg.enabled) return;
+    let cancelled = false;
+    api.get<JitHintsResponse>(`${base}/hints`)
+      .then(h => { if (!cancelled) setHints(h); })
+      .catch(() => { if (!cancelled) setHints(null); });
+    return () => { cancelled = true; };
+  }, [loaded, unavailable, cfg.enabled, base]);
+
+  // Right after the person switches it on, fill the empty fields from what is known (as soon as it is known).
+  useEffect(() => {
+    if (!prefillPending.current || !hints) return;
+    prefillPending.current = false;
+    setCfg(c => ({ ...c, ...prefillPatch(c, savedRef.current, hints) }));
+  }, [hints, cfg.enabled]);
+
+  useEffect(() => {
+    if (!loaded || unavailable || !saved.enabled) { setStacks(null); return; }
+    let cancelled = false;
+    api.get<JitStacksResponse>(`${base}/stacks`)
+      .then(r => { if (!cancelled) setStacks(r); })
+      .catch(() => { if (!cancelled) setStacks(null); });
+    return () => { cancelled = true; };
+  }, [loaded, unavailable, saved.enabled, saved.composeProject, base]);
+
+  const toggleEnabled = (on: boolean) => {
+    if (on && !cfg.enabled) prefillPending.current = true;
+    set('enabled', on);
+  };
+
+  const pickAddress = (value: string) => {
+    const picked = addressOptions(hints).find(o => o.value === value);
+    setCfg(c => ({ ...c, repoUrl: value, ...branchAfterPick(c, picked) }));
+    setBranchList(null);
+  };
+
+  const findBranches = async () => {
+    setFindingBranches(true);
+    try {
+      setBranchList(await api.post<JitBranchesResponse>(`${base}/branches`, { url: cfg.repoUrl }));
+    } catch (e) {
+      setBranchList({ branches: [], defaultBranch: null, error: (e as { message?: string })?.message ?? 'Could not read the branches.' });
+    } finally {
+      setFindingBranches(false);
+    }
+  };
 
   const set = <K extends keyof JitConfig>(key: K, value: JitConfig[K]) => setCfg(c => ({ ...c, [key]: value }));
   const num = (key: 'releasesToKeep' | 'stopGraceSeconds' | 'healthTimeoutSeconds' | 'settleSeconds' | 'minFreeDiskMb') =>
@@ -186,7 +247,7 @@ export default function JitDeployCard({ projectId }: Props) {
           type="checkbox"
           aria-label="Build on the server instead of pushing to a registry"
           checked={cfg.enabled}
-          onChange={e => set('enabled', e.target.checked)}
+          onChange={e => toggleEnabled(e.target.checked)}
           style={{ accentColor: 'var(--accent)', width: 16, height: 16 }}
         />
         <span>Build on the server instead of pushing to a registry</span>
@@ -200,23 +261,69 @@ export default function JitDeployCard({ projectId }: Props) {
         <>
           <Field id="jit-repo" label="Git address" error={errors.repoUrl}
             tip={'The address the server uses to download your code.\nOn GitHub: open your repository, click the green Code button, choose SSH and copy the address.\nThe server needs permission to read it (a deploy key).'}>
-            <input id="jit-repo" style={input} value={cfg.repoUrl} placeholder="git@github.com:you/your-app.git"
-              onChange={e => set('repoUrl', e.target.value)} />
+            <>
+              {addressOptions(hints).length > 0 && (
+                <select aria-label="Addresses ShipRight already knows" style={input} value="" onChange={e => { if (e.target.value) pickAddress(e.target.value); }}>
+                  <option value="">Pick an address ShipRight already knows…</option>
+                  {addressOptions(hints).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              )}
+              <input id="jit-repo" style={input} value={cfg.repoUrl} placeholder="git@github.com:you/your-app.git"
+                onChange={e => { set('repoUrl', e.target.value); setBranchList(null); }} />
+              {addressWarning(cfg.repoUrl) && <span style={err}>{addressWarning(cfg.repoUrl)}</span>}
+              {hints?.notes.map(n => <span key={n} style={muted}>{n}</span>)}
+            </>
           </Field>
 
           <Field id="jit-branch" label="Branch" error={errors.branch}
             tip={'Which branch to deploy. Whatever is newest on this branch when you press Deploy is what goes live. Usually master or main.'}>
-            <input id="jit-branch" style={input} value={cfg.branch} onChange={e => set('branch', e.target.value)} />
+            <>
+              <input id="jit-branch" style={input} value={cfg.branch} list="jit-branches" onChange={e => set('branch', e.target.value)} />
+              <datalist id="jit-branches">{branchList?.branches.map(b => <option key={b} value={b} />)}</datalist>
+              <div>
+                <button type="button" style={btn} disabled={cfg.repoUrl.trim() === '' || findingBranches} onClick={findBranches}>
+                  {findingBranches ? 'Looking…' : 'Find branches on the server'}
+                </button>
+              </div>
+              {branchList?.error && <span style={err}>{branchList.error}</span>}
+              {defaultBranchSuggestion(cfg, branchList) && (
+                <span style={muted}>
+                  That branch was not found there. The default branch is {branchList?.defaultBranch}.{' '}
+                  <button type="button" style={btn} onClick={() => set('branch', branchList!.defaultBranch!)}>Use {branchList?.defaultBranch}</button>
+                </span>
+              )}
+            </>
           </Field>
 
           <Field id="jit-env" label="Env file on the server (optional)" tipLabel="Env file on the server" error={errors.envFile}
             tip={'If your app reads settings from an env file that lives on the server (and not in git), give its full path, for example /home/ubuntu/shop/.env. Leave empty if you have none.'}>
-            <input id="jit-env" style={input} value={cfg.envFile} onChange={e => set('envFile', e.target.value)} />
+            <>
+              <input id="jit-env" style={input} value={cfg.envFile} onChange={e => set('envFile', e.target.value)} />
+              {cfg.envFile.trim() === '' && hints?.envFile && (
+                <div>
+                  <button type="button" style={btn} onClick={() => set('envFile', hints.envFile!)}>Use {hints.envFile} (from your server settings)</button>
+                </div>
+              )}
+            </>
           </Field>
 
           <Field id="jit-project" label="Compose project name (optional)" tipLabel="Compose project name" error={errors.composeProject}
             tip={'The name docker uses to group this app\'s containers. Leave it empty and one is made from your project name. Only change it to match an app that is already running under a different name.'}>
-            <input id="jit-project" style={input} value={cfg.composeProject} onChange={e => set('composeProject', e.target.value)} />
+            <>
+              <input id="jit-project" style={input} value={cfg.composeProject} list="jit-stacks" placeholder={hints?.composeProject}
+                onChange={e => set('composeProject', e.target.value)} />
+              <datalist id="jit-stacks">{stacks?.stacks.map(st => <option key={st.name} value={st.name} />)}</datalist>
+              {stacks?.error && <span style={muted}>{stacks.error}</span>}
+              {stacks && stacks.stacks.length > 0 && stacks.warnings.length === 0 && (
+                <span style={muted}>Stacks already on the server: {stacks.stacks.map(st => st.name).join(', ')}</span>
+              )}
+              {stacks?.warnings.map(w => <span key={w} style={{ ...err, color: tone.warn }}>{w}</span>)}
+              {stacks?.suggestedName && cfg.composeProject !== stacks.suggestedName && (
+                <div>
+                  <button type="button" style={btn} onClick={() => set('composeProject', stacks.suggestedName!)}>Take over &apos;{stacks.suggestedName}&apos;</button>
+                </div>
+              )}
+            </>
           </Field>
 
           <div style={{ marginTop: 12 }}>

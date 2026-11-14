@@ -47,7 +47,9 @@ public static class JitDeployRoutes
         }).ToList();
 
         var problems = cfg.Enabled ? JitDeployMapper.Map(project, cfg).Problems : [];
-        return Results.Ok(new { config = cfg, services, problems });
+        // A saved address may predate the rule against secrets in addresses: never send one to the screen.
+        var shown = cfg with { RepoUrl = GitAddressForms.Analyse(cfg.RepoUrl).Original };
+        return Results.Ok(new { config = shown, services, problems });
     }
 
     internal static async Task<IResult> HandleSaveConfigAsync(string id, JitDeployConfig body, IProjectStore projects, IJitConfigStore configs)

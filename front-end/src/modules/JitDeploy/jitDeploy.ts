@@ -83,11 +83,20 @@ function inRange(v: number, min: number, max: number): boolean {
 }
 
 /** Field name -> message. Empty when everything is fine. Required fields only matter once the mode is switched on. */
+/** Mirrors the server: a password or token inside an address is never wanted (https with a user part, ssh with a password). */
+export const addressHasSecret = (url: string): boolean =>
+  /^(https?:\/\/[^/\s@]+@|ssh:\/\/[^/\s@]+:[^/\s@]*@)/i.test(url.trim());
+
+export const SECRET_IN_ADDRESS =
+  'This address contains a password or token. ShipRight does not keep secrets inside an address. Use the SSH form (git@host:owner/repo.git) with a deploy key.';
+
 export function validateJitConfig(c: JitConfig): Record<string, string> {
   const e: Record<string, string> = {};
 
   if (!c.repoUrl.trim()) {
     if (c.enabled) e.repoUrl = 'Enter the git address the server should fetch your code from.';
+  } else if (addressHasSecret(c.repoUrl)) {
+    e.repoUrl = SECRET_IN_ADDRESS;
   } else if (c.repoUrl.startsWith('-') || /[\s\u0000-\u001f]/.test(c.repoUrl) || c.repoUrl.includes('::')) {
     e.repoUrl = 'That git address does not look right. Paste the address you use to clone your repository, with no spaces.';
   }
