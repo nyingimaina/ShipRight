@@ -1,7 +1,7 @@
 namespace ShipRight.Modules.JitDeploy;
 
 /// <summary>Which compose project a command acts on. <paramref name="EnvFile"/> is an absolute path, or null.</summary>
-public sealed record ComposeContext(JitTarget Target, string Project, string? EnvFile = null, string? ComposeFile = null);
+public sealed record ComposeContext(JitTarget Target, string Project, string? EnvFile = null, string? ComposeFile = null, string? OverrideFile = null);
 
 /// <summary>Compose variable that carries a service's image, e.g. <c>API_TAG</c> with image <c>shop/api</c>; exported as <c>API_TAG=shop/api:&lt;release&gt;</c>.</summary>
 public sealed record TagBinding(string TagVariable, string ImageRef);
@@ -137,6 +137,11 @@ public static class JitCommands
     {
         var env = ctx.EnvFile is null ? string.Empty : $" --env-file {Q(JitNames.Path(ctx.EnvFile))}";
         var file = ctx.ComposeFile is null ? string.Empty : $" -f {Q(JitNames.RepoFile(ctx.ComposeFile))}";
+        if (ctx.OverrideFile is not null)
+        {
+            if (ctx.ComposeFile is null) throw new ArgumentException("A compose file must be chosen before build instructions can be added to it.");
+            file += $" -f {Q(JitNames.Path(ctx.OverrideFile))}";
+        }
         var prefix = nice is null ? string.Empty : $"nice -n {nice} ";
         return $"{prefix}docker compose -p {Q(JitNames.Project(ctx.Project))}{file}{env} {args}";
     }

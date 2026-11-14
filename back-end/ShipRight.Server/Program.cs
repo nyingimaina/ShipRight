@@ -208,6 +208,7 @@ try
         app.MapJitDeployKeyRoutes();
         app.MapJitCredentialRoutes();
         app.MapJitComposeFileRoutes();
+        app.MapJitDockerfileRoutes();
     }
     app.MapProjectBundleRoutes();
     app.MapProjectSummaryRoutes();

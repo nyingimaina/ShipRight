@@ -43,7 +43,9 @@ public static class JitDeployMapper
         }
 
         if (project.Services.Count == 0)
-            services.AddRange(cfg.ComposeServices.Select(c => new JitService(c.Name, c.TagVariable, c.ImageRef)));
+            services.AddRange(cfg.ComposeServices.Select(ToService));
+        if (services.Any(s => s.Recipe is not null) && string.IsNullOrWhiteSpace(cfg.ComposeFile))
+            problems.Add("Pick the compose file so ShipRight can add the build instructions to it.");
 
         if (problems.Count > 0) return new(null, problems);
 
@@ -99,8 +101,16 @@ public static class JitDeployMapper
         var own = Services(project);
         return own.Count > 0 || cfg is null
             ? own
-            : cfg.ComposeServices.Select(c => new JitService(c.Name, c.TagVariable, c.ImageRef)).ToList();
+            : cfg.ComposeServices.Select(ToService).ToList();
     }
+
+    /// <summary>A service named in the settings; it carries a build recipe when its Dockerfile was chosen.</summary>
+    internal static JitService ToService(JitConfiguredService c) =>
+        new(c.Name, c.TagVariable, c.ImageRef,
+            string.IsNullOrWhiteSpace(c.Dockerfile)
+                ? null
+                : new JitBuildRecipe(string.IsNullOrWhiteSpace(c.Context) ? "." : c.Context.Trim(), c.Dockerfile.Trim(),
+                    string.IsNullOrWhiteSpace(c.Target) ? null : c.Target.Trim(), c.Args is { Count: > 0 } ? c.Args : null));
 
     /// <summary>The same rule the generated compose file uses to name a service.</summary>
     public static string ComposeServiceName(ServiceConfig s) =>

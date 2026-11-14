@@ -1,7 +1,7 @@
 namespace ShipRight.Modules.JitDeploy;
 
 /// <summary>A service the deploy builds: its compose name, the compose variable that carries its image tag, and its image repository.</summary>
-public sealed record JitService(string Name, string TagVariable, string ImageRef);
+public sealed record JitService(string Name, string TagVariable, string ImageRef, JitBuildRecipe? Recipe = null);
 
 /// <summary>Every value here is a per-project setting with a sensible default.</summary>
 public sealed record JitDeploySettings

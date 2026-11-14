@@ -438,3 +438,20 @@ touched and nothing on the server names the deployer. No password or token is in
   compose file can be found in the project's own folder (the named one, else the usual names in the repository root), the services found in it with a
   "Use these services" button. If nothing is found the steps say to pick the file with Browse, put a docker-compose.yml in the repository's top folder with
   `build:` sections, or add services to the project. A deploy that cannot start says the same in one sentence.
+
+### Build instructions and tags held by ShipRight (no compose edits needed)
+- Services taken from the compose file (`ComposeServices`) now carry a **build recipe**: the Dockerfile (a path inside the repository, picked with the
+  file picker per service; the compose reader pre-fills it from the compose `build:` section or from a Dockerfile that matches the service), the build
+  folder (inferred from what the Dockerfile copies), an optional stage and build arguments (arguments with no value get empty slots to fill in).
+- Before every deploy (and before a roll back) ShipRight writes `<project folder>/.deploy-state/compose.override.yml` on the server from those settings and
+  every compose command uses `-f <compose file> -f <that file>`. For each service it adds the `build:` section and sets `image:` to
+  `${<SERVICE>_TAG:-<image name>:latest}`; the deploy exports `<SERVICE>_TAG=<image name>:r<number>-<commit>` for each build. So the person's own compose file
+  (for example one with registry `image:` lines and a shared `${IMAGE_TAG:-latest}`) is used unchanged, and plain `docker compose` there keeps working.
+  Every value is validated; every string is written as a quoted, escaped scalar. Verified against a real `docker compose config`: the merged result had each
+  Dockerfile, the arguments (quotes intact) and images such as `reg/herd-backend:r7-abc1234`.
+- **Tagging, in plain words:** nothing to type or change. ShipRight adds the tag (release number plus commit) to the image name; the image name is the part
+  before the tag, taken from the compose `image:` line (or `<project>/<service>` when there is none) and editable in the card.
+- The compose file is chosen with Browse only (the text box is read-only). A service with no Dockerfile cannot be saved; if a service still has neither a
+  recipe nor a `build:` section the deploy stops before touching anything and says to pick its Dockerfile.
+- Endpoint: `POST /api/jit/{id}/dockerfile` describes a Dockerfile picked on this computer (its path in the repository, its build folder, other stages,
+  arguments needing a value).

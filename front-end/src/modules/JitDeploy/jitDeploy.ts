@@ -11,6 +11,11 @@ export interface JitConfiguredService {
   name: string;
   imageRef: string;
   tagVariable: string;
+  /** Paths inside the repository. */
+  dockerfile?: string | null;
+  context?: string | null;
+  target?: string | null;
+  args?: Record<string, string> | null;
 }
 
 export interface JitConfig {
@@ -128,6 +133,18 @@ export function validateJitConfig(c: JitConfig): Record<string, string> {
   const file = c.composeFile.trim();
   if (file && (!/^[A-Za-z0-9._][A-Za-z0-9._/-]*\.(yml|yaml)$/.test(file) || file.split('/').some(p => p === '' || p === '..')))
     e.composeFile = 'Give a path inside your repository ending in .yml or .yaml, for example deploy/docker-compose.yml (or leave it empty).';
+
+  const safePath = (p: string) => /^[A-Za-z0-9._][A-Za-z0-9._/-]*$/.test(p) && !p.split('/').some(s => s === '' || s === '..');
+  for (const s of c.composeServices) {
+    const df = (s.dockerfile ?? '').trim();
+    const ctx = (s.context ?? '').trim() || '.';
+    if (!df || !safePath(df) || (ctx !== '.' && !safePath(ctx))) {
+      e.composeServices = df
+        ? `Pick the Dockerfile for '${s.name}' again: its path is not usable. Use a file inside your repository, without spaces.`
+        : `Pick the Dockerfile for '${s.name}'.`;
+      break;
+    }
+  }
 
   if (c.credentialResourceId && c.useDeployKey) e.credentialResourceId = 'Choose either a deploy key or a saved credential, not both.';
   else if (c.credentialResourceId && c.repoUrl.trim() && !/^https:\/\//i.test(c.repoUrl.trim()))

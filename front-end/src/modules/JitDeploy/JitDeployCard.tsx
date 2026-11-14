@@ -320,10 +320,12 @@ export default function JitDeployCard({ projectId }: Props) {
           <Field id="jit-compose" label="Compose file in your repository (optional)" tipLabel="Compose file in your repository" error={errors.composeFile}
             tip={'Where the docker-compose file is inside your repository, for example deploy/docker-compose.yml. Leave it empty if it is in the top folder (docker-compose.yml or compose.yaml).'}>
             <>
-              <input id="jit-compose" style={input} value={cfg.composeFile} placeholder="docker-compose.yml" onChange={e => set('composeFile', e.target.value)} />
+              <input id="jit-compose" style={input} value={cfg.composeFile} placeholder="Use Browse to choose your compose file" readOnly />
               <JitComposeServices base={base} needsServices={serviceHelp !== null || cfg.composeServices.length > 0} current={cfg.composeServices} help={serviceHelp}
                 onApply={(file, picked) => setCfg(c => ({ ...c, composeFile: file, ...(picked ? { composeServices: picked } : {}) }))}
-                onClear={() => set('composeServices', [])} />
+                onClear={() => set('composeServices', [])}
+                onUpdate={(name, patch) => setCfg(c => ({ ...c, composeServices: c.composeServices.map(s => (s.name === name ? { ...s, ...patch } : s)) }))} />
+              {errors.composeServices && <span style={err}>{errors.composeServices}</span>}
             </>
           </Field>
 

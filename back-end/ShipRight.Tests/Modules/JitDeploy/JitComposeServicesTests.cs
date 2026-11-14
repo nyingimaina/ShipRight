@@ -137,7 +137,7 @@ public class JitComposeServicesTests
     [TestMethod]
     public void TheSettingsRules_CheckEveryServiceAndRefuseDuplicates()
     {
-        JitConfiguredService S(string n = "api", string i = "shop/api", string t = "API_TAG") => new(n, i, t);
+        JitConfiguredService S(string n = "api", string i = "shop/api", string t = "API_TAG") => new(n, i, t, "Dockerfile");
         int Bad(params JitConfiguredService[] list) => JitDeployConfigValidator.Validate(new JitDeployConfig { Enabled = true, RepoUrl = "git@h:o/r.git", Branch = "main", ComposeServices = list }).Count(p => p.Field == "composeServices");
 
         Assert.AreEqual(0, Bad(S(), S("web", "shop/web", "WEB_TAG")));

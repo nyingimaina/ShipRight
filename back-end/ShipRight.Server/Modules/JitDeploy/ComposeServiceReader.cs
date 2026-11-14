@@ -10,7 +10,10 @@ public sealed class ComposeFileException(string message) : Exception(message);
 
 /// <param name="Built">It has its own build section in the compose file.</param>
 /// <param name="Note">What to change in the compose file for this service, or null when it already works.</param>
-public sealed record ComposeServiceCandidate(string Name, string ImageRef, string TagVariable, bool Built, bool Suggested, string? Note);
+public sealed record ComposeServiceCandidate(
+    string Name, string ImageRef, string TagVariable, bool Built, bool Suggested, string? Note,
+    string? Dockerfile = null, string? Context = null, string? Target = null, IReadOnlyDictionary<string, string>? Args = null,
+    IReadOnlyList<string>? ArgsNeedingAValue = null, IReadOnlyList<string>? OtherStages = null);
 
 public sealed record ComposeFileReading(
     string RelativePath, string RepoRoot, IReadOnlyList<ComposeServiceCandidate> Services, IReadOnlyList<string> LeftAlone, IReadOnlyList<string> Notes);
@@ -63,13 +66,29 @@ public static class ComposeServiceReader
             var note = PerServiceVariable(cs.Image) is null
                 ? $"Its image line needs to read image: ${{{variable}:-{image}:latest}} so each release gets its own tag. \"Adopt Docker setup\" can add that for you."
                 : null;
-            candidates.Add(new ComposeServiceCandidate(cs.Name, image, variable, built, true, note));
+            candidates.Add(new ComposeServiceCandidate(cs.Name, image, variable, built, true, note,
+                RepoRelative(matched?.ContextRelative, matched?.DockerfilePath), matched?.ContextRelative, matched?.Target, matched?.BuildArgs,
+                matched?.ArgsNeedingAValue ?? [], matched?.OtherStages ?? []));
         }
 
         var notes = candidates.Count == 0
             ? new List<string> { "There is nothing to build in this file: none of its services has a build section or a matching Dockerfile." }
             : [];
         return new ComposeFileReading(rel, repoRoot, candidates, leftAlone, notes);
+    }
+
+    /// <summary>A Dockerfile given relative to its build folder, as a path inside the repository; null when it points outside it.</summary>
+    internal static string? RepoRelative(string? context, string? dockerfileInContext)
+    {
+        if (string.IsNullOrWhiteSpace(dockerfileInContext) || dockerfileInContext.StartsWith('/') || Regex.IsMatch(dockerfileInContext, @"^[A-Za-z]:")) return null;
+        var parts = new List<string>();
+        foreach (var seg in ((context is null or "." ? "" : context) + "/" + dockerfileInContext.Replace('\\', '/')).Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (seg == ".") continue;
+            if (seg == "..") { if (parts.Count == 0) return null; parts.RemoveAt(parts.Count - 1); }
+            else parts.Add(seg);
+        }
+        return parts.Count == 0 ? null : string.Join('/', parts);
     }
 
     private static string? PerServiceVariable(string? image) =>

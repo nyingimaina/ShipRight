@@ -12,7 +12,8 @@ jest.mock('react-hot-toast', () => ({ __esModule: true, default: { error: jest.f
 
 jest.mock('@/modules/FilePicker/FilePicker', () => ({
   __esModule: true,
-  default: ({ onSelect }: { onSelect: (p: string) => void }) => <button type="button" onClick={() => onSelect('D:\\work\\shop\\deploy\\docker-compose.yml')}>choose file</button>,
+  default: ({ onSelect, label }: { onSelect: (p: string) => void; label?: string }) =>
+    <button type="button" onClick={() => onSelect('D:\\work\\shop\\deploy\\docker-compose.yml')}>{`choose ${label}`}</button>,
 }));
 
 const mockApi = api as jest.Mocked<typeof api>;
@@ -33,6 +34,10 @@ let hints: JitHintsResponse | Error = hintsResp();
 let stacks: JitStacksResponse | Error = stacksResp();
 let credentialList: unknown[] = [];
 let serviceHelpResp: unknown = null;
+const composeFound = {
+  relativePath: 'deploy/docker-compose.yml', repoRoot: 'D:\\work\\shop',
+  services: [{ name: 'api', imageRef: 'shop/api', tagVariable: 'API_TAG', built: true, suggested: true, note: null, dockerfile: 'api/Dockerfile', context: 'api', target: null, args: {}, argsNeedingAValue: [], otherStages: [] }], leftAlone: ['db'], notes: [],
+};
 let branches: unknown = { branches: ['main', 'dev'], defaultBranch: 'main', error: null };
 
 function setup(config: Partial<JitConfig> = {}) {
@@ -255,22 +260,23 @@ describe('the compose file and a saved credential', () => {
 
   const withCredentials = () => { credentialList = credentials; };
 
-  it('has a compose file field, kept in the settings', async () => {
-    setup({ ...ON });
+  it('shows the compose file chosen so far, and cannot be typed into: it is picked with Browse', async () => {
+    setup({ ...ON, composeFile: 'deploy/docker-compose.yml' });
     const field = await screen.findByLabelText(/^Compose file in your repository/);
-    expect(field).toHaveValue('');
-    fireEvent.change(field, { target: { value: 'deploy/docker-compose.yml' } });
+    expect(field).toHaveValue('deploy/docker-compose.yml');
+    expect(field).toHaveAttribute('readonly');
+  });
+
+  it('keeps the picked compose file in the settings', async () => {
+    setup({ ...ON });
+    await screen.findByLabelText(/^Compose file in your repository/);
+    mockApi.post.mockImplementation(async (path: string) => (path.endsWith('/compose-file') ? composeFound as never : {} as never));
+    fireEvent.click(screen.getByRole('button', { name: /browse for the compose file/i }));
+    fireEvent.click(screen.getByRole('button', { name: /choose your compose file/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /use this compose file$/i }));
     expect(screen.getByText(/you have unsaved changes/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /save settings/i }));
     await waitFor(() => expect(mockApi.put).toHaveBeenCalledWith('/api/jit/p1/config', expect.objectContaining({ composeFile: 'deploy/docker-compose.yml' })));
-  });
-
-  it('refuses a compose file that is not inside the repository, before saving', async () => {
-    setup({ ...ON });
-    fireEvent.change(await screen.findByLabelText(/^Compose file in your repository/), { target: { value: '../x.yml' } });
-    fireEvent.click(screen.getByRole('button', { name: /save settings/i }));
-    expect(await screen.findByText(/inside your repository/i)).toBeInTheDocument();
-    expect(mockApi.put).not.toHaveBeenCalled();
   });
 
   it('offers the saved credentials for an https address, and choosing one is an unsaved change', async () => {
@@ -337,7 +343,7 @@ describe('the compose file and a saved credential', () => {
 describe('services from the compose file', () => {
   const found = {
     relativePath: 'deploy/docker-compose.yml', repoRoot: 'D:\\work\\shop',
-    services: [{ name: 'api', imageRef: 'shop/api', tagVariable: 'API_TAG', built: true, suggested: true, note: null }], leftAlone: ['db'], notes: [],
+    services: [{ name: 'api', imageRef: 'shop/api', tagVariable: 'API_TAG', built: true, suggested: true, note: null, dockerfile: 'api/Dockerfile', context: 'api', target: null, args: {}, argsNeedingAValue: [], otherStages: [] }], leftAlone: ['db'], notes: [],
   };
 
   it('explains why there are no services, with the fix, and uses the services found in the project folder', async () => {
@@ -354,7 +360,8 @@ describe('services from the compose file', () => {
     expect(screen.getByText(/you have unsaved changes/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /save settings/i }));
     await waitFor(() => expect(mockApi.put).toHaveBeenCalledWith('/api/jit/p1/config', expect.objectContaining({
-      composeFile: 'deploy/docker-compose.yml', composeServices: [{ name: 'api', imageRef: 'shop/api', tagVariable: 'API_TAG' }],
+      composeFile: 'deploy/docker-compose.yml',
+      composeServices: [{ name: 'api', imageRef: 'shop/api', tagVariable: 'API_TAG', dockerfile: 'api/Dockerfile', context: 'api', target: null, args: {} }],
     })));
   });
 
@@ -365,7 +372,7 @@ describe('services from the compose file', () => {
     mockApi.post.mockImplementation(async (path: string) => (path.endsWith('/compose-file') ? found as never : {} as never));
 
     fireEvent.click(screen.getByRole('button', { name: /browse for the compose file/i }));
-    fireEvent.click(screen.getByRole('button', { name: 'choose file' }));
+    fireEvent.click(screen.getByRole('button', { name: /choose your compose file/i }));
     await screen.findByRole('checkbox', { name: 'Build api' });
     fireEvent.click(screen.getByRole('button', { name: /use this compose file and these services/i }));
     expect(screen.getByLabelText(/^Compose file in your repository/)).toHaveValue('deploy/docker-compose.yml');
@@ -379,17 +386,37 @@ describe('services from the compose file', () => {
     mockApi.post.mockImplementation(async (path: string) => (path.endsWith('/compose-file') ? found as never : {} as never));
 
     fireEvent.click(screen.getByRole('button', { name: /browse for the compose file/i }));
-    fireEvent.click(screen.getByRole('button', { name: 'choose file' }));
+    fireEvent.click(screen.getByRole('button', { name: /choose your compose file/i }));
     fireEvent.click(await screen.findByRole('button', { name: /use this compose file$/i }));
     expect(screen.getByLabelText(/^Compose file in your repository/)).toHaveValue('deploy/docker-compose.yml');
     expect(screen.queryByText(/services to build, from your compose file/i)).not.toBeInTheDocument();
   });
 
   it('clears the services taken from the compose file', async () => {
-    setup({ ...ON, composeServices: [{ name: 'api', imageRef: 'shop/api', tagVariable: 'API_TAG' }] });
+    setup({ ...ON, composeFile: 'docker-compose.yml', composeServices: [{ name: 'api', imageRef: 'shop/api', tagVariable: 'API_TAG', dockerfile: 'api/Dockerfile', context: 'api' }] });
     fireEvent.click(await screen.findByRole('button', { name: /clear these services/i }));
     expect(screen.queryByText(/services to build, from your compose file/i)).not.toBeInTheDocument();
     expect(screen.getByText(/you have unsaved changes/i)).toBeInTheDocument();
+  });
+});
+
+describe('the Dockerfile and image name of each service', () => {
+  it('shows each service with its Dockerfile, and a change is an unsaved change that is saved with the settings', async () => {
+    setup({ ...ON, composeFile: 'docker-compose.yml', composeServices: [{ name: 'api', imageRef: 'shop/api', tagVariable: 'API_TAG', dockerfile: 'api/Dockerfile', context: 'api' }] });
+    expect(await screen.findByText('Dockerfile: api/Dockerfile')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Image name for api'), { target: { value: 'shop/api2' } });
+    expect(screen.getByText(/you have unsaved changes/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /save settings/i }));
+    await waitFor(() => expect(mockApi.put).toHaveBeenCalledWith('/api/jit/p1/config', expect.objectContaining({
+      composeServices: [expect.objectContaining({ name: 'api', imageRef: 'shop/api2', dockerfile: 'api/Dockerfile' })],
+    })));
+  });
+
+  it('will not save a service that has no Dockerfile yet, and says which', async () => {
+    setup({ ...ON, composeFile: 'docker-compose.yml', composeServices: [{ name: 'api', imageRef: 'shop/api', tagVariable: 'API_TAG' }] });
+    fireEvent.click(await screen.findByRole('button', { name: /save settings/i }));
+    expect(await screen.findByText(/pick the dockerfile for 'api'/i)).toBeInTheDocument();
+    expect(mockApi.put).not.toHaveBeenCalled();
   });
 });
 

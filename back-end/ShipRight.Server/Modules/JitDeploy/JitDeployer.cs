@@ -86,7 +86,12 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
             throw new ArgumentException("A timeout or count in the settings is out of range.");
         if (r.Commit is null) JitNames.Branch(r.Branch); else JitNames.Sha(r.Commit);
 
-        var ctx = new ComposeContext(r.Target, r.Project, r.EnvFile, r.ComposeFile);
+        if (r.Services.Any(s => s.Recipe is not null))
+        {
+            if (r.ComposeFile is null) throw new ArgumentException("Pick the compose file so ShipRight can add the build instructions to it.");
+            ComposeOverride.Render(r.ComposeFile, r.Services);
+        }
+        var ctx = new ComposeContext(r.Target, r.Project, r.EnvFile, r.ComposeFile, OverrideFor(r));
         var bindings = Bind(r.Services);
         const string dummy = "r1-0000000";
         JitCommands.CheckDisk(r.Target, s.MinFreeDiskMb);
@@ -102,6 +107,9 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
         JitCommands.StopService(ctx, r.Services[0].Name, s.StopGraceSeconds, bindings, dummy);
         JitCommands.RemoveImages(r.Services.Select(x => $"{x.ImageRef}:{dummy}"));
     }
+
+    /// <summary>Where the generated build instructions live, when any service has a recipe.</summary>
+    private static string? OverrideFor(JitDeployRequest r) => r.Services.Any(s => s.Recipe is not null) ? ComposeOverride.Path(r.Target) : null;
 
     private static IReadOnlyList<TagBinding> Bind(IEnumerable<JitService> services) =>
         services.Select(s => new TagBinding(s.TagVariable, s.ImageRef)).ToList();
@@ -125,7 +133,7 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
         {
             _ssh = ssh; _clock = clock; _req = req; _log = log;
             _t = req.Target;
-            _ctx = new ComposeContext(req.Target, req.Project, req.EnvFile, req.ComposeFile);
+            _ctx = new ComposeContext(req.Target, req.Project, req.EnvFile, req.ComposeFile, OverrideFor(req));
             _bindings = Bind(req.Services);
             _store = new ReleaseStateStore(ssh);
             _s = req.Settings;
@@ -285,6 +293,7 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
                 await Say($"Restoring the compose file of release {target} (commit {rec.Sha[..7]})...");
                 var checkout = await Exec(JitCommands.Checkout(_t, rec.Sha), true, ct);
                 if (checkout.Exit != 0) return await Abort($"Could not check out commit {rec.Sha[..7]}: {Tail(checkout.Lines)}");
+                if (await WriteOverrideAsync(ct) is { } overrideError) return await Abort(overrideError);
                 var config = await Exec(JitCommands.ComposeConfig(_ctx, _bindings, target), false, ct);
                 if (config.Exit != 0) return await Abort($"The compose file of that release is not valid: {Tail(config.Lines)}");
 
@@ -403,6 +412,16 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
             return null;
         }
 
+        /// <summary>Writes the generated build instructions beside the deploy state. Returns a message when that fails, or null.</summary>
+        private async Task<string?> WriteOverrideAsync(CancellationToken ct)
+        {
+            var yaml = ComposeOverride.Render(_req.ComposeFile ?? string.Empty, _req.Services);
+            if (yaml is null) return null;
+            await Say("Writing the build instructions that compose will use…");
+            var write = await Exec(ComposeOverride.WriteCommand(_t, yaml), false, ct);
+            return write.Exit == 0 ? null : $"Could not write the build instructions on the server: {Tail(write.Lines)}";
+        }
+
         private async Task<JitDeployResult> DeployCoreAsync(CancellationToken ct)
         {
             if (await EnsureServerReadyAsync(ct) is { } notReady) return notReady;
@@ -468,6 +487,8 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
             var checkout = await Exec(JitCommands.Checkout(_t, sha), true, ct);
             if (checkout.Exit != 0) return await AbortSync($"Could not check out commit {sha[..7]}: {Tail(checkout.Lines)}");
 
+            if (await WriteOverrideAsync(ct) is { } overrideError) return await AbortSync(overrideError);
+
             // 3. Understand the compose file before building anything.
             var config = await Exec(JitCommands.ComposeConfig(_ctx, _bindings, tag), false, ct);
             if (config.Exit != 0) return await AbortSync($"The compose file is not valid: {Tail(config.Lines)}");
@@ -481,7 +502,10 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
                 var graph = ComposeConfig.Graph(services);
                 DependencyOrderer.StartOrder(graph);
                 var problems = ComposeConfig.CheckBuilds(services, _req.Services.Select(s => new BuildExpectation(s.Name, s.TagVariable, ExpectedRef(s, tag))));
-                if (problems.Count > 0) return await AbortSync(string.Join(" ", problems));
+                if (problems.Count > 0)
+                    return await AbortSync(string.Join(" ", problems) + (problems.Any(p => p.Contains("has no build: section"))
+                        ? " Pick this service's Dockerfile with Browse for Dockerfile in the Build on the server card and ShipRight adds the build instructions for you, or add a build: section to your compose file."
+                        : ""));
 
                 affected = AffectedSet.Compute(graph, _req.Services.Select(s => s.Name), _req.DependentChoices);
                 startOrder = DependencyOrderer.StartOrder(graph, affected.Select(a => a.Name));

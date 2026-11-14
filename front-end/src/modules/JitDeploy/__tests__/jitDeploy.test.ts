@@ -37,6 +37,14 @@ describe('validateJitConfig', () => {
       expect(validateJitConfig(valid({ composeFile: f })).composeFile).toMatch(/inside your repository/i);
   });
 
+  it('needs a Dockerfile for every service taken from the compose file, and checks the paths', () => {
+    const svc = (over = {}) => ({ name: 'backend', imageRef: 'reg/b', tagVariable: 'BACKEND_TAG', dockerfile: 'backend.Dockerfile', context: '.', target: null, args: {}, ...over });
+    expect(validateJitConfig(valid({ composeServices: [svc()] })).composeServices).toBeUndefined();
+    expect(validateJitConfig(valid({ composeServices: [svc({ dockerfile: null })] })).composeServices).toMatch(/Pick the Dockerfile for 'backend'/);
+    expect(validateJitConfig(valid({ composeServices: [svc({ dockerfile: '../x' })] })).composeServices).toMatch(/Dockerfile for 'backend'/);
+    expect(validateJitConfig(valid({ composeServices: [svc({ context: 'a b' })] })).composeServices).toMatch(/Dockerfile for 'backend'/);
+  });
+
   it('only lets a saved credential go with an https address, and not together with a deploy key', () => {
     expect(validateJitConfig(valid({ repoUrl: 'git@github.com:o/r.git', credentialResourceId: 'c1' })).credentialResourceId).toMatch(/https/i);
     expect(validateJitConfig(valid({ repoUrl: 'https://github.com/o/r.git', credentialResourceId: 'c1' })).credentialResourceId).toBeUndefined();

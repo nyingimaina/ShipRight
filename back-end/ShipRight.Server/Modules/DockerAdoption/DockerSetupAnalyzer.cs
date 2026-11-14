@@ -311,7 +311,7 @@ public static class DockerSetupAnalyzer
             || n.EndsWith(".dockerfile", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static Found Read(string root, string path)
+    internal static Found Read(string root, string path)
     {
         var name = Path.GetFileName(path);
         string? stem = null;
@@ -338,13 +338,13 @@ public static class DockerSetupAnalyzer
         return n;
     }
 
-    private static IReadOnlyList<string> NeedingValue(DockerfileInfo info, IReadOnlyDictionary<string, string> given) =>
+    internal static IReadOnlyList<string> NeedingValue(DockerfileInfo info, IReadOnlyDictionary<string, string> given) =>
         info.Args.Where(a => !a.HasDefault && !given.ContainsKey(a.Name)).Select(a => a.Name).Distinct().ToList();
 
-    private static string DockerfileRelative(string contextFull, string dockerfileFull) =>
+    internal static string DockerfileRelative(string contextFull, string dockerfileFull) =>
         Path.GetRelativePath(contextFull, dockerfileFull).Replace('\\', '/');
 
-    private static string RelativeContext(string root, string ctxFull)
+    internal static string RelativeContext(string root, string ctxFull)
     {
         var rel = Path.GetRelativePath(root, ctxFull).Replace('\\', '/');
         return rel is "" ? "." : rel;

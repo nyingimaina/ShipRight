@@ -116,7 +116,9 @@ public sealed class JsonJitConfigStore : IJitConfigStore
 }
 
 /// <summary>A service build-on-server builds, named in the settings (from the compose file) instead of in the project.</summary>
-public sealed record JitConfiguredService(string Name, string ImageRef, string TagVariable);
+public sealed record JitConfiguredService(
+    string Name, string ImageRef, string TagVariable,
+    string? Dockerfile = null, string? Context = null, string? Target = null, Dictionary<string, string>? Args = null);
 
 public sealed record JitConfigProblem(string Message, string Field);
 
@@ -153,6 +155,9 @@ public static class JitDeployConfigValidator
             Safe("composeServices", "service name", JitNames.Service, s.Name ?? string.Empty);
             Safe("composeServices", "image name", JitNames.ImageRef, s.ImageRef ?? string.Empty);
             Safe("composeServices", "tag variable", JitNames.TagVariable, s.TagVariable ?? string.Empty);
+            if (string.IsNullOrWhiteSpace(s.Dockerfile)) p.Add(new($"Pick the Dockerfile for '{s.Name}'.", "composeServices"));
+            else if (ComposeOverride.Problem("service", new JitBuildRecipe(string.IsNullOrWhiteSpace(s.Context) ? "." : s.Context!.Trim(), s.Dockerfile!.Trim(), s.Target, s.Args)) is { } recipeProblem)
+                p.Add(new($"The build instructions for '{s.Name}' are not valid. {recipeProblem}", "composeServices"));
         }
         if ((c.ComposeServices ?? []).GroupBy(s => s.Name ?? string.Empty, StringComparer.OrdinalIgnoreCase).Any(g => g.Count() > 1))
             p.Add(new("Each service can only be listed once.", "composeServices"));

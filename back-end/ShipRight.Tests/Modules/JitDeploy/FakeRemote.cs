@@ -46,6 +46,7 @@ public sealed class FakeRemote : ISshRunner
     public bool SyncOk { get; set; } = true;
     public bool BuildOk { get; set; } = true;
     public bool KeepImagesAfterBuild { get; set; } = true;
+    public string? OverrideYaml { get; private set; }
     public string[]? SyncFailureLines { get; set; }
     public string[]? ExtraBuildLines { get; set; }
     public bool FailStateWrite { get; set; }
@@ -115,6 +116,13 @@ public sealed class FakeRemote : ISshRunner
     {
         var prep = HandlePrepare(cmd);
         if (prep is not null) return prep.Value;
+        if (cmd.Contains("compose.override.yml") && cmd.Contains("base64 -d"))
+        {
+            var m = Regex.Match(cmd, @"echo '([A-Za-z0-9+/=]+)' \| base64 -d");
+            OverrideYaml = Encoding.UTF8.GetString(Convert.FromBase64String(m.Groups[1].Value));
+            Events.Add("override-written");
+            return Ok();
+        }
         // ── state file ──
         if (cmd.Contains("base64 -d"))
         {
