@@ -68,6 +68,15 @@ public record ServiceConfig
     public int? LocalImageKeepCount { get; init; }
     /// <summary>True = never delete this service's images from the build machine, whatever the keep count says.</summary>
     public bool? SkipLocalCleanup { get; init; }
+    /// <summary>
+    /// Which Dockerfile builds this service: a path relative to the build context, or absolute. Empty = the file named
+    /// Dockerfile in the context, as it has always been.
+    /// </summary>
+    public string? DockerfilePath { get; init; }
+    /// <summary>Which stage of a multi-stage Dockerfile to build (docker build --target). Empty = the last stage.</summary>
+    public string? BuildTarget { get; init; }
+    /// <summary>Build arguments (docker build --build-arg NAME=value). Empty = none.</summary>
+    public Dictionary<string, string>? BuildArgs { get; init; }
 }
 
 public record GitConfig

@@ -20,6 +20,7 @@ using ShipRight.Modules.Database;
 using ShipRight.Modules.Database.Providers;
 using ShipRight.Modules.Filesystem;
 using ShipRight.Modules.Identity;
+using ShipRight.Modules.BuildRecipes;
 using ShipRight.Modules.ConnectionTest;
 using ShipRight.Modules.JitDeploy;
 using ShipRight.Modules.Projects;
@@ -310,6 +311,9 @@ static void RegisterDesktopServices(IServiceCollection services, string dataDir)
     services.AddSingleton<BuildEventBus>();
     services.AddSingleton<PushLedger>();
     services.AddSingleton<IProcessRunner>(sp => new PushRecordingProcessRunner(new ProcessRunner(), sp.GetRequiredService<PushLedger>()));
+    // A service may name its own Dockerfile, build stage and arguments. Wrapped around the registrations above, which stay as they were.
+    services.DecorateSingleton<IProjectStore>((sp, inner) => new BuildRecipePreservingProjectStore(inner));
+    services.DecorateSingleton<IProcessRunner>((sp, inner) => new BuildRecipeProcessRunner(inner, sp.GetRequiredService<IProjectStore>()));
     services.AddSingleton<KnownHostsStore>();
     services.AddSingleton<ISshRunner>(sp => new ComposeProvisioningSshRunner(
         new SshRunner(sp.GetRequiredService<KnownHostsStore>()), sp.GetRequiredService<IProjectStore>()));
