@@ -398,3 +398,11 @@ Still to do from that discussion: scrub addresses and tokens from sync logs and 
 - Every line of the live log and every final message passes through `GitAddressForms.Redact`, which hides `scheme://user:secret@` and well-known token shapes (GitHub `ghp_`/`github_pat_`, GitLab `glpat-`, AWS `AKIA...`) wherever they appear, including in git or build output.
 - If personal access tokens are ever wanted for the server-side clone, the safe design is a temporary `chmod 600` credential file removed right after the clone, never an address or a saved remote.
 - Not covered: other ShipRight modules (for example the compose repo's clone address) have their own logging and were not changed.
+
+### Deploy key (step 4 of the follow-up plan)
+The card has a "Can the server read your code?" panel. `POST /api/jit/{id}/git-access` checks that the server can read the repository
+(optionally using the deploy key); `POST /api/jit/{id}/deploy-key` makes a read-only ed25519 key on the server itself (only when
+missing, in the user's `~/.ssh`, named `deploy_<stack>`) and returns the public half with the git host's deploy-keys page for GitHub,
+GitLab and Bitbucket. The setting `UseDeployKey` makes the deploy's git commands (the access check and the sync) run with
+`GIT_SSH_COMMAND` pointing at that key, with `IdentitiesOnly`, `BatchMode` and `StrictHostKeyChecking=accept-new`; nothing else is
+touched and nothing on the server names the deployer. No password or token is involved and nothing but the public key leaves the server.

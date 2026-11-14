@@ -6,6 +6,7 @@ import {
   DEFAULT_JIT_CONFIG, JitConfig, JitConfigResponse, JitDependents, JitReleases, JitServiceHint,
   describeAge, phaseSummary, setDependentChoice, shortSha, validateJitConfig,
 } from './jitDeploy';
+import JitGitAccess from './JitGitAccess';
 import {
   addressOptions, addressWarning, branchAfterPick, defaultBranchSuggestion, JitBranchesResponse, JitHintsResponse, JitStacksResponse, prefillPatch,
 } from './jitHints';
@@ -274,6 +275,8 @@ export default function JitDeployCard({ projectId }: Props) {
               {hints?.notes.map(n => <span key={n} style={muted}>{n}</span>)}
             </>
           </Field>
+
+          <JitGitAccess base={base} repoUrl={cfg.repoUrl} useDeployKey={cfg.useDeployKey} onUseDeployKey={on => set('useDeployKey', on)} />
 
           <Field id="jit-branch" label="Branch" error={errors.branch}
             tip={'Which branch to deploy. Whatever is newest on this branch when you press Deploy is what goes live. Usually master or main.'}>

@@ -86,6 +86,7 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
         JitCommands.CheckDisk(r.Target, s.MinFreeDiskMb);
         JitCommands.CheckGit(r.RepoUrl);
         JitCommands.SyncRepo(r.Target, r.RepoUrl);
+        if (r.DeployKeyName is { } deployKey) JitDeployKey.GitSshPrefix(deployKey);
         JitCommands.Build(ctx, r.Services.Select(x => x.Name).ToList(), bindings, dummy, s.BuildNice);
         JitCommands.StopService(ctx, r.Services[0].Name, s.StopGraceSeconds, bindings, dummy);
         JitCommands.RemoveImages(r.Services.Select(x => $"{x.ImageRef}:{dummy}"));
@@ -120,6 +121,9 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
         }
 
         private Task Say(string message) => _log("[deploy] " + message);
+
+        /// <summary>Commands that reach the git host use the deploy key when one is set; nothing else is touched.</summary>
+        private string WithKey(string command) => _req.DeployKeyName is { } key ? JitDeployKey.GitSshPrefix(key) + command : command;
 
         private static JitDeployResult Failed(string message) => new(JitOutcome.FailedBeforeChange, message);
 
@@ -395,7 +399,7 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
             {
                 ("docker", JitCommands.CheckDocker()),
                 ("disk space", JitCommands.CheckDisk(_t, _s.MinFreeDiskMb)),
-                ("git access", JitCommands.CheckGit(_req.RepoUrl)),
+                ("git access", WithKey(JitCommands.CheckGit(_req.RepoUrl))),
             })
             {
                 var (exit, lines) = await Exec(cmd, true, ct);
@@ -424,7 +428,7 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
             }
 
             await Say("Fetching the code from git…");
-            var sync = await Exec(JitCommands.SyncRepo(_t, _req.RepoUrl), true, ct);
+            var sync = await Exec(WithKey(JitCommands.SyncRepo(_t, _req.RepoUrl)), true, ct);
             if (sync.Exit != 0) return await AbortSync($"Could not fetch the code from git: {Tail(sync.Lines)}");
 
             var what = _req.Commit is null ? $"branch '{_req.Branch}'" : $"commit {_req.Commit}";

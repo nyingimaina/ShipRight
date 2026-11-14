@@ -241,3 +241,21 @@ describe('the stack name', () => {
     expect(mockApi.get.mock.calls.some(c => String(c[0]).endsWith('/stacks'))).toBe(false);
   });
 });
+
+describe('giving the server access to the code', () => {
+  it('shows the access panel under the address, and a created key turns the setting on as an unsaved change', async () => {
+    setup({ ...ON });
+    mockApi.post.mockImplementation(async (path: string) => {
+      if (path.endsWith('/git-access')) return { ok: false, usesDeployKey: false, message: 'Cannot reach the git repository.' } as never;
+      if (path.endsWith('/deploy-key')) return { publicKey: 'ssh-ed25519 AAAAexample deploy_shop@box', created: true, keyName: 'deploy_shop', hostLabel: 'GitHub', pageUrl: 'https://github.com/o/shop/settings/keys', error: null } as never;
+      return {} as never;
+    });
+    expect(await screen.findByText(/can the server read your code/i)).toBeInTheDocument();
+    expect(screen.queryByText(/you have unsaved changes/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /check access/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /create a deploy key/i }));
+    await screen.findByText('ssh-ed25519 AAAAexample deploy_shop@box');
+    expect(screen.getByText(/you have unsaved changes/i)).toBeInTheDocument();
+  });
+});

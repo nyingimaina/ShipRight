@@ -18,6 +18,8 @@ export interface JitConfig {
   settleSeconds: number;
   minFreeDiskMb: number;
   buildNice: number | null;
+  /** Read the repository with a key made on the server (never a password or token). */
+  useDeployKey: boolean;
   dependentChoices: JitDependentChoice[];
 }
 
@@ -33,6 +35,7 @@ export const DEFAULT_JIT_CONFIG: JitConfig = {
   settleSeconds: 10,
   minFreeDiskMb: 3000,
   buildNice: null,
+  useDeployKey: false,
   dependentChoices: [],
 };
 

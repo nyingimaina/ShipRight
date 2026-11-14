@@ -25,6 +25,8 @@ public sealed record JitDeployConfig
     public int SettleSeconds { get; init; } = 10;
     public int MinFreeDiskMb { get; init; } = 3000;
     public int? BuildNice { get; init; }
+    /// <summary>Use a read-only key made on the server (never a password or token) to read the repository.</summary>
+    public bool UseDeployKey { get; init; }
     public IReadOnlyList<JitDependentChoice> DependentChoices { get; init; } = [];
 }
 

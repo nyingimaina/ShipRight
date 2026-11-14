@@ -26,6 +26,8 @@ public sealed record JitDeployRequest
     /// <summary>Deploy this exact commit instead of the branch head.</summary>
     public string? Commit { get; init; }
     public string? EnvFile { get; init; }
+    /// <summary>Name of the key in the user's ~/.ssh that git uses to reach the git host; null uses whatever the server already has.</summary>
+    public string? DeployKeyName { get; init; }
     public JitDeploySettings Settings { get; init; } = new();
     /// <summary>(service, dependent) → restart the dependent when the service is replaced. Unanswered pairs restart.</summary>
     public IReadOnlyDictionary<(string Service, string Dependent), bool>? DependentChoices { get; init; }
