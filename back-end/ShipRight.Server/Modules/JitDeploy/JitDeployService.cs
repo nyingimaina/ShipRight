@@ -57,7 +57,7 @@ public sealed class JitDeployService(
         catch (InvalidDataException ex) { return new(null, ex.Message, null); }
 
         var map = JitDeployMapper.Map(project, cfg, options.Commit, options.Force, options.AllowWithoutRollback);
-        if (!map.Ok) return new(null, string.Join(" ", map.Problems), null);
+        if (!map.Ok) return new(null, JitServiceHelp.StartMessage(map.Problems), null);
         var (withCredential, credentialError) = await JitCredentialResolver.ApplyAsync(map.Request!, cfg, credentials, projectId);
         if (credentialError is not null) return new(null, credentialError, null);
         var request = withCredential!;
@@ -153,7 +153,7 @@ public sealed class JitDeployService(
         try
         {
             var cfg = await configs.GetAsync(projectId) ?? new JitDeployConfig();
-            var services = JitDeployMapper.Services(project);
+            var services = JitDeployMapper.Services(project, cfg);
             var ctx = new ComposeContext(target, JitDeployMapper.ComposeProjectName(project, cfg), string.IsNullOrWhiteSpace(cfg.EnvFile) ? null : cfg.EnvFile,
                 string.IsNullOrWhiteSpace(cfg.ComposeFile) ? null : cfg.ComposeFile.Trim());
             var bindings = services.Select(s => new TagBinding(s.TagVariable, s.ImageRef)).ToList();

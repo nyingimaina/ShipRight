@@ -31,6 +31,8 @@ public sealed record JitDeployConfig
     public Guid? CredentialResourceId { get; init; }
     /// <summary>Path of the compose file inside the repository. Empty = the usual file in the repository's top folder.</summary>
     public string ComposeFile { get; init; } = string.Empty;
+    /// <summary>The services to build, taken from the compose file, for a project that has none of its own.</summary>
+    public IReadOnlyList<JitConfiguredService> ComposeServices { get; init; } = [];
     public IReadOnlyList<JitDependentChoice> DependentChoices { get; init; } = [];
 }
 
@@ -113,6 +115,9 @@ public sealed class JsonJitConfigStore : IJitConfigStore
     }
 }
 
+/// <summary>A service build-on-server builds, named in the settings (from the compose file) instead of in the project.</summary>
+public sealed record JitConfiguredService(string Name, string ImageRef, string TagVariable);
+
 public sealed record JitConfigProblem(string Message, string Field);
 
 public static class JitDeployConfigValidator
@@ -143,6 +148,14 @@ public static class JitDeployConfigValidator
         }
         else Safe("repoUrl", "git address", JitNames.RepoUrl, c.RepoUrl);
 
+        foreach (var s in c.ComposeServices ?? [])
+        {
+            Safe("composeServices", "service name", JitNames.Service, s.Name ?? string.Empty);
+            Safe("composeServices", "image name", JitNames.ImageRef, s.ImageRef ?? string.Empty);
+            Safe("composeServices", "tag variable", JitNames.TagVariable, s.TagVariable ?? string.Empty);
+        }
+        if ((c.ComposeServices ?? []).GroupBy(s => s.Name ?? string.Empty, StringComparer.OrdinalIgnoreCase).Any(g => g.Count() > 1))
+            p.Add(new("Each service can only be listed once.", "composeServices"));
         if (c.UseDeployKey && c.CredentialResourceId is not null)
             p.Add(new("Choose either a deploy key or a saved credential, not both.", "credentialResourceId"));
         else if (c.CredentialResourceId is not null && !string.IsNullOrWhiteSpace(c.RepoUrl) && !global::System.Text.RegularExpressions.Regex.IsMatch(c.RepoUrl.Trim(), "^https://", global::System.Text.RegularExpressions.RegexOptions.IgnoreCase))

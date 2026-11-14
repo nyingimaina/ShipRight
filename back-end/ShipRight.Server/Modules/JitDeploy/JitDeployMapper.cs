@@ -26,8 +26,8 @@ public static class JitDeployMapper
             problems.Add("Enter the git address the server should fetch your code from.");
         else if (GitAddressForms.Analyse(cfg.RepoUrl).HadCredentials)
             problems.Add("The saved git address contains a password or token. ShipRight does not keep secrets inside an address. Use the SSH form (git@host:owner/repo.git) with a deploy key.");
-        if (project.Services.Count == 0)
-            problems.Add("This project has no services to deploy.");
+        if (project.Services.Count == 0 && cfg.ComposeServices.Count == 0)
+            problems.Add(JitServiceHelp.NoServices);
 
         var services = new List<JitService>();
         foreach (var s in project.Services)
@@ -41,6 +41,9 @@ public static class JitDeployMapper
             }
             services.Add(new JitService(ComposeServiceName(s), GeneratedCompose.TagVariable(s.Name), image));
         }
+
+        if (project.Services.Count == 0)
+            services.AddRange(cfg.ComposeServices.Select(c => new JitService(c.Name, c.TagVariable, c.ImageRef)));
 
         if (problems.Count > 0) return new(null, problems);
 
@@ -88,6 +91,15 @@ public static class JitDeployMapper
             string.IsNullOrWhiteSpace(s.SshKeyPath) || string.IsNullOrWhiteSpace(s.RemoteWorkingDir))
             return null;
         return new JitTarget(s.Host, s.Username, s.SshKeyPath, s.RemoteWorkingDir);
+    }
+
+    /// <summary>The services to build: the project's own, or (when it has none) the ones named in the settings from the compose file.</summary>
+    public static IReadOnlyList<JitService> Services(ProjectConfig project, JitDeployConfig? cfg)
+    {
+        var own = Services(project);
+        return own.Count > 0 || cfg is null
+            ? own
+            : cfg.ComposeServices.Select(c => new JitService(c.Name, c.TagVariable, c.ImageRef)).ToList();
     }
 
     /// <summary>The same rule the generated compose file uses to name a service.</summary>

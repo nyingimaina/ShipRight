@@ -207,6 +207,7 @@ try
         app.MapJitHintRoutes();
         app.MapJitDeployKeyRoutes();
         app.MapJitCredentialRoutes();
+        app.MapJitComposeFileRoutes();
     }
     app.MapProjectBundleRoutes();
     app.MapProjectSummaryRoutes();

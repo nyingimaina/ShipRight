@@ -10,6 +10,11 @@ jest.mock('@/shared/ApiService', () => ({
 }));
 jest.mock('react-hot-toast', () => ({ __esModule: true, default: { error: jest.fn(), success: jest.fn() } }));
 
+jest.mock('@/modules/FilePicker/FilePicker', () => ({
+  __esModule: true,
+  default: ({ onSelect }: { onSelect: (p: string) => void }) => <button type="button" onClick={() => onSelect('D:\\work\\shop\\deploy\\docker-compose.yml')}>choose file</button>,
+}));
+
 const mockApi = api as jest.Mocked<typeof api>;
 
 const SSH = 'git@github.com:o/shop.git';
@@ -27,11 +32,12 @@ const stacksResp = (over: Partial<JitStacksResponse> = {}): JitStacksResponse =>
 let hints: JitHintsResponse | Error = hintsResp();
 let stacks: JitStacksResponse | Error = stacksResp();
 let credentialList: unknown[] = [];
+let serviceHelpResp: unknown = null;
 let branches: unknown = { branches: ['main', 'dev'], defaultBranch: 'main', error: null };
 
 function setup(config: Partial<JitConfig> = {}) {
   mockApi.get.mockImplementation(async (path: string) => {
-    if (path.endsWith('/config')) return { config: { ...DEFAULT_JIT_CONFIG, ...config }, services: [], problems: [] } as never;
+    if (path.endsWith('/config')) return { config: { ...DEFAULT_JIT_CONFIG, ...config }, services: [], problems: [], serviceHelp: serviceHelpResp } as never;
     if (path.endsWith('/releases')) return { phase: 'Idle', currentTag: null, previousTag: null, needsAttention: false, attention: null, error: null, releases: [] } as never;
     if (path.endsWith('/dependents')) return { pairs: [], note: null } as never;
     if (path.endsWith('/hints')) { if (hints instanceof Error) throw hints; return hints as never; }
@@ -48,7 +54,7 @@ function setup(config: Partial<JitConfig> = {}) {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  hints = hintsResp(); stacks = stacksResp(); credentialList = [];
+  hints = hintsResp(); stacks = stacksResp(); credentialList = []; serviceHelpResp = null;
   branches = { branches: ['main', 'dev'], defaultBranch: 'main', error: null };
 });
 
@@ -325,6 +331,65 @@ describe('the compose file and a saved credential', () => {
     await waitFor(() => expect(mockApi.post).toHaveBeenCalledWith('/api/jit/p1/git-access', { repoUrl: 'https://github.com/o/shop.git', useDeployKey: false, credentialId: 'c1' }));
     fireEvent.click(screen.getByRole('button', { name: /find branches on the server/i }));
     await waitFor(() => expect(mockApi.post).toHaveBeenCalledWith('/api/jit/p1/branches', { url: 'https://github.com/o/shop.git', credentialId: 'c1' }));
+  });
+});
+
+describe('services from the compose file', () => {
+  const found = {
+    relativePath: 'deploy/docker-compose.yml', repoRoot: 'D:\\work\\shop',
+    services: [{ name: 'api', imageRef: 'shop/api', tagVariable: 'API_TAG', built: true, suggested: true, note: null }], leftAlone: ['db'], notes: [],
+  };
+
+  it('explains why there are no services, with the fix, and uses the services found in the project folder', async () => {
+    serviceHelpResp = {
+      explanation: 'Building on the server needs to know which parts of your compose file to build and tag.',
+      steps: ['ShipRight read deploy/docker-compose.yml in your project folder and found these services it can build: api.'], found,
+    };
+    setup({ ...ON });
+    expect(await screen.findByText(/needs to know which parts of your compose file/i)).toBeInTheDocument();
+    expect(screen.getByText(/found these services it can build: api/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /^use these services$/i }));
+    expect(screen.getByLabelText(/^Compose file in your repository/)).toHaveValue('deploy/docker-compose.yml');
+    expect(screen.getByText(/you have unsaved changes/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /save settings/i }));
+    await waitFor(() => expect(mockApi.put).toHaveBeenCalledWith('/api/jit/p1/config', expect.objectContaining({
+      composeFile: 'deploy/docker-compose.yml', composeServices: [{ name: 'api', imageRef: 'shop/api', tagVariable: 'API_TAG' }],
+    })));
+  });
+
+  it('picks the compose file with the file picker, and takes its services when the project has none', async () => {
+    serviceHelpResp = { explanation: 'Building on the server needs to know which parts of your compose file to build and tag.', steps: ['Pick your compose file with Browse.'], found: null };
+    setup({ ...ON });
+    await screen.findByText(/needs to know which parts of your compose file/i);
+    mockApi.post.mockImplementation(async (path: string) => (path.endsWith('/compose-file') ? found as never : {} as never));
+
+    fireEvent.click(screen.getByRole('button', { name: /browse for the compose file/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'choose file' }));
+    await screen.findByRole('checkbox', { name: 'Build api' });
+    fireEvent.click(screen.getByRole('button', { name: /use this compose file and these services/i }));
+    expect(screen.getByLabelText(/^Compose file in your repository/)).toHaveValue('deploy/docker-compose.yml');
+    expect(screen.getByText(/services to build, from your compose file: api/i)).toBeInTheDocument();
+  });
+
+  it('only sets the path when the project has services of its own', async () => {
+    setup({ ...ON });
+    await screen.findByLabelText(/^Compose file in your repository/);
+    expect(screen.queryByText(/needs to know which parts of your compose file/i)).not.toBeInTheDocument();
+    mockApi.post.mockImplementation(async (path: string) => (path.endsWith('/compose-file') ? found as never : {} as never));
+
+    fireEvent.click(screen.getByRole('button', { name: /browse for the compose file/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'choose file' }));
+    fireEvent.click(await screen.findByRole('button', { name: /use this compose file$/i }));
+    expect(screen.getByLabelText(/^Compose file in your repository/)).toHaveValue('deploy/docker-compose.yml');
+    expect(screen.queryByText(/services to build, from your compose file/i)).not.toBeInTheDocument();
+  });
+
+  it('clears the services taken from the compose file', async () => {
+    setup({ ...ON, composeServices: [{ name: 'api', imageRef: 'shop/api', tagVariable: 'API_TAG' }] });
+    fireEvent.click(await screen.findByRole('button', { name: /clear these services/i }));
+    expect(screen.queryByText(/services to build, from your compose file/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/you have unsaved changes/i)).toBeInTheDocument();
   });
 });
 

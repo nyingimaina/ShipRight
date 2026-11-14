@@ -8,6 +8,7 @@ import {
 } from './jitDeploy';
 import JitGitAccess from './JitGitAccess';
 import JitCredentialPicker, { isHttps } from './JitCredentialPicker';
+import JitComposeServices, { ServiceHelp } from './JitComposeServices';
 import {
   addressOptions, addressWarning, branchAfterPick, defaultBranchSuggestion, JitBranchesResponse, JitHintsResponse, JitStacksResponse, prefillPatch,
 } from './jitHints';
@@ -67,6 +68,7 @@ export default function JitDeployCard({ projectId }: Props) {
   const [stacks, setStacks] = useState<JitStacksResponse | null>(null);
   const [branchList, setBranchList] = useState<JitBranchesResponse | null>(null);
   const [findingBranches, setFindingBranches] = useState(false);
+  const [serviceHelp, setServiceHelp] = useState<ServiceHelp | null>(null);
   const prefillPending = useRef(false);
   const savedRef = useRef<JitConfig>(DEFAULT_JIT_CONFIG);
 
@@ -102,6 +104,7 @@ export default function JitDeployCard({ projectId }: Props) {
     setSaved(c);
     setServices(res.services ?? []);
     setProblems(res.problems ?? []);
+    setServiceHelp((res as { serviceHelp?: ServiceHelp | null }).serviceHelp ?? null);
     return c;
   }, [base]);
 
@@ -316,7 +319,12 @@ export default function JitDeployCard({ projectId }: Props) {
 
           <Field id="jit-compose" label="Compose file in your repository (optional)" tipLabel="Compose file in your repository" error={errors.composeFile}
             tip={'Where the docker-compose file is inside your repository, for example deploy/docker-compose.yml. Leave it empty if it is in the top folder (docker-compose.yml or compose.yaml).'}>
-            <input id="jit-compose" style={input} value={cfg.composeFile} placeholder="docker-compose.yml" onChange={e => set('composeFile', e.target.value)} />
+            <>
+              <input id="jit-compose" style={input} value={cfg.composeFile} placeholder="docker-compose.yml" onChange={e => set('composeFile', e.target.value)} />
+              <JitComposeServices base={base} needsServices={serviceHelp !== null || cfg.composeServices.length > 0} current={cfg.composeServices} help={serviceHelp}
+                onApply={(file, picked) => setCfg(c => ({ ...c, composeFile: file, ...(picked ? { composeServices: picked } : {}) }))}
+                onClear={() => set('composeServices', [])} />
+            </>
           </Field>
 
           <Field id="jit-project" label="Compose project name (optional)" tipLabel="Compose project name" error={errors.composeProject}

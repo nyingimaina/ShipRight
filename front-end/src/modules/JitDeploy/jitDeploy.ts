@@ -6,6 +6,13 @@ export interface JitDependentChoice {
   restart: boolean;
 }
 
+/** A service to build, named in the settings (taken from the compose file) when the project has none of its own. */
+export interface JitConfiguredService {
+  name: string;
+  imageRef: string;
+  tagVariable: string;
+}
+
 export interface JitConfig {
   enabled: boolean;
   repoUrl: string;
@@ -24,6 +31,7 @@ export interface JitConfig {
   credentialResourceId: string | null;
   /** The compose file inside the repository. Empty = the usual file in its top folder. */
   composeFile: string;
+  composeServices: JitConfiguredService[];
   dependentChoices: JitDependentChoice[];
 }
 
@@ -42,6 +50,7 @@ export const DEFAULT_JIT_CONFIG: JitConfig = {
   useDeployKey: false,
   credentialResourceId: null,
   composeFile: '',
+  composeServices: [],
   dependentChoices: [],
 };
 

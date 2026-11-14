@@ -38,7 +38,7 @@ public static class JitDeployRoutes
         try { cfg = await configs.GetAsync(id) ?? new JitDeployConfig(); }
         catch (InvalidDataException ex) { return Results.Problem(ex.Message); }
 
-        var services = JitDeployMapper.Services(project).Select(s => new
+        var services = JitDeployMapper.Services(project, cfg).Select(s => new
         {
             name = s.Name,
             tagVariable = s.TagVariable,
@@ -49,7 +49,12 @@ public static class JitDeployRoutes
         var problems = cfg.Enabled ? JitDeployMapper.Map(project, cfg).Problems : [];
         // A saved address may predate the rule against secrets in addresses: never send one to the screen.
         var shown = cfg with { RepoUrl = GitAddressForms.Analyse(cfg.RepoUrl).Original };
-        return Results.Ok(new { config = shown, services, problems });
+        var help = cfg.Enabled ? JitServiceHelp.For(project, cfg, problems) : null;
+        return Results.Ok(new
+        {
+            config = shown, services, problems,
+            serviceHelp = help is null ? null : new { explanation = help.Explanation, steps = help.Steps, found = help.Found },
+        });
     }
 
     internal static async Task<IResult> HandleSaveConfigAsync(string id, JitDeployConfig body, IProjectStore projects, IJitConfigStore configs)

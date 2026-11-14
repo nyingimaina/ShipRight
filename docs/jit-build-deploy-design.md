@@ -425,3 +425,16 @@ touched and nothing on the server names the deployer. No password or token is in
   name. The path must be relative, end in `.yml` or `.yaml`, and contain no `..` or empty parts. Relative `build.context` paths in that
   file resolve from the file's own folder, as compose always does. One repository still has to hold the compose file and the code
   of every service.
+
+### Services from the compose file, and the "no services to deploy" help
+- Build-on-server normally takes its services (name, image, tag variable) from the project's own service list. A project with none used to stop with
+  "This project has no services to deploy." (the wording is unchanged). Now the settings can hold `ComposeServices`, taken from the compose file; they are
+  used only when the project has no services of its own, so every existing project behaves exactly as before.
+- **Browse for the compose file** (the card's file picker): `POST /api/jit/{id}/compose-file` reads the picked file on this computer, finds its git
+  repository, returns its path inside the repository, and lists the services to build (those with a `build:` section or a matching Dockerfile), the
+  services left alone (databases, proxies) and, per service, what to change in the compose file (its image line should be `${<SERVICE>_TAG:-repo:latest}`).
+  It only reads; a file outside a git repository, with a name that cannot be used, not ending in .yml/.yaml, or over 1 MB is refused with a plain reason.
+- **The explanation.** When the problem is the missing services, the settings screen is sent `serviceHelp`: why it happens, numbered steps, and, when a
+  compose file can be found in the project's own folder (the named one, else the usual names in the repository root), the services found in it with a
+  "Use these services" button. If nothing is found the steps say to pick the file with Browse, put a docker-compose.yml in the repository's top folder with
+  `build:` sections, or add services to the project. A deploy that cannot start says the same in one sentence.
