@@ -22,6 +22,7 @@ using ShipRight.Modules.Filesystem;
 using ShipRight.Modules.Identity;
 using ShipRight.Modules.BuildRecipes;
 using ShipRight.Modules.ConnectionTest;
+using ShipRight.Modules.DockerAdoption;
 using ShipRight.Modules.JitDeploy;
 using ShipRight.Modules.Projects;
 using ShipRight.Modules.RepoMaintenance;
@@ -196,6 +197,7 @@ try
     app.MapProjectRoutes();
     app.MapProjectPathRefreshRoutes();
     app.MapSetupRoutes();
+    app.MapAdoptionRoutes();
     app.MapProjectBuildSourceRoutes();
     app.MapProjectLocalCleanupRoutes();
     app.MapProjectSpaceRoutes();

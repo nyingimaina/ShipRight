@@ -22,7 +22,9 @@ public sealed record AdoptedService(
     IReadOnlyList<string> ArgsNeedingAValue,
     TagStyle TagStyle,
     string? TagVariable,
-    IReadOnlyList<string> Reasons);
+    IReadOnlyList<string> Reasons,
+    string? VersionFile = null,
+    string SuggestedVersionFile = "");
 
 public sealed record AdoptionPlan(
     string Root,
@@ -30,7 +32,9 @@ public sealed record AdoptionPlan(
     IReadOnlyList<AdoptedService> Services,
     IReadOnlyList<string> ThirdParty,
     IReadOnlyList<string> UnusedDockerfiles,
-    IReadOnlyList<string> Warnings);
+    IReadOnlyList<string> Warnings,
+    string? RepoRoot = null,
+    string? RepoBranch = null);
 
 /// <summary>
 /// Reads an existing Docker setup (Dockerfiles with any name, and a compose file) and works out, for each image the
@@ -46,7 +50,8 @@ public static class DockerSetupAnalyzer
 
     internal sealed record Found(string Full, string Rel, int Depth, string? Stem, string? Folder, DockerfileInfo Info);
 
-    public static AdoptionPlan Analyse(string rootPath)
+    /// <param name="choices">Service name to the Dockerfile (relative to the folder) the person picked. A pick always wins.</param>
+    public static AdoptionPlan Analyse(string rootPath, IReadOnlyDictionary<string, string>? choices = null)
     {
         var root = Path.GetFullPath(rootPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         if (!Directory.Exists(root)) throw new DirectoryNotFoundException($"Folder not found: {rootPath}");
@@ -74,9 +79,16 @@ public static class DockerSetupAnalyzer
             var composeDir = Path.GetDirectoryName(compose.Full)!;
             foreach (var cs in ComposeLite.Parse(File.ReadAllText(compose.Full)))
             {
+                var chosen = choices is not null && choices.TryGetValue(cs.Name, out var pick) && cs.Build is null
+                    ? dockerfiles.FirstOrDefault(f => f.Rel.Equals(pick.Replace('\\', '/'), StringComparison.OrdinalIgnoreCase))
+                    : null;
+                if (choices is not null && choices.TryGetValue(cs.Name, out var asked) && cs.Build is null && chosen is null)
+                    warnings.Add($"You chose {asked.Replace('\\', '/')} for '{cs.Name}', but that file was not found, so the choice was ignored.");
                 var adopted = cs.Build is not null
                     ? FromComposeBuild(root, composeDir, cs, dockerfiles, claimed, warnings)
-                    : FromNames(root, cs, dockerfiles, claimed);
+                    : chosen is not null
+                        ? FromChoice(root, cs, chosen, dockerfiles, claimed)
+                        : FromNames(root, cs, dockerfiles, claimed);
                 if (adopted is null) thirdParty.Add(cs.Name); else services.Add(adopted);
             }
         }
@@ -95,7 +107,8 @@ public static class DockerSetupAnalyzer
             warnings.Add($"{string.Join(", ", shared.Select(s => s.Name))} share one tag variable ({shared.Key}), so they cannot be versioned independently.");
 
         var unused = dockerfiles.Where(f => !claimed.Contains(f.Full)).Select(f => f.Rel).ToList();
-        return new AdoptionPlan(root, composeFiles.Count > 0 ? compose.Rel : null, services, thirdParty, unused, warnings);
+        var repoRoot = FindGitRoot(root) ?? root;
+        return new AdoptionPlan(root, composeFiles.Count > 0 ? compose.Rel : null, services, thirdParty, unused, warnings, repoRoot, ReadBranch(repoRoot));
     }
 
     // ── services from a compose build section ────────────────────────────────
@@ -112,7 +125,7 @@ public static class DockerSetupAnalyzer
 
         var info = found?.Info;
         return Make(root, cs.Name, dockerfile, ctxFull, b.Target, b.Args, cs, info, Confidence.High, [],
-            [$"The compose file builds it from {Rel(root, ctxFull)} with {dockerfile}."]);
+            [$"The compose file builds it from {Rel(root, ctxFull)} with {dockerfile}."], VersionFiles(root, ctxFull, found));
     }
 
     // ── services matched to Dockerfiles by name ──────────────────────────────
@@ -142,24 +155,86 @@ public static class DockerSetupAnalyzer
         var ctx = InferContext(root, best);
         var conf = top >= 90 ? Confidence.High : top >= 60 ? Confidence.Medium : Confidence.Low;
         return Make(root, cs.Name, DockerfileRelative(ctx, best.Full), ctx, null, new Dictionary<string, string>(), cs, best.Info, conf, alternatives,
-            [$"Its name matches {best.Rel}."]);
+            [$"Its name matches {best.Rel}."], VersionFiles(root, ctx, best));
+    }
+
+    /// <summary>The person picked the Dockerfile: it is used as it is, with its context worked out from what it copies.</summary>
+    private static AdoptedService FromChoice(string root, ComposeServiceInfo cs, Found picked, List<Found> all, HashSet<string> claimed)
+    {
+        claimed.Add(picked.Full);
+        var svc = Norm(cs.Name);
+        var repo = Norm(LastSegment(ImageRepo(cs.Image)));
+        var others = all.Where(f => f.Full != picked.Full && !claimed.Contains(f.Full) && Score(f, svc, repo) >= 50).Select(f => f.Rel).ToList();
+        var ctx = InferContext(root, picked);
+        return Make(root, cs.Name, DockerfileRelative(ctx, picked.Full), ctx, null, new Dictionary<string, string>(), cs, picked.Info, Confidence.High, others,
+            [$"You chose {picked.Rel}."], VersionFiles(root, ctx, picked));
+    }
+
+    private static string? FindGitRoot(string start)
+    {
+        for (var d = start; d is not null; d = Path.GetDirectoryName(d))
+            if (Directory.Exists(Path.Combine(d, ".git")) || File.Exists(Path.Combine(d, ".git"))) return d;
+        return null;
+    }
+
+    /// <summary>The branch named in .git/HEAD; null for a detached HEAD or a .git file.</summary>
+    private static string? ReadBranch(string repoRoot)
+    {
+        try
+        {
+            var head = Path.Combine(repoRoot, ".git", "HEAD");
+            if (!File.Exists(head)) return null;
+            const string prefix = "ref: refs/heads/";
+            var line = File.ReadAllText(head).Trim();
+            return line.StartsWith(prefix, StringComparison.Ordinal) && line.Length > prefix.Length ? line[prefix.Length..] : null;
+        }
+        catch (IOException) { return null; }
+        catch (UnauthorizedAccessException) { return null; }
     }
 
     private static AdoptedService FromDockerfile(string root, Found f, string name)
     {
         var ctx = InferContext(root, f);
+        var (version, suggested) = VersionFiles(root, ctx, f);
         return new AdoptedService(name, DockerfileRelative(ctx, f.Full), RelativeContext(root, ctx), null, new Dictionary<string, string>(), null, null,
             Confidence.Medium, [], f.Info.OtherEnds, NeedingValue(f.Info, new Dictionary<string, string>()), TagStyle.None, null,
-            [$"Found {f.Rel}; there is no compose file, so it is named from its file or folder."]);
+            [$"Found {f.Rel}; there is no compose file, so it is named from its file or folder."], version, suggested);
     }
 
     private static AdoptedService Make(string root, string name, string dockerfile, string ctxFull, string? target,
         IReadOnlyDictionary<string, string> args, ComposeServiceInfo cs, DockerfileInfo? info, Confidence conf,
-        IReadOnlyList<string> alternatives, IReadOnlyList<string> reasons)
+        IReadOnlyList<string> alternatives, IReadOnlyList<string> reasons, (string? Version, string Suggested) version)
     {
         var (style, variable) = StyleOf(cs);
         return new AdoptedService(name, dockerfile, RelativeContext(root, ctxFull), target, args, ImageName(cs.Image), cs.Name, conf, alternatives,
-            info?.OtherEnds ?? [], info is null ? [] : NeedingValue(info, args), style, variable, reasons);
+            info?.OtherEnds ?? [], info is null ? [] : NeedingValue(info, args), style, variable, reasons, version.Version, version.Suggested);
+    }
+
+    /// <summary>
+    /// The version.txt the service's version is read from: next to the app it builds (the first folder it copies), else beside
+    /// its Dockerfile, else in its build context. When there is none, where to create one is suggested; nothing is created here.
+    /// </summary>
+    private static (string? Version, string Suggested) VersionFiles(string root, string ctxFull, Found? f)
+    {
+        var candidates = new List<string>();
+        if (f is not null)
+        {
+            foreach (var src in f.Info.CopySources)
+            {
+                var seg = src.Replace('\\', '/').TrimStart('.', '/').Split('/', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+                if (seg is null || seg.IndexOfAny(['*', '?', '[']) >= 0) continue;
+                var dir = Path.Combine(ctxFull, seg);
+                if (Directory.Exists(dir)) { candidates.Add(dir); break; }
+            }
+            candidates.Add(Path.GetDirectoryName(f.Full)!);
+        }
+        candidates.Add(ctxFull);
+        foreach (var c in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var file = Path.Combine(c, "version.txt");
+            if (File.Exists(file)) return (Rel(root, file), Rel(root, file));
+        }
+        return (null, Rel(root, Path.Combine(candidates[0], "version.txt")));
     }
 
     // ── scoring ──────────────────────────────────────────────────────────────
