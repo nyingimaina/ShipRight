@@ -18,6 +18,15 @@ import styles from './Styles/ProjectList.module.css';
 // undefined = pane closed | null = new project | IProject = editing existing
 type WizardTarget = IProject | null | undefined;
 
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/** "Pipeline · 3 services · Prod": what kind of project it is, how big it is, and where it deploys. */
+const summary = (p: IProject) =>
+  [p.type === 'Freeform' ? 'Freeform' : 'Pipeline', plural(p.services.length, 'service'), p.server?.name || p.server?.host]
+    .filter(Boolean).join(' · ');
+
+const MAX_CHIPS = 4;
+
 export default function ProjectList() {
   const router = useRouter();
   const [projects, setProjects] = useState<IProject[]>([]);
@@ -97,59 +106,74 @@ export default function ProjectList() {
             ) : undefined,
           }}
         >
-          <div className={styles.header}>
-            <h1 className={styles.heading}>Projects</h1>
-            <div style={{ display: 'flex', gap: 8 }}>
+          <header className={styles.header}>
+            <div>
+              <h1 className={styles.heading}>Projects</h1>
+              <p className={styles.subtitle}>
+                {loading ? 'Loading your projects…' : projects.length === 0 ? 'Nothing here yet' : plural(projects.length, 'project')}
+              </p>
+            </div>
+            <div className={styles.actions}>
               <AdoptLauncher onSaved={load} />
-              <ZestButton onClick={() => setImportOpen(true)} zest={{ buttonStyle: 'outline' }}>
+              <ZestButton onClick={() => setImportOpen(true)} zest={{ buttonStyle: 'outline', semanticType: 'import' }}>
                 Import
               </ZestButton>
-              <ZestButton onClick={() => setWizardTarget(null)}
-                zest={{ visualOptions: { variant: 'standard' }, semanticType: 'add' }}>
+              <ZestButton onClick={() => setWizardTarget(null)} zest={{ semanticType: 'new' }}>
                 New Project
               </ZestButton>
             </div>
-          </div>
+          </header>
 
           <div className={styles.grid}>
             {loading && [0, 1, 2].map(i => (
               <div key={i} className={`${styles.card} ${styles.skeletonCard}`}>
                 <div className={`skeleton ${styles.skeletonTitle}`} />
+                <div className={`skeleton ${styles.skeletonMeta}`} />
                 <div className={styles.skeletonChips}>
                   <div className={`skeleton ${styles.skeletonChip}`} />
                   <div className={`skeleton ${styles.skeletonChip}`} />
                 </div>
-                <div className={`skeleton ${styles.skeletonLink}`} />
               </div>
             ))}
             {!loading && projects.map(p => (
-              <div key={p.id} className={styles.card}>
+              <article key={p.id} className={styles.card} onClick={() => openDetail(p.id)}>
                 <div className={styles.cardTop}>
-                  <div>
-                    <h3 className={styles.cardTitle}>{p.name}</h3>
-                    <div className={styles.chips}>
-                      {p.services.map(s => <span key={s.name} className={styles.chip}>{s.name}</span>)}
-                    </div>
+                  <h3 className={styles.cardTitle}>
+                    <a
+                      className={styles.titleLink}
+                      href={`/projects/?detail=${p.id}`}
+                      onClick={e => { e.preventDefault(); e.stopPropagation(); openDetail(p.id); }}
+                    >{p.name}</a>
+                  </h3>
+                  <div className={styles.menu} onClick={e => e.stopPropagation()}>
+                    <OverflowMenu items={[
+                      { content: 'Edit', onClick: () => setWizardTarget(p) },
+                      { content: 'Export', onClick: () => handleExport(p.id, p.name) },
+                      { content: 'Delete', onClick: () => handleDelete(p.id, p.name) },
+                    ]} />
                   </div>
-                  <OverflowMenu items={[
-                    { content: 'Edit', onClick: () => setWizardTarget(p) },
-                    { content: 'Export', onClick: () => handleExport(p.id, p.name) },
-                    { content: 'Delete', onClick: () => handleDelete(p.id, p.name) },
-                  ]} />
                 </div>
-                <button onClick={() => openDetail(p.id)} className={styles.cardLink}>View detail →</button>
-              </div>
+                <p className={styles.meta}>{summary(p)}</p>
+                <div className={styles.chips}>
+                  {p.services.slice(0, MAX_CHIPS).map(s => <span key={s.name} className={styles.chip}>{s.name}</span>)}
+                  {p.services.length > MAX_CHIPS && <span className={styles.chipMore}>+{p.services.length - MAX_CHIPS}</span>}
+                </div>
+                <span className={styles.chevron} aria-hidden="true">›</span>
+              </article>
             ))}
           </div>
 
           {!loading && projects.length === 0 && (
-            <p className={styles.empty}>
-              No projects yet.{' '}
-              <button onClick={() => setWizardTarget(null)}
-                style={{ background: 'none', border: 'none', color: '#C9A84C', cursor: 'pointer' }}>
-                Create one
-              </button>.
-            </p>
+            <section className={styles.empty}>
+              <h2 className={styles.emptyTitle}>No projects yet</h2>
+              <p className={styles.emptyText}>
+                A project tells ShipRight how to build and ship your app. Create one to get started, or bring in one you exported earlier.
+              </p>
+              <div className={styles.emptyActions}>
+                <ZestButton onClick={() => setWizardTarget(null)} zest={{ semanticType: 'new' }}>New project</ZestButton>
+                <ZestButton onClick={() => setImportOpen(true)} zest={{ buttonStyle: 'outline', semanticType: 'import' }}>Import</ZestButton>
+              </div>
+            </section>
           )}
         </ZestResponsiveLayout>
         {importOpen && (

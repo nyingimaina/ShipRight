@@ -217,7 +217,7 @@ describe('JitDeployCard', () => {
     fireEvent.click(deployButton());
 
     await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
-    expect(mockApi.post).toHaveBeenCalledWith('/api/jit/p1/deploy', { force: false, commit: null, allowWithoutRollback: false });
+    expect(mockApi.post).toHaveBeenCalledWith('/api/jit/p1/deploy', { force: false, commit: null, allowWithoutRollback: false, rebuildAll: false });
     expect(FakeEventSource.instances[0].url).toBe('/api/builds/b1/stream');
 
     FakeEventSource.instances[0].emit('LogLine', { line: '[deploy] Building api, web' });
@@ -280,7 +280,22 @@ describe('JitDeployCard', () => {
     fireEvent.click(deployButton());
 
     await waitFor(() => expect(mockApi.post).toHaveBeenCalled());
-    expect(mockApi.post).toHaveBeenCalledWith('/api/jit/p1/deploy', { force: true, commit: 'ab8b4a9', allowWithoutRollback: false });
+    expect(mockApi.post).toHaveBeenCalledWith('/api/jit/p1/deploy', { force: true, commit: 'ab8b4a9', allowWithoutRollback: false, rebuildAll: false });
+  });
+
+  it('can rebuild every image even when nothing about it has changed', async () => {
+    setup({ config: ON });
+    await screen.findByLabelText('Git address');
+    mockApi.post.mockResolvedValueOnce({ buildId: 'b1' } as never);
+
+    fireEvent.click(screen.getByRole('button', { name: /advanced settings/i }));
+    const box = screen.getByLabelText('Rebuild every image, even if its files have not changed');
+    expect(box).not.toBeChecked();
+    fireEvent.click(box);
+    fireEvent.click(deployButton());
+
+    await waitFor(() => expect(mockApi.post).toHaveBeenCalled());
+    expect(mockApi.post).toHaveBeenCalledWith('/api/jit/p1/deploy', { force: false, commit: null, allowWithoutRollback: false, rebuildAll: true });
   });
 
   it('shows the reason when a deploy cannot even start, and streams nothing', async () => {

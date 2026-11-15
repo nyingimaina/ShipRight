@@ -56,7 +56,7 @@ public static class JitServerPrep
         if (m.Contains(ServerTool.Docker) || m.Contains(ServerTool.Daemon))
             steps.Add(new(ServerTool.Daemon, "Starting Docker and allowing this user to use it", StartDocker()));
         if (m.Contains(ServerTool.Docker) || m.Contains(ServerTool.Compose))
-            steps.Add(new(ServerTool.Compose, "Installing the Docker Compose plugin", InstallCompose()));
+            steps.Add(new(ServerTool.Compose, "Installing the Docker Compose plugin", InstallComposeRecent()));
         if (m.Contains(ServerTool.Docker) || m.Contains(ServerTool.Buildx))
             steps.Add(new(ServerTool.Buildx, "Installing Docker BuildKit (buildx)", InstallBuildx()));
         return steps;
@@ -106,6 +106,18 @@ public static class JitServerPrep
         "sudo -n mkdir -p /usr/local/lib/docker/cli-plugins && " +
         "sudo -n curl -fsSL \"https://github.com/docker/buildx/releases/download/$ver/buildx-$ver.linux-$a\" -o /usr/local/lib/docker/cli-plugins/docker-buildx && " +
         "sudo -n chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx && docker buildx version; fi";
+
+    /// <summary>
+    /// Compose 2.20 or newer is wanted (the shortcut folder uses its include feature). The install above fetches the latest release, so
+    /// this only confirms the result. It never fails the step: an older Compose still runs every deploy.
+    /// </summary>
+    public const string ComposeVersionCheck =
+        "v=$(docker compose version --short 2>/dev/null | sed 's/^v//'); " +
+        "if [ -n \"$v\" ] && [ \"$(printf '%s\n' 2.20.0 \"$v\" | sort -V | head -n1)\" = 2.20.0 ]; then " +
+        "echo \"Docker Compose $v is recent enough.\"; else " +
+        "echo \"[prepare] Docker Compose ${v:-unknown} is older than 2.20. Deploys still work; the shortcut folder needs 2.20 or newer, so a helper script is used instead.\"; fi";
+
+    private static string InstallComposeRecent() => InstallCompose() + "; " + ComposeVersionCheck;
 
     private static string InstallCompose() =>
         Marker("compose") +

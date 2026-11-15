@@ -19,6 +19,8 @@ public sealed record JitDeployConfig
     public string ComposeProject { get; init; } = string.Empty;
     /// <summary>Optional absolute path of an env file on the server, passed to compose.</summary>
     public string EnvFile { get; init; } = string.Empty;
+    /// <summary>This project's own <c>KEY=value</c> lines. Merged over the server settings' variables (these win) and written to the server on every deploy. Ignored when <see cref="EnvFile"/> names a file.</summary>
+    public string EnvText { get; init; } = string.Empty;
     public int ReleasesToKeep { get; init; } = 3;
     public int StopGraceSeconds { get; init; } = 30;
     public int HealthTimeoutSeconds { get; init; } = 60;

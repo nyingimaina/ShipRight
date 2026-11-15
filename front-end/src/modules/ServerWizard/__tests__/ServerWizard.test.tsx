@@ -256,7 +256,7 @@ describe('step 4: give ShipRight access', () => {
     await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining(`echo '${PUB}'`)));
     expect(screen.getByText(/run this on the server/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
-    fireEvent.click(screen.getByRole('button', { name: /i have run it/i }));
+    fireEvent.click(screen.getByRole('switch', { name: /i have added the key/i }));
     expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
   });
 
@@ -300,7 +300,7 @@ describe('step 5: test the connection', () => {
   async function toTest() {
     setup();
     await toAccess(/none of these/i);
-    fireEvent.click(await screen.findByRole('button', { name: /i have run it/i }));
+    fireEvent.click(await screen.findByRole('switch', { name: /i have added the key/i }));
     next();
     await screen.findByText(/step 5 of 5/i);
   }
@@ -321,7 +321,7 @@ describe('step 5: test the connection', () => {
     await screen.findByLabelText(/^Name/); await fillWhere(); next();
     await screen.findByText('SHA256:abc123');
     fireEvent.click(screen.getByRole('button', { name: /yes, trust this server/i }));
-    fireEvent.click(await screen.findByRole('button', { name: /i have run it/i }));
+    fireEvent.click(await screen.findByRole('switch', { name: /i have added the key/i }));
     next();
     await screen.findByText('The server is ready.');
     fireEvent.click(screen.getByRole('button', { name: 'Finish' }));
@@ -357,7 +357,7 @@ describe('step 5: test the connection', () => {
     });
     setup();
     await toAccess(/none of these/i);
-    fireEvent.click(await screen.findByRole('button', { name: /i have run it/i }));
+    fireEvent.click(await screen.findByRole('switch', { name: /i have added the key/i }));
     next();
     expect(await screen.findByText(/server not found/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Finish' })).toBeDisabled();

@@ -174,7 +174,7 @@ public class DatabaseOrchestrator
 
     // ── Query ──────────────────────────────────────────────────────────────────
 
-    public async Task QueryAsync(ProjectConfig project, string opId, string localSqlPath, CancellationToken ct)
+    public async Task QueryAsync(ProjectConfig project, string opId, string localSqlPath, CancellationToken ct, string? displayName = null)
     {
         var cfg      = project.Database!;
         var provider = _resolver.Resolve(cfg.Provider);
@@ -182,19 +182,23 @@ public class DatabaseOrchestrator
 
         try
         {
-            await EmitLog(opId, $"Running query against {cfg.DatabaseName}…");
+            var size = new FileInfo(localSqlPath).Length;
+            await EmitLog(opId, $"Running {displayName ?? Path.GetFileName(localSqlPath)} ({ByteSize.Format(size)}) against {cfg.DatabaseName}…");
 
             var remoteFile = $"/tmp/shipright-query-{opId}.sql";
-            await EmitLog(opId, $"Uploading SQL file to {server.Host}:{remoteFile}…");
-            await SftpUploadAsync(server, localSqlPath, remoteFile, ct);
+            await EmitLog(opId, $"Uploading to {server.Host}:{remoteFile}…");
+            var upload = NewProgress(opId, "upload", size);
+            await SftpUploadWithProgressAsync(server, localSqlPath, remoteFile, upload, ct);
 
-            var cmd = provider.QueryCommand(cfg, remoteFile);
+            var cmd = QueryProgress.Wrap(provider.QueryCommand(cfg, remoteFile), remoteFile);
             await EmitLog(opId, "Executing query…");
+            var run = NewProgress(opId, "run", size);
             var exit = await _ssh.RunAsync(
                 server.Host, server.Username, server.SshKeyPath, cmd,
                 onOutput: line => EmitOutput(opId, line),
                 onStderr: async line =>
                 {
+                    if (QueryProgress.TryParse(line, out var readSoFar, out _)) { run.Report(readSoFar); return; }
                     Log.Warning("Query stderr [{ProjectId}/{DB}]: {Line}", project.Id, cfg.DatabaseName, line);
                     await EmitLog(opId, line);
                 },
@@ -230,7 +234,7 @@ public class DatabaseOrchestrator
         try
         {
             await File.WriteAllTextAsync(tempFile, sql, ct);
-            await QueryAsync(project, opId, tempFile, ct);
+            await QueryAsync(project, opId, tempFile, ct, displayName: "your SQL");
         }
         finally
         {
@@ -605,6 +609,15 @@ public class DatabaseOrchestrator
     private Task EmitLog(string opId, string message)
         => _bus.EmitAsync(opId, "log", new { message });
 
+    private Task EmitProgress(string opId, string stage, string message, int percent, long done, long total)
+    {
+        _bus.EmitAsync(opId, "progress", new { stage, percent, doneBytes = done, totalBytes = total }).GetAwaiter().GetResult();
+        return EmitLog(opId, message);
+    }
+
+    private ProgressReporter NewProgress(string opId, string stage, long total) =>
+        new(stage, total, () => DateTime.UtcNow, (s, m, p, d, t) => EmitProgress(opId, s, m, p, d, t).GetAwaiter().GetResult());
+
     private Task EmitOutput(string opId, string line)
         => _bus.EmitAsync(opId, "output", new { line });
 
@@ -641,6 +654,28 @@ public class DatabaseOrchestrator
         {
             using var fs = File.OpenRead(localPath);
             sftp.UploadFile(fs, remotePath);
+        }
+        finally { sftp.Disconnect(); }
+    }
+
+    /// <summary>The same upload as <see cref="SftpUploadAsync"/>, reporting how much has gone (the callback runs on the upload's thread).</summary>
+    private async Task SftpUploadWithProgressAsync(ServerConfig server, string localPath, string remotePath, ProgressReporter progress, CancellationToken ct)
+    {
+        using var keyFile = await SshKeyLoader.LoadAsync(server.SshKeyPath);
+        using var sftp    = new SftpClient(server.Host, server.Username, keyFile);
+        sftp.ConnectionInfo.Timeout = TimeSpan.FromSeconds(30);
+        sftp.HostKeyReceived += (_, e) =>
+        {
+            var fp = BitConverter.ToString(e.FingerPrint).Replace("-", ":").ToLowerInvariant();
+            _knownHosts.Add(server.Host, fp);
+            e.CanTrust = true;
+        };
+        sftp.Connect();
+        try
+        {
+            using var fs = File.OpenRead(localPath);
+            sftp.UploadFile(fs, remotePath, uploaded => progress.Report((long)uploaded));
+            progress.Report(fs.Length);
         }
         finally { sftp.Disconnect(); }
     }

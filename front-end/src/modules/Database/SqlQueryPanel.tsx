@@ -6,6 +6,7 @@ import ResponsiveTable from 'jattac.libs.web.responsive-table';
 import FilePicker from '@/modules/FilePicker/FilePicker';
 import { api, sseUrl } from '@/shared/ApiService';
 import { useElapsedTimer, fmtElapsed } from '@/shared/hooks/useElapsedTimer';
+import { formatBytes } from './formatBytes';
 import styles from './Styles/SqlQueryPanel.module.css';
 
 interface Props {
@@ -31,6 +32,10 @@ export default function SqlQueryPanel({ apiBase }: Props) {
   const [rawSql, setRawSql] = useState('');
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  /** Set when the file is over the preview limit: the person is asked whether to run it without a preview. */
+  const [tooLarge, setTooLarge] = useState<{ sizeBytes: number } | null>(null);
+  /** How far the upload, then the run, has got. Null when nothing is being measured. */
+  const [progress, setProgress] = useState<{ stage: 'upload' | 'run'; percent: number; doneBytes: number; totalBytes: number } | null>(null);
   const [opId, setOpId] = useState<string | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [outputLines, setOutputLines] = useState<string[]>([]);
@@ -60,6 +65,8 @@ export default function SqlQueryPanel({ apiBase }: Props) {
         const data = JSON.parse(event.data);
         if (data.type === 'log') {
           setLogs(prev => [...prev, data.data.message]);
+        } else if (data.type === 'progress') {
+          setProgress(data.data);
         } else if (data.type === 'output') {
           collectedRef.current.push(data.data.line);
           setOutputLines(prev => [...prev, data.data.line]);
@@ -68,11 +75,13 @@ export default function SqlQueryPanel({ apiBase }: Props) {
           setTableData(table);
           setResultStatus('success');
           setResultMessage(table ? '' : 'Query executed successfully.');
+          setProgress(null);
           setPhase('done');
           es.close();
         } else if (data.type === 'error') {
           setResultStatus('error');
           setResultMessage(data.data.message ?? 'Query failed.');
+          setProgress(null);
           setPhase('done');
           es.close();
         }
@@ -82,6 +91,7 @@ export default function SqlQueryPanel({ apiBase }: Props) {
       if (es.readyState === EventSource.CLOSED) {
         setResultStatus('error');
         setResultMessage('Connection lost.');
+        setProgress(null);
         setPhase('done');
         es.close();
       }
@@ -95,12 +105,14 @@ export default function SqlQueryPanel({ apiBase }: Props) {
     setResultStatus(null);
     setResultMessage('');
     collectedRef.current = [];
+    setProgress(null);
     setPhase('running');
   };
 
   const handleFilePick = async (path: string) => {
     setSqlPath(path);
     setPreviewError(null);
+    setTooLarge(null);
     setLoadingPreview(true);
     setSqlContent('');
     try {
@@ -108,7 +120,13 @@ export default function SqlQueryPanel({ apiBase }: Props) {
       setSqlContent(content);
       setPhase('preview');
     } catch (e: unknown) {
-      setPreviewError((e as { message?: string })?.message ?? 'Failed to read file.');
+      const err = e as { message?: string; tooLarge?: boolean; sizeBytes?: number };
+      if (err?.tooLarge && typeof err.sizeBytes === 'number') {
+        setTooLarge({ sizeBytes: err.sizeBytes });   // not an error: ask whether to run it without a preview
+        setPhase('preview');
+      } else {
+        setPreviewError(err?.message ?? 'Failed to read file.');
+      }
     } finally {
       setLoadingPreview(false);
     }
@@ -149,6 +167,8 @@ export default function SqlQueryPanel({ apiBase }: Props) {
     esRef.current?.close();
     setSqlPath('');
     setSqlContent('');
+    setTooLarge(null);
+    setProgress(null);
     setLogs([]);
     setOutputLines([]);
     setTableData(null);
@@ -224,36 +244,82 @@ export default function SqlQueryPanel({ apiBase }: Props) {
               Change file
             </ZestButton>
           </div>
-          <div className={styles.preview}>
-            <SyntaxHighlighter
-              language="sql"
-              style={vscDarkPlus}
-              customStyle={{ margin: 0, borderRadius: 8, fontSize: 13, maxHeight: 400, overflow: 'auto' }}
-              showLineNumbers
-            >
-              {sqlContent}
-            </SyntaxHighlighter>
-          </div>
-          <div className={styles.actions}>
-            <ZestButton onClick={handleExecuteFile} zest={{ visualOptions: { variant: 'standard' } }}>
-              Execute
-            </ZestButton>
-            <ZestButton onClick={reset} zest={{ buttonStyle: 'outline' }}>
-              Cancel
-            </ZestButton>
-          </div>
+          {tooLarge ? (
+            <>
+              <div className={styles.bigFile} role="alert">
+                <p className={styles.bigFileTitle}>Run it without a preview?</p>
+                <p className={styles.bigFileText}>
+                  This file is {formatBytes(tooLarge.sizeBytes)}, which is too large to preview here. ShipRight sends the whole file to the
+                  server and runs it against {'the database'} as it is. Make sure it is the file you meant: running it changes the data,
+                  and a script this size can take a while.
+                </p>
+              </div>
+              <div className={styles.actions}>
+                <ZestButton onClick={handleExecuteFile} zest={{ semanticType: 'approve', busyOptions: { handleInternally: false } }}>
+                  Run without preview
+                </ZestButton>
+                <ZestButton onClick={reset} zest={{ semanticType: 'cancel', buttonStyle: 'outline', busyOptions: { handleInternally: false } }}>
+                  Choose another file
+                </ZestButton>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className={styles.preview}>
+                <SyntaxHighlighter
+                  language="sql"
+                  style={vscDarkPlus}
+                  customStyle={{ margin: 0, borderRadius: 8, fontSize: 13, maxHeight: 400, overflow: 'auto' }}
+                  showLineNumbers
+                >
+                  {sqlContent}
+                </SyntaxHighlighter>
+              </div>
+              <div className={styles.actions}>
+                <ZestButton onClick={handleExecuteFile} zest={{ visualOptions: { variant: 'standard' } }}>
+                  Execute
+                </ZestButton>
+                <ZestButton onClick={reset} zest={{ buttonStyle: 'outline' }}>
+                  Cancel
+                </ZestButton>
+              </div>
+            </>
+          )}
         </>
       )}
 
       {/* Running / done */}
       {isRunningOrDone && (
         <>
+          {/* The file being run stays in view the whole time */}
+          {sqlPath && (
+            <div className={styles.fileHeader}>
+              <span className={styles.fileName}>{sqlPath.split(/[\\/]/).pop()}</span>
+            </div>
+          )}
           {/* Elapsed timer — visible while running */}
           {isRunning && (
             <div className="elapsedBar">
               <span className="elapsedDot" />
               <span className="elapsedTime">{fmtElapsed(elapsed)}</span>
               <span>running query…</span>
+            </div>
+          )}
+
+          {/* How far the upload, then the run, has got */}
+          {isRunning && progress && (
+            <div className={styles.progress}>
+              <div className={styles.progressLabel}>
+                <span>{progress.stage === 'upload' ? 'Uploading' : 'Running'}</span>
+                <span>{progress.percent}% · {formatBytes(progress.doneBytes)} of {formatBytes(progress.totalBytes)}</span>
+              </div>
+              <progress
+                className={styles.progressBar}
+                aria-label={progress.stage === 'upload' ? 'Uploading the script' : 'Running the script'}
+                aria-valuenow={progress.percent}
+                value={progress.percent}
+                max={100}
+              />
             </div>
           )}
 

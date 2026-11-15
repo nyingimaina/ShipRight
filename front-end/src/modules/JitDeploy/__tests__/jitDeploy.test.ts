@@ -74,6 +74,16 @@ describe('validateJitConfig', () => {
     expect(validateJitConfig(valid({ [field]: value }))[field]).toBeTruthy();
   });
 
+  it('starts with no project variables, and accepts ordinary ones', () => {
+    expect(DEFAULT_JIT_CONFIG.envText).toBe('');
+    expect(validateJitConfig(valid({ envText: 'A=1\nB="x y"\n# note' })).envText).toBeUndefined();
+  });
+
+  it('refuses hidden control characters and huge text in the variables, without repeating them', () => {
+    expect(validateJitConfig(valid({ envText: 'A=1\u0000' })).envText).toMatch(/character/i);
+    expect(validateJitConfig(valid({ envText: 'A=' + 'x'.repeat(70_000) })).envText).toMatch(/too large/i);
+  });
+
   it('accepts ordinary branch names, git addresses and paths', () => {
     expect(validateJitConfig(valid({ branch: 'release/1.2', repoUrl: 'https://github.com/o/r.git', envFile: '/home/me/.env', composeProject: 'my-shop' }))).toEqual({});
   });

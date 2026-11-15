@@ -18,7 +18,7 @@ public static class ConnectionTestRoutes
     public static void MapConnectionTestRoutes(this WebApplication app) =>
         app.MapPost("/api/servers/{serverId}/connection-test",
             (string serverId, IServerStore store, ISshRunner ssh, CancellationToken ct) =>
-                HandleAsync(serverId, store, ssh, new TcpProbe(), ct));
+                HandleAsync(serverId, store, ssh, new DiagnosticTcpProbe(new TcpProbe()), ct));
 
     internal static async Task<IResult> HandleAsync(string serverId, IServerStore store, ISshRunner ssh, ITcpProbe tcp, CancellationToken ct)
     {
@@ -30,7 +30,7 @@ public static class ConnectionTestRoutes
         ConnectionTestResult result;
         try
         {
-            result = await new ConnectionTester(ssh, tcp).TestAsync(server, ct);
+            result = await new TailscaleSshAwareTester(new ConnectionTester(ssh, tcp)).TestAsync(server, ct);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)

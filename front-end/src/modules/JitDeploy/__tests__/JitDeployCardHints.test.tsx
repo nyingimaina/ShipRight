@@ -69,13 +69,13 @@ const ON = { enabled: true, repoUrl: 'git@github.com:o/shop.git', branch: 'main'
 const value = (label: RegExp) => (screen.getByLabelText(label) as HTMLInputElement).value;
 
 describe('turning it on for a project that was never set up', () => {
-  it('fills in the address (SSH), the branch and the env file from what ShipRight knows', async () => {
+  it('fills in the address (SSH) and the branch from what ShipRight knows, and leaves the env file path empty', async () => {
     setup();
     fireEvent.click(await screen.findByLabelText(TOGGLE));
     await waitFor(() => expect(value(/^Git address/)).toBe(SSH));
     expect(value(/^Branch/)).toBe('main');
     fireEvent.click(screen.getByRole('button', { name: /advanced settings/i }));
-    expect(value(/^Env file on the server/)).toBe('/home/u/shop/.env');
+    expect(value(/^Env file on the server/)).toBe('');
     expect(screen.getByText(/you have unsaved changes/i)).toBeInTheDocument();
   });
 
@@ -160,20 +160,55 @@ describe('the git address', () => {
   });
 });
 
-describe('the env file', () => {
-  it('offers the one from the server settings when empty, and fills it on request', async () => {
+describe('the variables', () => {
+  const VARS = /^Variables for compose/;
+
+  it('never offers to paste the server\'s variables into the env file path', async () => {
+    hints = hintsResp({ envFile: 'DB=a\nLOG=info' });
     setup({ ...ON });
     fireEvent.click(await screen.findByRole('button', { name: /advanced settings/i }));
-    fireEvent.click(await screen.findByRole('button', { name: /use \/home\/u\/shop\/\.env/i }));
-    expect(value(/^Env file on the server/)).toBe('/home/u/shop/.env');
-    expect(screen.queryByRole('button', { name: /use \/home\/u\/shop\/\.env/i })).not.toBeInTheDocument();
+    await screen.findByLabelText(/^Env file on the server/);
+    expect(screen.queryByRole('button', { name: /from your server settings/i })).not.toBeInTheDocument();
+    expect(value(/^Env file on the server/)).toBe('');
   });
 
-  it('offers nothing when it is already filled', async () => {
-    setup({ ...ON, envFile: '/mine/.env' });
-    fireEvent.click(await screen.findByRole('button', { name: /advanced settings/i }));
-    await screen.findByLabelText(/^Env file on the server/);
-    expect(screen.queryByRole('button', { name: /use \/home\/u\/shop\/\.env/i })).not.toBeInTheDocument();
+  it('shows the names (never the values) the server settings supply', async () => {
+    hints = hintsResp({ envFile: 'DB_PASS=topsecret\nLOG=info' });
+    setup({ ...ON });
+    await screen.findByLabelText(VARS);
+    await waitFor(() => expect(screen.getByText(/2 from the server settings/)).toBeInTheDocument());
+    expect(screen.getByText(/DB_PASS/)).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/topsecret/);
+  });
+
+  it('shows what this project replaces as the person types, with the project winning', async () => {
+    hints = hintsResp({ envFile: 'DB=a\nLOG=info' });
+    setup({ ...ON });
+    fireEvent.change(await screen.findByLabelText(VARS), { target: { value: 'LOG=debug' } });
+    expect(screen.getByText(/1 from the server settings, 1 from this project \(overriding: LOG\)/)).toBeInTheDocument();
+    expect(screen.getByText(/you have unsaved changes/i)).toBeInTheDocument();
+  });
+
+  it('warns about a value Docker Compose would read as something else, without repeating it', async () => {
+    setup({ ...ON });
+    fireEvent.change(await screen.findByLabelText(VARS), { target: { value: 'DB_PASS=ab$mK2xyz' } });
+    expect(screen.getByRole('status')).toHaveTextContent(/DB_PASS/);
+    expect(screen.getByRole('status')).not.toHaveTextContent(/mK2xyz/);
+  });
+
+  it('saves them with the rest of the settings', async () => {
+    setup({ ...ON });
+    mockApi.put.mockResolvedValue({ config: {} } as never);
+    fireEvent.change(await screen.findByLabelText(VARS), { target: { value: 'LOG=debug' } });
+    fireEvent.click(screen.getByRole('button', { name: /^save/i }));
+    await waitFor(() => expect(mockApi.put).toHaveBeenCalled());
+    expect(mockApi.put.mock.calls[0][1]).toMatchObject({ envText: 'LOG=debug' });
+  });
+
+  it('explains that a file named by path replaces them', async () => {
+    setup({ ...ON, envFile: '/mine/.env', envText: 'LOG=debug' });
+    await screen.findByLabelText(VARS);
+    expect(screen.getByText(/not used because an env file on the server is named/i)).toBeInTheDocument();
   });
 });
 

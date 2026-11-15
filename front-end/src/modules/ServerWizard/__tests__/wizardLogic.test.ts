@@ -1,6 +1,6 @@
 import {
   authorizedKeysCommand, canFinish, ConnectionTestResponse, defaultFolder, isValidPublicKey, looksLikeTailnet,
-  nextStep, prevStep, ROUTES, STEP_ORDER, stepNumber, statusSymbol, validateWhere,
+  nextStep, prevStep, ROUTES, STEP_ORDER, stepNumber, statusSymbol, validateWhere, withTimeout,
 } from '../wizardLogic';
 
 const KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGexample+key/with=chars shipright';
@@ -117,5 +117,25 @@ describe('connection results', () => {
     const s = (['pass', 'warn', 'fail', 'skipped'] as const).map(statusSymbol);
     expect(new Set(s.map(x => x.symbol)).size).toBe(4);
     s.forEach(x => expect(x.label.length).toBeGreaterThan(2));
+  });
+});
+
+describe('withTimeout', () => {
+  afterEach(() => jest.useRealTimers());
+
+  it('passes a result through when it arrives in time', async () => {
+    await expect(withTimeout(Promise.resolve(5), 1000, 'slow')).resolves.toBe(5);
+  });
+
+  it('passes the original error through', async () => {
+    await expect(withTimeout(Promise.reject(new Error('boom')), 1000, 'slow')).rejects.toThrow('boom');
+  });
+
+  it('rejects with the message when nothing arrives in time', async () => {
+    jest.useFakeTimers();
+    const p = withTimeout(new Promise<number>(() => {}), 1000, 'did not answer');
+    const assertion = expect(p).rejects.toEqual(expect.objectContaining({ isError: true, message: 'did not answer' }));
+    jest.advanceTimersByTime(1001);
+    await assertion;
   });
 });

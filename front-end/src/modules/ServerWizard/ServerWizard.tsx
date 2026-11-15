@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
+import ZestButton from 'jattac.libs.web.zest-button';
 import HoverTip from '@/shared/components/HoverTip';
 import { api } from '@/shared/ApiService';
 import CopyBox from './CopyBox';
+import Switch from './Switch';
 import {
   authorizedKeysCommand, canFinish, ConnectionTestResponse, defaultFolder, HostKeyResponse, isValidPublicKey,
   LoginRoute, looksLikeTailnet, nextStep, prevStep, ROUTES, SshKeyStatus, statusSymbol, STEP_ORDER, STEP_TITLES,
-  StepId, stepNumber, validateWhere, WhereForm,
+  StepId, stepNumber, validateWhere, WhereForm, withTimeout,
 } from './wizardLogic';
 
 interface Props {
@@ -34,11 +36,11 @@ const input: React.CSSProperties = {
   background: 'var(--bg-input, transparent)', color: 'inherit', fontSize: 13,
 };
 const err: React.CSSProperties = { color: '#E08A8A', fontSize: 12, marginTop: 4 };
-const btn: React.CSSProperties = {
-  padding: '7px 16px', borderRadius: 6, border: '1px solid var(--border-subtle)',
-  background: 'transparent', color: 'inherit', cursor: 'pointer', fontSize: 13,
-};
-const primary: React.CSSProperties = { ...btn, background: '#C9A84C', color: '#10192E', borderColor: '#C9A84C', fontWeight: 600 };
+
+const KEY_SLOW = 'ShipRight did not answer in time while preparing its key. The computer may be busy; try again.';
+
+/** These screens track their own busy state, so ZestButton must not also lock itself after a click. */
+const NOBUSY = { busyOptions: { handleInternally: false } };
 
 const messageOf = (e: unknown, fallback: string) =>
   (e && typeof e === 'object' && 'message' in e && typeof (e as { message: unknown }).message === 'string'
@@ -67,6 +69,7 @@ export default function ServerWizard({ existingServerId, onClose, onFinished }: 
   const [keyFileId, setKeyFileId] = useState('');
   const [accessDone, setAccessDone] = useState(false);
   const [byHand, setByHand] = useState(false);
+  const [keyNonce, setKeyNonce] = useState(0);
   const keyStarted = useRef(false);
   const keyFilesStarted = useRef(false);
 
@@ -74,6 +77,8 @@ export default function ServerWizard({ existingServerId, onClose, onFinished }: 
   const [result, setResult] = useState<ConnectionTestResponse | null>(null);
   const [testing, setTesting] = useState(false);
   const [testNonce, setTestNonce] = useState(0);
+  const [testCancelled, setTestCancelled] = useState(false);
+  const cancelTestRef = useRef<(() => void) | null>(null);
 
   const set = (field: keyof WhereForm, value: string) => setForm(prev => ({ ...prev, [field]: value }));
 
@@ -90,7 +95,7 @@ export default function ServerWizard({ existingServerId, onClose, onFinished }: 
     if (step !== 'identity' || !serverId) return;
     let cancelled = false;
     setHostKey(null); setHostKeyError(null); setConfirmChange(false);
-    api.get<HostKeyResponse>(`/api/servers/${serverId}/host-key`)
+    withTimeout(api.get<HostKeyResponse>(`/api/servers/${serverId}/host-key`), 30000, 'The server did not answer in time. Check the address and try again.')
       .then(r => { if (!cancelled) setHostKey(r); })
       .catch(e => { if (!cancelled) setHostKeyError(messageOf(e, 'ShipRight could not read the server\'s identity.')); });
     return () => { cancelled = true; };
@@ -102,10 +107,10 @@ export default function ServerWizard({ existingServerId, onClose, onFinished }: 
     keyStarted.current = true;
     (async () => {
       try {
-        let st = await api.get<SshKeyStatus>(`/api/servers/${serverId}/ssh-key/status`);
+        let st = await withTimeout(api.get<SshKeyStatus>(`/api/servers/${serverId}/ssh-key/status`), 20000, KEY_SLOW);
         if (!st.exists) {
-          await api.post(`/api/servers/${serverId}/ssh-key/generate`, {});
-          st = await api.get<SshKeyStatus>(`/api/servers/${serverId}/ssh-key/status`);
+          await withTimeout(api.post(`/api/servers/${serverId}/ssh-key/generate`, {}), 30000, KEY_SLOW);
+          st = await withTimeout(api.get<SshKeyStatus>(`/api/servers/${serverId}/ssh-key/status`), 20000, KEY_SLOW);
         }
         setKeyStatus(st);
         if (st.authorized) setAccessDone(true);
@@ -113,7 +118,7 @@ export default function ServerWizard({ existingServerId, onClose, onFinished }: 
         setKeyError(messageOf(e, 'ShipRight could not create its key on this computer. Make sure ssh-keygen is installed, then try again.'));
       }
     })();
-  }, [step, serverId]);
+  }, [step, serverId, keyNonce]);
 
   useEffect(() => {
     if (step !== 'access' || route !== 'pemfile' || keyFilesStarted.current) return;
@@ -127,17 +132,21 @@ export default function ServerWizard({ existingServerId, onClose, onFinished }: 
   useEffect(() => {
     if (step !== 'test' || !serverId) return;
     let cancelled = false;
-    setTesting(true); setResult(null);
-    api.post<ConnectionTestResponse>(`/api/servers/${serverId}/connection-test`, {})
-      .then(r => { if (!cancelled) setResult(r); })
+    setTesting(true); setResult(null); setTestCancelled(false);
+    cancelTestRef.current = () => { cancelled = true; setTesting(false); setResult(null); setTestCancelled(true); };
+    withTimeout(api.post<ConnectionTestResponse>(`/api/servers/${serverId}/connection-test`, {}), 90000,
+      'The connection test took too long and was stopped. Try again.')
+      .then(r => { if (!cancelled) { setResult(r); setTesting(false); } })
       .catch(e => {
-        if (!cancelled) setResult({
-          ready: false, summary: 'The test could not run.',
-          items: [{ id: 'internal', title: 'Connection test', status: 'fail', message: messageOf(e, 'The test could not run.'), fix: 'Try again.' }],
-        });
-      })
-      .finally(() => { if (!cancelled) setTesting(false); });
-    return () => { cancelled = true; };
+        if (!cancelled) {
+          setResult({
+            ready: false, summary: 'The test could not run.',
+            items: [{ id: 'internal', title: 'Connection test', status: 'fail', message: messageOf(e, 'The test could not run.'), fix: 'Try again.' }],
+          });
+          setTesting(false);
+        }
+      });
+    return () => { cancelled = true; cancelTestRef.current = null; };
   }, [step, serverId, testNonce]);
 
   // ── actions ────────────────────────────────────────────────────────────────
@@ -251,7 +260,7 @@ export default function ServerWizard({ existingServerId, onClose, onFinished }: 
       {hostKeyError && (
         <div>
           <p role="alert" style={err}>{hostKeyError}</p>
-          <button type="button" style={btn} onClick={() => setScanNonce(n => n + 1)}>Try again</button>
+          <ZestButton onClick={() => setScanNonce(n => n + 1)} zest={{ ...NOBUSY, semanticType: 'refresh', buttonStyle: 'outline' }}>Try again</ZestButton>
         </div>
       )}
       {hostKey && (
@@ -280,7 +289,12 @@ export default function ServerWizard({ existingServerId, onClose, onFinished }: 
 
   const accessScreen = (
     <div>
-      {keyError && <p role="alert" style={err}>{keyError}</p>}
+      {keyError && (
+        <div>
+          <p role="alert" style={err}>{keyError}</p>
+          <ZestButton onClick={() => { keyStarted.current = false; setKeyError(null); setKeyNonce(n => n + 1); }} zest={{ ...NOBUSY, semanticType: 'refresh', buttonStyle: 'outline' }}>Try again</ZestButton>
+        </div>
+      )}
       {!keyStatus && !keyError && <p role="status">Preparing the key for this server…</p>}
       {keyStatus && accessDone && (
         <p role="status" style={{ color: '#4CAF50' }}>ShipRight can use its key on this server. Continue to test the connection.</p>
@@ -291,10 +305,10 @@ export default function ServerWizard({ existingServerId, onClose, onFinished }: 
           <label htmlFor="wiz-password" style={{ ...label, marginTop: 12 }}>Server password</label>
           <input id="wiz-password" type="password" style={input} value={password} onChange={e => setPassword(e.target.value)} autoComplete="off" />
           <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
-            <button type="button" style={primary} disabled={busy || !password} onClick={() => authorize({ password })}>
+            <ZestButton disabled={busy || !password} onClick={() => authorize({ password })} zest={{ ...NOBUSY, semanticType: 'add' }}>
               {busy ? 'Adding the key…' : 'Add the key'}
-            </button>
-            <button type="button" style={btn} onClick={() => setByHand(true)}>My server does not allow password login</button>
+            </ZestButton>
+            <ZestButton onClick={() => setByHand(true)} zest={{ ...NOBUSY, semanticType: 'details', buttonStyle: 'text' }}>My server does not allow password login</ZestButton>
           </div>
         </div>
       )}
@@ -308,14 +322,14 @@ export default function ServerWizard({ existingServerId, onClose, onFinished }: 
           </select>
           {keyFiles.length === 0 && <p style={muted}>No key files saved yet. Add your .pem file under Resources, then Key files, and come back.</p>}
           <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
-            <button type="button" style={primary} disabled={busy || !keyFileId} onClick={() => authorize({ mode: 'keyfile', keyFileResourceId: keyFileId })}>
+            <ZestButton disabled={busy || !keyFileId} onClick={() => authorize({ mode: 'keyfile', keyFileResourceId: keyFileId })} zest={{ ...NOBUSY, semanticType: 'add' }}>
               {busy ? 'Adding the key…' : 'Add the key'}
-            </button>
-            <button type="button" style={btn} onClick={() => setByHand(true)}>I will add it by hand</button>
+            </ZestButton>
+            <ZestButton onClick={() => setByHand(true)} zest={{ ...NOBUSY, semanticType: 'details', buttonStyle: 'text' }}>I will add it by hand</ZestButton>
           </div>
         </div>
       )}
-      {keyStatus && !accessDone && manual && (
+      {keyStatus && manual && !keyStatus.authorized && (
         <div>
           <p style={muted}>
             ShipRight made its own key for this server. Add it to the server by running the line below{route === 'tailscale'
@@ -326,7 +340,8 @@ export default function ServerWizard({ existingServerId, onClose, onFinished }: 
             ? <CopyBox label="the command that adds the key" text={handCommand}
                 tip="This adds ShipRight's public key to the list of keys allowed to log in (a file called authorized_keys). It is safe to run more than once. It only adds a key; it does not change anything else." />
             : <p role="alert" style={err}>The key ShipRight made could not be read. Go back and try again.</p>}
-          <button type="button" style={{ ...primary, marginTop: 12 }} onClick={() => setAccessDone(true)}>I have run it</button>
+          <Switch checked={accessDone} onChange={setAccessDone} label="I have added the key to the server" />
+          {!accessDone && <p style={muted}>Turn on the switch once you have run the command on the server. Next unlocks after that.</p>}
         </div>
       )}
       {notice && <p role="alert" style={err}>{notice}</p>}
@@ -335,7 +350,13 @@ export default function ServerWizard({ existingServerId, onClose, onFinished }: 
 
   const testScreen = (
     <div>
-      {testing && <p role="status">Testing the connection… this takes a few seconds.</p>}
+      {testing && (
+        <div>
+          <p role="status">Testing the connection… this takes a few seconds.</p>
+          <ZestButton onClick={() => cancelTestRef.current?.()} aria-label="Cancel the test" zest={{ ...NOBUSY, semanticType: 'cancel' }}>Cancel</ZestButton>
+        </div>
+      )}
+      {testCancelled && <p role="status">The test was cancelled. Press Test again when you are ready.</p>}
       {result && (
         <div>
           <p role="status" style={{ fontWeight: 600, color: canFinish(result) ? '#4CAF50' : '#E08A8A' }}>{result.summary}</p>
@@ -352,10 +373,10 @@ export default function ServerWizard({ existingServerId, onClose, onFinished }: 
                       {item.fix && item.status !== 'pass' && <div style={{ fontSize: 12, marginTop: 4 }}>{item.fix}</div>}
                       {item.command && <CopyBox label={`the command for ${item.title}`} text={item.command} />}
                       {item.status === 'fail' && item.id === 'reach' && (
-                        <button type="button" style={{ ...btn, marginTop: 6 }} onClick={() => setStep('where')}>Change the address</button>
+                        <ZestButton onClick={() => setStep('where')} zest={{ ...NOBUSY, semanticType: 'edit', buttonStyle: 'outline', visualOptions: { size: 'sm' } }}>Change the address</ZestButton>
                       )}
                       {item.status === 'fail' && item.id === 'login' && (
-                        <button type="button" style={{ ...btn, marginTop: 6 }} onClick={() => { setAccessDone(false); setStep('access'); }}>Go back to adding the key</button>
+                        <ZestButton onClick={() => { setAccessDone(false); setStep('access'); }} zest={{ ...NOBUSY, semanticType: 'back', buttonStyle: 'outline', visualOptions: { size: 'sm' } }}>Go back to adding the key</ZestButton>
                       )}
                     </div>
                   </div>
@@ -376,21 +397,21 @@ export default function ServerWizard({ existingServerId, onClose, onFinished }: 
 
   const footer = () => {
     const back = step !== 'route' && !(existingServerId && step === 'identity')
-      ? <button type="button" style={btn} onClick={goBack} disabled={busy}>Back</button> : <span />;
+      ? <ZestButton onClick={goBack} disabled={busy} zest={{ ...NOBUSY, semanticType: 'back', buttonStyle: 'outline' }}>Back</ZestButton> : <span />;
     let next: React.ReactNode = null;
-    if (step === 'route') next = <button type="button" style={primary} disabled={!route} onClick={() => setStep(nextStep(step))}>Next</button>;
-    if (step === 'where') next = <button type="button" style={primary} disabled={busy} onClick={saveWhere}>{busy ? 'Saving…' : 'Next'}</button>;
+    if (step === 'route') next = <ZestButton disabled={!route} onClick={() => setStep(nextStep(step))} zest={{ ...NOBUSY, semanticType: 'next' }}>Next</ZestButton>;
+    if (step === 'where') next = <ZestButton disabled={busy} onClick={saveWhere} zest={{ ...NOBUSY, semanticType: 'next' }}>{busy ? 'Saving…' : 'Next'}</ZestButton>;
     if (step === 'identity') {
       const ok = !!hostKey && (hostKey.state !== 'changed' || confirmChange);
       next = hostKey?.state === 'trusted'
-        ? <button type="button" style={primary} onClick={() => setStep('access')}>Continue</button>
-        : <button type="button" style={primary} disabled={busy || !ok} onClick={trust}>{busy ? 'Trusting…' : 'Yes, trust this server'}</button>;
+        ? <ZestButton onClick={() => setStep('access')} zest={{ ...NOBUSY, semanticType: 'next' }}>Continue</ZestButton>
+        : <ZestButton disabled={busy || !ok} onClick={trust} zest={{ ...NOBUSY, semanticType: 'approve' }}>{busy ? 'Trusting…' : 'Yes, trust this server'}</ZestButton>;
     }
-    if (step === 'access') next = <button type="button" style={primary} disabled={!accessDone} onClick={() => setStep('test')}>Next</button>;
+    if (step === 'access') next = <ZestButton disabled={!accessDone} onClick={() => setStep('test')} zest={{ ...NOBUSY, semanticType: 'next' }}>Next</ZestButton>;
     if (step === 'test') next = (
       <span style={{ display: 'flex', gap: 8 }}>
-        <button type="button" style={btn} disabled={testing} onClick={() => setTestNonce(n => n + 1)}>Test again</button>
-        <button type="button" style={primary} disabled={!canFinish(result) || testing} onClick={() => serverId && onFinished(serverId)}>Finish</button>
+        <ZestButton disabled={testing} onClick={() => setTestNonce(n => n + 1)} zest={{ ...NOBUSY, semanticType: 'refresh', buttonStyle: 'outline' }}>Test again</ZestButton>
+        <ZestButton disabled={!canFinish(result) || testing} onClick={() => serverId && onFinished(serverId)} zest={{ ...NOBUSY, semanticType: 'approve' }}>Finish</ZestButton>
       </span>
     );
     return <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 18 }}>{back}{next}</div>;
@@ -401,7 +422,7 @@ export default function ServerWizard({ existingServerId, onClose, onFinished }: 
       <div role="dialog" aria-modal="true" aria-label="Connect a server" style={dialog}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
           <h2 style={{ margin: 0, fontSize: 16 }}>Connect a server</h2>
-          <button type="button" style={{ ...btn, padding: '2px 10px' }} onClick={onClose} aria-label="Close">✕</button>
+          <ZestButton onClick={onClose} aria-label="Close" zest={{ ...NOBUSY, semanticType: 'close', buttonStyle: 'text', visualOptions: { size: 'sm' } }} />
         </div>
         <p style={{ ...muted, marginTop: 4 }}>
           Step {stepNumber(step)} of {STEP_ORDER.length}: {STEP_TITLES[step]}

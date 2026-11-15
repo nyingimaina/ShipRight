@@ -146,3 +146,51 @@
   .logBox   { font-size: 11px; }
   .tableWrap { font-size: 11px; }
 }
+
+/* A script too large to preview: ask before running it blind. */
+.bigFile {
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--warning, #c9943a);
+  background: var(--warning-dim, rgba(201, 148, 58, 0.1));
+}
+
+.bigFileTitle {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.bigFileText {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+/* Upload and run progress. */
+.progress { margin: 12px 0; }
+
+.progressLabel {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.progressBar {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 8px;
+  border: 0;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--bg-elevated);
+}
+
+.progressBar::-webkit-progress-bar { background: var(--bg-elevated); border-radius: 999px; }
+.progressBar::-webkit-progress-value { background: var(--accent); border-radius: 999px; transition: width 0.4s ease; }
+.progressBar::-moz-progress-bar { background: var(--accent); border-radius: 999px; }

@@ -52,6 +52,25 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
     public async Task<JitDeployResult> RollbackToAsync(JitDeployRequest request, string targetTag, Func<string, Task> onLine, CancellationToken ct = default) =>
         Scrub(await RollbackToScrubbedAsync(request, targetTag, Scrubbed(onLine, request), ct), request);
 
+    /// <summary>
+    /// Stops every service of the release that is running and starts them all again (compose down, then up), after refreshing
+    /// the saved variables. It is not a release: nothing is built or recorded, and nothing is rolled back if it goes wrong.
+    /// </summary>
+    public async Task<JitDeployResult> RestartAllAsync(JitDeployRequest request, Func<string, Task> onLine, CancellationToken ct = default) =>
+        Scrub(await RestartAllScrubbedAsync(request, Scrubbed(onLine, request), ct), request);
+
+    private async Task<JitDeployResult> RestartAllScrubbedAsync(JitDeployRequest request, Func<string, Task> onLine, CancellationToken ct)
+    {
+        try { Validate(request); }
+        catch (ArgumentException ex) { return new(JitOutcome.FailedBeforeChange, $"The deploy settings are not valid: {ex.Message}"); }
+
+        using var held = _locks.TryAcquire(JitDeployLock.KeyFor(request.Target));
+        if (held is null)
+            return new(JitOutcome.Busy, "Another deploy of this project is already running. Wait for it to finish.");
+
+        return await new Run(ssh, clock, request, onLine).RestartAllAsync(ct);
+    }
+
     /// <summary>Whatever a server or a library says can contain a password or token; none of it may reach the log or the history.</summary>
     private static Func<string, Task> Scrubbed(Func<string, Task> sink, JitDeployRequest request) =>
         line => sink(GitAddressForms.Redact(line, SecretsOf(request)));
@@ -139,7 +158,37 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
             _s = req.Settings;
         }
 
+
         private Task Say(string message) => _log("[deploy] " + message);
+
+        /// <summary>Announces that a step has finished ("[step] ✓ what (seconds)"), so the screen can show progress as it happens.</summary>
+        private Task Step(string what, global::System.Diagnostics.Stopwatch? clock = null)
+        {
+            var line = $"[step] ✓ {what}";
+            if (clock is not null) { line += $" ({clock.Elapsed.TotalSeconds.ToString("0.0", global::System.Globalization.CultureInfo.InvariantCulture)} s)"; clock.Restart(); }
+            return _log(line);
+        }
+
+        /// <summary>
+        /// Reports which images could have been reused (see <see cref="JitFingerprintShadow"/>). It only reads and reports, and
+        /// whatever goes wrong here is logged and ignored: it must never fail or slow down a deploy.
+        /// </summary>
+        private async Task ShadowFingerprintAsync(IReadOnlyList<string> configLines, string sha, string tag, TimeSpan buildTime, CancellationToken ct)
+        {
+            try
+            {
+                var prev = _state.CurrentTag is { } current ? _state.Releases.FirstOrDefault(r => r.Tag == current) : null;
+                await JitFingerprintShadow.ReportAsync(
+                    async cmd => { var r = await Exec(cmd, false, ct); return (r.Exit, (IReadOnlyList<string>)r.Lines); },
+                    line => _log(line),
+                    _t, string.Join("\n", configLines), _req.ComposeFile ?? "docker-compose.yml",
+                    _req.Services.Select(s => (s.Name, s.ImageRef)).ToList(),
+                    sha, tag, prev?.Sha, prev?.Tag, buildTime, _req.RebuildAll);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception ex) { Serilog.Log.Warning(ex, "Build fingerprint report failed; the deploy carries on."); }
+        }
+
 
         /// <summary>Commands that reach the git host use the deploy key when one is set; nothing else is touched.</summary>
         private string WithKey(string command) =>
@@ -291,9 +340,10 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
                 }
 
                 await Say($"Restoring the compose file of release {target} (commit {rec.Sha[..7]})...");
-                var checkout = await Exec(JitCommands.Checkout(_t, rec.Sha), true, ct);
+                var checkout = await Exec(JitCommands.CheckoutKeepingData(_t, rec.Sha), true, ct);
                 if (checkout.Exit != 0) return await Abort($"Could not check out commit {rec.Sha[..7]}: {Tail(checkout.Lines)}");
                 if (await WriteOverrideAsync(ct) is { } overrideError) return await Abort(overrideError);
+                if (await WriteEnvAsync(ct) is { } envError) return await Abort(envError);
                 var config = await Exec(JitCommands.ComposeConfig(_ctx, _bindings, target), false, ct);
                 if (config.Exit != 0) return await Abort($"The compose file of that release is not valid: {Tail(config.Lines)}");
 
@@ -317,6 +367,7 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
                 await Move(DeployPhase.Verified, ct: ct);
                 await CommitAsync(CancellationToken.None);
                 await Say($"Release {target} is live again.");
+                await StackAsync(target, ct);
                 await PruneAsync();
                 return new(JitOutcome.Deployed, $"Rolled back on purpose: release {target} (commit {rec.Sha[..7]}) is live again.", target, rec.Sha);
             }
@@ -328,6 +379,237 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
         private static JitDeployResult LostConnection(Exception ex) =>
             new(JitOutcome.ConnectionLost,
                 $"Lost contact with the server ({ex.Message}). The server's saved state records where the deploy got to; run recover (or deploy again, which recovers first) to finish or undo it safely.");
+
+        public async Task<JitDeployResult> RestartAllAsync(CancellationToken ct)
+        {
+            try
+            {
+                _state = await _store.ReadAsync(_t, ct);
+                if (ReleaseStateMachine.Recovery(_state.Phase) != RecoveryAction.None)
+                    return new(JitOutcome.Blocked, $"A deploy or rollback needs attention first (it is {_state.Phase}). Run recover, then restart the services.");
+
+                var current = _state.CurrentTag is { } t ? _state.Releases.FirstOrDefault(r => r.Tag == t) : null;
+                if (current is null)
+                    return Failed("There is no release on this server yet, so there is nothing to restart. Deploy first.");
+
+                await Say($"Restarting every service of release {current.Tag} (commit {current.Sha[..7]}).");
+                var docker = await Exec(JitCommands.CheckDocker(), true, ct);
+                if (docker.Exit != 0) return Failed(PreflightMessage(docker.Lines, "Docker is not available."));
+                var imgs = await Exec(JitCommands.EnsureImagesExist(current.Images), true, ct);
+                if (imgs.Exit != 0) return Failed(PreflightMessage(imgs.Lines, $"The images of release {current.Tag} are no longer on this server, so it could not be started again."));
+
+                await Say("Restoring the compose file and variables of the running release…");
+                var checkout = await Exec(JitCommands.CheckoutKeepingData(_t, current.Sha), true, ct);
+                if (checkout.Exit != 0) return Failed($"Could not check out commit {current.Sha[..7]}: {Tail(checkout.Lines)}");
+                if (await WriteOverrideAsync(ct) is { } overrideError) return Failed(overrideError);
+                if (await WriteEnvAsync(ct) is { } envError) return Failed(envError);
+                var config = await Exec(JitCommands.ComposeConfig(_ctx, _bindings, current.Tag), false, ct);
+                if (config.Exit != 0) return Failed($"The compose file is not valid: {Tail(config.Lines)}");
+
+                IReadOnlyList<string> order;
+                IReadOnlyList<ComposeService> allServices;
+                try
+                {
+                    allServices = ComposeConfig.Parse(string.Join("\n", config.Lines));
+                    var graph = ComposeConfig.Graph(allServices);
+                    order = DependencyOrderer.StartOrder(graph, graph.Keys);
+                }
+                catch (Exception ex) when (ex is ComposeConfigException or DependencyCycleException or UnknownDependencyException or ArgumentException)
+                {
+                    return Failed(ex.Message);
+                }
+
+                var restartClock = global::System.Diagnostics.Stopwatch.StartNew();
+                if (await EnsureOtherImagesAsync(allServices, current.Tag, ct) is { } imageProblem)
+                    return Failed(imageProblem + " Nothing was stopped.");
+                await Step("Third-party images are ready", restartClock);
+
+                await Say("Stopping all services (their data volumes are kept)…");
+                var down = await Exec(JitCommands.DownAll(_ctx, _s.StopGraceSeconds, _bindings, current.Tag), true, ct);
+                if (down.Exit != 0)
+                    return new(JitOutcome.RestartFailed, $"Stopping the services failed: {Tail(down.Lines)} Some may still be running. Restart again, or run recover.", current.Tag, current.Sha);
+
+                await Step("All services stopped", restartClock);
+                await Say("Starting all services…");
+                var up = await Exec(JitCommands.UpAll(_ctx, _bindings, current.Tag), true, ct);
+                if (up.Exit != 0)
+                    return new(JitOutcome.RestartFailed, $"The services were stopped but could not be started again: {Tail(up.Lines)} Restart again, or roll back from the Releases list.", current.Tag, current.Sha);
+
+                await Step("All services started", restartClock);
+                foreach (var svc in order)
+                {
+                    var gate = await GateAsync(svc, current.Tag, ct);
+                    if (gate.Verdict != GateVerdict.Pass)
+                        return new(JitOutcome.RestartFailed,
+                            $"{svc} did not come back healthy: {gate.Reason}. Nothing was rolled back. Check its log, then restart again, or deploy or roll back from the Releases list.",
+                            current.Tag, current.Sha, svc);
+                    await Say($"{svc} is back: {gate.Reason}.");
+                }
+
+                await Step("Every service is healthy", restartClock);
+                await Say("Every service is running again.");
+                await StackAsync(current.Tag, ct);
+                return new(JitOutcome.Restarted, $"Restarted every service of release {current.Tag} (commit {current.Sha[..7]}).", current.Tag, current.Sha);
+            }
+            catch (StateCorruptException ex) { return new(JitOutcome.Blocked, ex.Message); }
+            catch (OperationCanceledException) { return new(JitOutcome.RestartFailed, "The restart was cancelled. Some services may be stopped; restart again."); }
+            catch (Exception ex) when (ex is not OperationCanceledException) { return LostConnection(ex); }
+        }
+
+        /// <summary>
+        /// Writes the stack folder (see <see cref="JitStack"/>) for the release that is running and checks it renders exactly like
+        /// ShipRight's own commands. A shortcut that does not is removed again, leaving only the dc helper. It only ever runs after
+        /// a release is live, and whatever goes wrong here is logged and ignored: it must never fail or undo a deploy.
+        /// </summary>
+        private async Task StackAsync(string tag, CancellationToken ct)
+        {
+            try
+            {
+                var file = _req.ComposeFile;
+                if (file is null)
+                {
+                    var found = await Exec(JitStack.DetectComposeFileCommand(_t), false, ct);
+                    file = found.Lines.Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0);
+                    if (file is null) { await _log("[stack] No compose file was found in the repository, so no shortcut folder was made."); return; }
+                }
+
+                var dir = JitStack.Dir(_t);
+                var write = await Exec(JitStack.WriteCommand(_t,
+                    JitStack.ComposeYaml(_t, _req.Project, file, _ctx.OverrideFile),
+                    JitStack.EnvText(_req.EnvContent, _bindings, tag),
+                    JitStack.Script(_ctx, _bindings, tag)), false, ct);
+                if (write.Exit != 0)
+                {
+                    var notes = write.Lines.Select(l => l.Trim()).Where(l => l.StartsWith("[stack]", StringComparison.Ordinal)).ToList();
+                    if (notes.Count == 0) notes.Add("[stack] The shortcut folder could not be written.");
+                    foreach (var n in notes) await _log(n);
+                    return;
+                }
+
+                var viaShip = await Exec(JitCommands.ComposeConfig(_ctx, _bindings, tag), false, ct);
+                var viaStack = await Exec(JitStack.ConfigViaStackCommand(_t), false, ct);
+
+                if (viaStack.Exit != 0)
+                {
+                    var ver = await Exec(JitStack.VersionCommand, false, ct);
+                    var v = ver.Lines.Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0);
+                    await Exec(JitStack.RemoveShortcutCommand(_t), false, ct);
+                    await _log($"[stack] The shortcut folder does not work with this server's Docker Compose{(v is null ? "" : " " + v)}; it needs 2.20 or newer. " +
+                               $"Use {dir}/dc instead, for example: {dir}/dc ps");
+                    return;
+                }
+                if (viaShip.Exit != 0) { await _log("[stack] The shortcut folder was written but could not be checked against ShipRight's own commands, so use dc to be safe."); return; }
+
+                var same = JitStack.Compare(string.Join("\n", viaShip.Lines), string.Join("\n", viaStack.Lines));
+                if (!same.Same)
+                {
+                    await Exec(JitStack.RemoveShortcutCommand(_t), false, ct);
+                    await _log($"[stack] The shortcut folder does not render exactly like ShipRight's own commands (it differs in: {string.Join(", ", same.Differences)}), so it was removed. " +
+                               $"Use {dir}/dc instead, for example: {dir}/dc ps");
+                    return;
+                }
+
+                await _log($"[stack] You can manage this project by hand with no extra options: cd {dir} && docker compose ps (also logs, down, up -d). " +
+                           "The dc helper there does the same on any Compose version.");
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception ex) { Serilog.Log.Warning(ex, "The stack folder could not be refreshed; the deploy carries on."); }
+        }
+
+        /// <summary>
+        /// Makes sure the images of services ShipRight does not build are on the server: downloads the ones with no build section and
+        /// builds the ones that have one. Nothing is stopped or changed. Null when everything is there, else a plain-words problem.
+        /// </summary>
+        private async Task<string?> EnsureOtherImagesAsync(IReadOnlyList<ComposeService> services, string tag, CancellationToken ct)
+        {
+            var managed = _req.Services.Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
+            var others = services.Where(s => !managed.Contains(s.Name) && s.Image is not null).ToList();
+            if (others.Count == 0) return null;
+
+            IReadOnlyList<string> missing;
+            try
+            {
+                var check = await Exec(JitCommands.MissingImages(others.Select(s => s.Image!)), false, ct);
+                missing = JitCommands.ParseMissingImages(check.Lines);
+            }
+            catch (ArgumentException) { return null; }
+            if (missing.Count == 0) return null;
+
+            var toPull = others.Where(s => !s.HasBuild && missing.Contains(s.Image!)).ToList();
+            var toBuild = others.Where(s => s.HasBuild && missing.Contains(s.Image!)).ToList();
+
+            if (toPull.Count > 0)
+            {
+                await Say($"Downloading images this server does not have yet: {string.Join(", ", toPull.Select(s => s.Image))}…");
+                var pull = await Exec(JitCommands.PullServices(_ctx, _bindings, tag, toPull.Select(s => s.Name)), true, ct, mergeStderr: true);
+                if (pull.Exit != 0)
+                    return $"Could not download {string.Join(", ", toPull.Select(s => s.Image))}: {Tail(pull.Lines)}";
+                await Step($"Downloaded {string.Join(", ", toPull.Select(s => s.Image))}");
+            }
+            if (toBuild.Count > 0)
+            {
+                await Say($"Building images this server does not have yet: {string.Join(", ", toBuild.Select(s => s.Name))}…");
+                var build = await Exec(JitCommands.Build(_ctx, toBuild.Select(s => s.Name).ToList(), _bindings, tag, _s.BuildNice), true, ct, mergeStderr: true);
+                if (build.Exit != 0)
+                    return $"Could not build {string.Join(", ", toBuild.Select(s => s.Name))}: {Tail(build.Lines)}";
+                await Step($"Built {string.Join(", ", toBuild.Select(s => s.Name))}");
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// The services ShipRight does not build, split into those that can start before the app (nothing they need is built by
+        /// ShipRight) and those that need the app and so start after it. Each list is in dependency order.
+        /// </summary>
+        private (IReadOnlyList<string> Early, IReadOnlyList<string> Late) SupportingServices(IReadOnlyList<ComposeService> services)
+        {
+            var managed = _req.Services.Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
+            var graph = ComposeConfig.Graph(services);
+            var supporting = services.Select(s => s.Name).Where(n => !managed.Contains(n)).ToHashSet(StringComparer.Ordinal);
+            if (supporting.Count == 0) return ([], []);
+
+            bool NeedsManaged(string name)
+            {
+                var seen = new HashSet<string>(StringComparer.Ordinal);
+                var stack = new Stack<string>(graph.TryGetValue(name, out var d) ? d : []);
+                while (stack.Count > 0)
+                {
+                    var n = stack.Pop();
+                    if (!seen.Add(n)) continue;
+                    if (managed.Contains(n)) return true;
+                    if (graph.TryGetValue(n, out var more)) foreach (var m in more) stack.Push(m);
+                }
+                return false;
+            }
+
+            var ordered = DependencyOrderer.StartOrder(graph, supporting).Where(supporting.Contains).ToList();
+            return (ordered.Where(n => !NeedsManaged(n)).ToList(), ordered.Where(NeedsManaged).ToList());
+        }
+
+        /// <summary>
+        /// Starts services ShipRight does not build, from images already on the server. When <paramref name="mustStart"/> a service that
+        /// cannot start stops the deploy (the app needs it); either way one that is not healthy is only reported, because a one-off job
+        /// that exits on purpose looks the same. Null on success, else a plain-words problem.
+        /// </summary>
+        private async Task<string?> StartSupportingAsync(IReadOnlyList<string> names, string tag, bool mustStart, CancellationToken ct)
+        {
+            foreach (var svc in names)
+            {
+                await Say($"Starting {svc} (a supporting service)…");
+                var start = await Exec(JitCommands.StartService(_ctx, svc, _bindings, tag), true, ct);
+                if (start.Exit != 0)
+                {
+                    var problem = $"The supporting service {svc} failed to start: {Tail(start.Lines, 1)}";
+                    if (mustStart) return problem + " Nothing of your app was started.";
+                    await Say("Warning: " + problem);
+                    continue;
+                }
+                var gate = await GateAsync(svc, tag, ct);
+                if (gate.Verdict != GateVerdict.Pass) await Say($"Warning: the supporting service {svc} is not healthy: {gate.Reason}. Continuing.");
+                else await Say($"{svc} is running: {gate.Reason}.");
+            }
+            return null;
+        }
 
         private string BlockedMessage() =>
             $"A rollback failed earlier and the server needs attention before anything new is deployed. The previous release is {_state.CurrentTag ?? "(none)"}. " +
@@ -422,9 +704,20 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
             return write.Exit == 0 ? null : $"Could not write the build instructions on the server: {Tail(write.Lines)}";
         }
 
+        /// <summary>Writes the merged variables beside the deploy state. Returns a message when that fails, or null.</summary>
+        private async Task<string?> WriteEnvAsync(CancellationToken ct)
+        {
+            if (_req.EnvContent is null) return null;
+            await Say("Writing the variables compose will use" + (string.IsNullOrWhiteSpace(_req.EnvNote) ? "…" : ": " + _req.EnvNote));
+            var write = await Exec(JitEnvFile.WriteCommand(_t, _req.EnvContent), false, ct);
+            return write.Exit == 0 ? null : $"Could not write the variables on the server: {Tail(write.Lines)}";
+        }
+
         private async Task<JitDeployResult> DeployCoreAsync(CancellationToken ct)
         {
+            var stepClock = global::System.Diagnostics.Stopwatch.StartNew();
             if (await EnsureServerReadyAsync(ct) is { } notReady) return notReady;
+            await Step("Server ready", stepClock);
 
             // 1. Preflight: nothing is changed, not even the saved state.
             await Say("Checking the server (docker, free disk space, access to git)…");
@@ -438,6 +731,8 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
                 var (exit, lines) = await Exec(cmd, true, ct);
                 if (exit != 0) return Failed(PreflightMessage(lines, $"The server check for {name} failed."));
             }
+
+            await Step("Server checked: Docker, disk space and git access", stepClock);
 
             if (_state.CurrentTag is { } currentTag)
             {
@@ -463,6 +758,7 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
             await Say("Fetching the code from git…");
             var sync = await Exec(WithKey(JitCommands.SyncRepo(_t, _req.RepoUrl)), true, ct);
             if (sync.Exit != 0) return await AbortSync($"Could not fetch the code from git: {Tail(sync.Lines)}");
+            await Step("Code fetched from git", stepClock);
 
             var what = _req.Commit is null ? $"branch '{_req.Branch}'" : $"commit {_req.Commit}";
             var resolve = await Exec(_req.Commit is null ? JitCommands.ResolveBranch(_t, _req.Branch) : JitCommands.ResolveCommit(_t, _req.Commit), false, ct);
@@ -484,10 +780,11 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
             var tag = ReleaseTag.Format(counter, sha);
             await Say($"Commit {sha[..7]} will be release {tag}.");
 
-            var checkout = await Exec(JitCommands.Checkout(_t, sha), true, ct);
+            var checkout = await Exec(JitCommands.CheckoutKeepingData(_t, sha), true, ct);
             if (checkout.Exit != 0) return await AbortSync($"Could not check out commit {sha[..7]}: {Tail(checkout.Lines)}");
 
             if (await WriteOverrideAsync(ct) is { } overrideError) return await AbortSync(overrideError);
+            if (await WriteEnvAsync(ct) is { } envError) return await AbortSync(envError);
 
             // 3. Understand the compose file before building anything.
             var config = await Exec(JitCommands.ComposeConfig(_ctx, _bindings, tag), false, ct);
@@ -515,6 +812,7 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
                 return await AbortSync(ex.Message);
             }
 
+            await Step($"Compose file read: {services.Count} service{(services.Count == 1 ? "" : "s")}", stepClock);
             await Say("Services that will be restarted:");
             foreach (var a in affected) await Say($"  {a.Name}: {a.Reason}");
 
@@ -522,12 +820,33 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
             await Move(DeployPhase.Building, s => s with { InProgressTag = tag }, ct);
             var buildNames = _req.Services.Select(s => s.Name).ToList();
             await Say($"Building {string.Join(", ", buildNames)} (the running release keeps serving until every build has finished)…");
+            var buildClock = global::System.Diagnostics.Stopwatch.StartNew();
             var build = await Exec(JitCommands.Build(_ctx, buildNames, _bindings, tag, _s.BuildNice), true, ct, mergeStderr: true);
+            buildClock.Stop();
             if (build.Exit != 0) return await FailBuildAsync(tag, $"The build failed, so nothing was changed: {Tail(build.Lines)}{JitBuildAdvice.For(build.Lines)}");
 
             var check = await Exec(JitCommands.EnsureImagesExist(ExpectedRefs(tag)), false, ct);
             if (check.Exit != 0) return await FailBuildAsync(tag, "The build finished but its images are missing, so nothing was changed.");
             await Say($"All images for {tag} are built.");
+            await Step($"Built {string.Join(", ", buildNames)}", buildClock);
+
+            // A first deploy on a fresh server also gets the images and the supporting services (database, proxy, ...) the app needs.
+            IReadOnlyList<string> lateSupporting = [];
+            if (_state.CurrentTag is null)
+            {
+                stepClock.Restart();
+                if (await EnsureOtherImagesAsync(services, tag, ct) is { } otherImages)
+                    await Say(otherImages + " The deploy carries on; use Restart all services once that is fixed to bring up everything else.");
+                var (early, late) = SupportingServices(services);
+                lateSupporting = late.Where(n => !startOrder.Contains(n)).ToList();   // dependents that restart with the app are started by the swap itself
+                if (early.Count > 0)
+                {
+                    if (await StartSupportingAsync(early, tag, mustStart: true, ct) is { } supportFailure)
+                        return await FailBuildAsync(tag, supportFailure);
+                    await Step($"Supporting services started: {string.Join(", ", early)}", stepClock);
+                }
+            }
+            await ShadowFingerprintAsync(config.Lines, sha, tag, buildClock.Elapsed, ct);
 
             // 5. The point of no return. The state is saved first, so a crash from here on can be undone.
             var record = new ReleaseRecord(tag, sha, ExpectedRefs(tag), _clock.UtcNow);
@@ -535,11 +854,19 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
 
             var swap = await SwapAsync(tag, startOrder, ct);
             if (swap is not null) return swap;
+            if (lateSupporting.Count > 0)
+            {
+                stepClock.Restart();
+                await StartSupportingAsync(lateSupporting, tag, mustStart: false, ct);
+                await Step($"Supporting services started: {string.Join(", ", lateSupporting)}", stepClock);
+            }
 
             // 6. Success.
             await Move(DeployPhase.Verified, ct: ct);
             await CommitAsync(CancellationToken.None);
             await Say($"Release {tag} is live (commit {sha[..7]}).");
+            await Step($"Release {tag} is live");
+            await StackAsync(tag, ct);
             await PruneAsync();
             return new(JitOutcome.Deployed, $"Release {tag} (commit {sha[..7]}) is live.", tag, sha);
         }
@@ -557,6 +884,7 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
             await Move(DeployPhase.NewStarted, ct: ct);
             foreach (var svc in startOrder)
             {
+                var svcClock = global::System.Diagnostics.Stopwatch.StartNew();
                 await Say($"Starting {svc}…");
                 var start = await Exec(JitCommands.StartService(_ctx, svc, _bindings, tag), true, ct);
                 if (start.Exit != 0) return await RollbackAsync(svc, $"it failed to start ({Tail(start.Lines, 1)})");
@@ -564,6 +892,7 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
                 var gate = await GateAsync(svc, tag, ct);
                 if (gate.Verdict != GateVerdict.Pass) return await RollbackAsync(svc, gate.Reason);
                 await Say($"{svc} passed its health check: {gate.Reason}.");
+                await Step($"{svc} is running and healthy", svcClock);
             }
 
             return null;
@@ -748,6 +1077,7 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
             restored:
             await ForgetFailedRelease();
             await Say($"Release {prevTag} is running again.");
+            await StackAsync(prevTag, CancellationToken.None);
             return new(JitOutcome.RolledBack,
                 reused
                     ? $"{because} Rolled back: release {prevTag} is running again, and release {failedTag} is still kept."
@@ -758,7 +1088,7 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
         private async Task<bool> RestoreAsync(ReleaseRecord prev, IReadOnlyList<string> startOrder)
         {
             var none = CancellationToken.None;
-            var checkout = await Exec(JitCommands.Checkout(_t, prev.Sha), true, none);
+            var checkout = await Exec(JitCommands.CheckoutKeepingData(_t, prev.Sha), true, none);
             if (checkout.Exit != 0) return false;
 
             var order = startOrder;
@@ -787,7 +1117,7 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
         private string ManualCommands(ReleaseRecord? prev, string prevTag, IReadOnlyList<string> startOrder)
         {
             var steps = new List<string>();
-            if (prev is not null) steps.Add(JitCommands.Checkout(_t, prev.Sha));
+            if (prev is not null) steps.Add(JitCommands.CheckoutKeepingData(_t, prev.Sha));
             steps.AddRange(startOrder.Select(s => JitCommands.StartService(_ctx, s, _bindings, prevTag)));
             return string.Join("\n", steps.Select((s, i) => $"  {i + 1}. {s}"));
         }

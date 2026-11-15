@@ -73,7 +73,7 @@ Log.Logger = new LoggerConfiguration()
         new JsonFormatter(),
         Path.Combine(dataDir, "logs", "shipright-.log"),
         rollingInterval: RollingInterval.Day,
-        retainedFileCountLimit: 30)
+        retainedFileCountLimit: ShipRight.Shared.LogRetention.Days)
     .CreateLogger();
 
 try
@@ -352,6 +352,9 @@ static void RegisterDesktopServices(IServiceCollection services, string dataDir)
     services.AddSingleton<SshKeyStore>(_ => new SshKeyStore(dataDir));
     services.AddSingleton<IRemoteHostProvider, LinuxSshProvider>();
     services.AddSingleton<IMonitoringProvider, LinuxSshMonitoringProvider>();
+    // Connection diagnostics: logs timing, full error chains and a DNS / port-22 / Tailscale snapshot. Behaviour unchanged.
+    services.DecorateSingleton<ISshRunner>((sp, inner) => new ShipRight.Modules.ConnectionTest.DiagnosticSshRunner(inner));
+    services.DecorateSingleton<IMonitoringProvider>((sp, inner) => new ShipRight.Modules.ConnectionTest.DiagnosticMonitoringProvider(inner));
     services.AddSchedulerModule();
     // The scheduler module registers its history stores from ~/.shipright; override them so every
     // desktop data file lives under the resolved profile directory (R11: a smoke run must not touch

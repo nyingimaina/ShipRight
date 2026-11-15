@@ -26,6 +26,10 @@ public sealed record JitDeployRequest
     /// <summary>Deploy this exact commit instead of the branch head.</summary>
     public string? Commit { get; init; }
     public string? EnvFile { get; init; }
+    /// <summary>The merged variables to write to <see cref="EnvFile"/> before each deploy; null when the file is the person's own or there are none.</summary>
+    public string? EnvContent { get; init; }
+    /// <summary>One plain sentence for the log saying where the variables came from (names only).</summary>
+    public string? EnvNote { get; init; }
     /// <summary>Name of the key in the user's ~/.ssh that git uses to reach the git host; null uses whatever the server already has.</summary>
     public string? DeployKeyName { get; init; }
     /// <summary>A saved access token for reading a private https repository. Used for one command at a time and never stored.</summary>
@@ -39,6 +43,8 @@ public sealed record JitDeployRequest
     public bool Force { get; init; }
     /// <summary>Go ahead even though the previous release's images are missing, so a rollback would not be possible.</summary>
     public bool AllowWithoutRollback { get; init; }
+    /// <summary>Build every image even when its inputs are provably unchanged. Honoured once ShipRight starts reusing unchanged images.</summary>
+    public bool RebuildAll { get; init; }
 }
 
 public enum JitOutcome
@@ -57,13 +63,17 @@ public enum JitOutcome
     Blocked,
     /// <summary>Another deploy of this project is running.</summary>
     Busy,
+    /// <summary>Every service was stopped and started again on the release that was already running.</summary>
+    Restarted,
+    /// <summary>A restart of all services did not finish cleanly. The release itself is unchanged; the message says which service and why.</summary>
+    RestartFailed,
     /// <summary>The connection dropped mid-deploy. The saved state on the server says where it got to; recover to finish safely.</summary>
     ConnectionLost,
 }
 
 public sealed record JitDeployResult(JitOutcome Outcome, string Message, string? Tag = null, string? Sha = null, string? FailedService = null)
 {
-    public bool Success => Outcome is JitOutcome.Deployed or JitOutcome.NothingToDeploy;
+    public bool Success => Outcome is JitOutcome.Deployed or JitOutcome.NothingToDeploy or JitOutcome.Restarted;
 }
 
 /// <summary>Time and waiting, so the health gate can be tested without really waiting.</summary>

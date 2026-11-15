@@ -49,9 +49,9 @@ describe('preferredAddress', () => {
 });
 
 describe('prefillPatch', () => {
-  it('fills a project that has never been set up: the address, the branch and the env file', () => {
+  it('fills a project that has never been set up: the address and the branch (never the env file: the hint holds the server\'s variables, not a path)', () => {
     expect(prefillPatch(cfg(), cfg(), hints())).toEqual({
-      repoUrl: 'git@github.com:o/shop.git', branch: 'main', envFile: '/home/u/shop/.env',
+      repoUrl: 'git@github.com:o/shop.git', branch: 'main',
     });
   });
 

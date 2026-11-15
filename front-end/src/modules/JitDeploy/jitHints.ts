@@ -82,7 +82,6 @@ export function prefillPatch(cfg: JitConfig, saved: JitConfig, hints: JitHintsRe
   if ((cfg.branch.trim() === '' || cfg.branch === DEFAULT_JIT_CONFIG.branch) && hints.branch) {
     if (hints.branch !== cfg.branch) patch.branch = hints.branch;
   }
-  if (cfg.envFile.trim() === '' && hints.envFile) patch.envFile = hints.envFile;
   return patch;
 }
 

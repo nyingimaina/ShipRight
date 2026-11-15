@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
+import ZestButton from 'jattac.libs.web.zest-button';
 import HoverTip from '@/shared/components/HoverTip';
 
 interface Props {
@@ -18,10 +19,8 @@ const pre: React.CSSProperties = {
   margin: 0, padding: '10px 12px', fontSize: 12, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
   whiteSpace: 'pre-wrap', wordBreak: 'break-all', userSelect: 'all',
 };
-const btn: React.CSSProperties = {
-  padding: '4px 12px', borderRadius: 6, border: '1px solid var(--border-subtle)',
-  background: 'transparent', color: 'inherit', cursor: 'pointer', fontSize: 12,
-};
+/** These screens track their own busy state, so ZestButton must not also lock itself after a click. */
+const NOBUSY = { busyOptions: { handleInternally: false } };
 
 /** A command the user copies and runs themselves, always with where to run it. ShipRight never runs it. */
 export default function CopyBox({ label, text, where = 'Run this on the server', tip }: Props) {
@@ -48,7 +47,7 @@ export default function CopyBox({ label, text, where = 'Run this on the server',
           {where}
           {tip && <HoverTip label={label}>{tip}</HoverTip>}
         </span>
-        <button type="button" style={btn} onClick={copy} aria-label={`Copy ${label}`}>{copied ? 'Copied ✓' : 'Copy'}</button>
+        <ZestButton onClick={copy} aria-label={`Copy ${label}`} zest={{ ...NOBUSY, semanticType: 'copy', buttonStyle: 'outline', visualOptions: { size: 'sm' } }}>{copied ? 'Copied ✓' : 'Copy'}</ZestButton>
       </div>
       <pre style={pre}>{text}</pre>
     </div>

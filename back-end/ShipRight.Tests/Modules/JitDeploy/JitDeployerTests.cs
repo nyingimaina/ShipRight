@@ -62,7 +62,8 @@ public class JitDeployerTests
         Assert.AreEqual(JitOutcome.Deployed, r.Outcome, r.Message);
         Assert.AreEqual("r1-aaaaaaa", r.Tag);
         Assert.AreEqual(FakeRemote.Sha1, r.Sha);
-        SeqEq(["checkout:aaaaaaa", "build:api,web", "stop:web", "stop:api", "start:api@r1-aaaaaaa", "start:web@r1-aaaaaaa"], rig.Core);
+        // a first deploy also starts the supporting services (here the database) once everything is built
+        SeqEq(["checkout:aaaaaaa", "build:api,web", "start:db@16", "stop:web", "stop:api", "start:api@r1-aaaaaaa", "start:web@r1-aaaaaaa"], rig.Core);
         Assert.IsFalse(rig.Remote.Events.Contains("stop:db"), "a service that was not replaced is never touched");
         Assert.AreEqual("shop/web:r1-aaaaaaa", rig.Remote.Running["web"]);
     }
@@ -181,7 +182,7 @@ public class JitDeployerTests
         var rig = new Rig();
         AddProxy(rig.Remote);
         await rig.Deploy();
-        SeqEq(["checkout:aaaaaaa", "build:api,web", "stop:proxy", "stop:web", "stop:api", "start:api@r1-aaaaaaa", "start:web@r1-aaaaaaa", "start:proxy@1"], rig.Core);
+        SeqEq(["checkout:aaaaaaa", "build:api,web", "start:db@16", "stop:proxy", "stop:web", "stop:api", "start:api@r1-aaaaaaa", "start:web@r1-aaaaaaa", "start:proxy@1"], rig.Core);
     }
 
     [TestMethod]
@@ -190,7 +191,10 @@ public class JitDeployerTests
         var rig = new Rig();
         AddProxy(rig.Remote);
         var req = Req() with { DependentChoices = new Dictionary<(string, string), bool> { [("web", "proxy")] = false } };
-        await rig.Deploy(req);
+        await rig.Deploy(req);                         // a first deploy starts everything that is not running yet, the proxy included
+        rig.Remote.Events.Clear();
+        rig.Remote.Branches["master"] = FakeRemote.Sha2;
+        await rig.Deploy(req);                         // after that, "leave it running" means exactly that
         Assert.IsFalse(rig.Remote.Events.Any(e => e.EndsWith(":proxy") || e.StartsWith("start:proxy")));
     }
 
@@ -499,7 +503,7 @@ public class JitDeployerTests
 
         Assert.AreEqual(JitOutcome.FailedNoPreviousRelease, r.Outcome);
         StringAssert.Contains(r.Message.ToLowerInvariant(), "no previous release");
-        Assert.AreEqual(0, rig.Remote.Running.Count, "what had started is stopped again");
+        Assert.IsFalse(rig.Remote.Running.Keys.Any(k => k != "db"), "the app's services are stopped again; the supporting database is left running");
         var s = rig.Remote.ReadState();
         Assert.AreEqual(DeployPhase.Idle, s.Phase);
         Assert.IsNull(s.CurrentTag);

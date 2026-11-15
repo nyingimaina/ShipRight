@@ -24,6 +24,8 @@ export interface JitConfig {
   branch: string;
   composeProject: string;
   envFile: string;
+  /** This project's own KEY=value lines. Merged over the server settings' variables (these win) and written to the server on every deploy. */
+  envText: string;
   releasesToKeep: number;
   stopGraceSeconds: number;
   healthTimeoutSeconds: number;
@@ -46,6 +48,7 @@ export const DEFAULT_JIT_CONFIG: JitConfig = {
   branch: 'master',
   composeProject: '',
   envFile: '',
+  envText: '',
   releasesToKeep: 3,
   stopGraceSeconds: 30,
   healthTimeoutSeconds: 60,
@@ -155,6 +158,10 @@ export function validateJitConfig(c: JitConfig): Record<string, string> {
 
   if (c.envFile.trim() && (!c.envFile.startsWith('/') || c.envFile.split('/').includes('..') || /[\u0000-\u001f]/.test(c.envFile)))
     e.envFile = 'Give the full path on the server, starting with / (or leave it empty).';
+
+  if (c.envText.length > 64_000) e.envText = 'The variables are too large (over 64,000 characters). Keep only what the app needs.';
+  else if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(c.envText))
+    e.envText = 'The variables contain a character that is not allowed (a hidden control character). Retype the line it came from.';
 
   if (!inRange(c.releasesToKeep, 0, 100)) e.releasesToKeep = 'Enter a whole number from 0 to 100.';
   if (!inRange(c.stopGraceSeconds, 0, 600)) e.stopGraceSeconds = 'Enter a whole number of seconds from 0 to 600.';

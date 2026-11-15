@@ -115,7 +115,7 @@ public static class SshKeyRouter
                 var keyId = $"server-{id}";
                 try
                 {
-                    await keyStore.GenerateAsync(keyId);
+                    await keyStore.GenerateBoundedAsync(keyId, TimeSpan.FromSeconds(20));
                 }
                 catch (Exception ex)
                 {
@@ -124,7 +124,7 @@ public static class SshKeyRouter
                     return Results.BadRequest(new
                     {
                         isError = true,
-                        message = "Key generation is not available on this machine. Ensure ssh-keygen is installed, then try again."
+                        message = $"ShipRight could not create its key: {ex.Message}"
                     });
                 }
 

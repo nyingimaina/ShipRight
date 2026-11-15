@@ -47,10 +47,30 @@ public sealed class FakeRemote : ISshRunner
     public bool BuildOk { get; set; } = true;
     public bool KeepImagesAfterBuild { get; set; } = true;
     public string? OverrideYaml { get; private set; }
+    public string? EnvContent { get; private set; }
+    public bool EnvWriteFails { get; set; }
     public string[]? SyncFailureLines { get; set; }
     public string[]? BuildFailureLines { get; set; }
     public string[]? ExtraBuildLines { get; set; }
     public bool FailStateWrite { get; set; }
+    /// <summary>Render each buildable service's build folder inside the repository (so build fingerprints can be computed).</summary>
+    public bool BuildContextInsideRepo { get; set; }
+    // the stack folder
+    public bool NoComposeFile { get; set; }
+    /// <summary>Images (not built by ShipRight) that are not on the server yet.</summary>
+    public HashSet<string> ThirdPartyMissing { get; } = [];
+    public bool PullFails { get; set; }
+    public bool StackConfigFails { get; set; }
+    public bool StackWriteBlocked { get; set; }
+    public string? StackConfigJson { get; set; }
+    public string StackVersion { get; set; } = "2.29.7";
+    public Dictionary<string, string> StackFiles { get; } = [];
+    public List<Dictionary<string, string>> StackWrites { get; } = [];
+    private string _lastConfigJson = "{}";
+    /// <summary>What git says the build folder's tree is, by (7-char sha, service).</summary>
+    public Func<string, string, string> TreeOf { get; set; } = (_, _) => "tree1";
+    /// <summary>The image id docker reports for an image reference.</summary>
+    public Func<string, string> ImageIdOf { get; set; } = r => "sha256:" + r[..r.LastIndexOf(':')];
     public bool ConfigFails { get; set; }
     public Dictionary<string, string> Branches { get; } = new() { ["master"] = Sha1 };
     public Func<string, string>? ComposeJsonFor { get; set; }               // by 7-char checked-out sha
@@ -113,10 +133,82 @@ public sealed class FakeRemote : ISshRunner
         return Ok("installed " + tool);
     }
 
+    private (int, string[])? HandleStack(string cmd)
+    {
+        var m = Regex.Match(cmd, @"^: 'stack:(\w+)'; ");
+        if (!m.Success) return null;
+        switch (m.Groups[1].Value)
+        {
+            case "detect":
+                Events.Add("stack-detect");
+                return NoComposeFile ? Ok() : Ok("docker-compose.yml");
+            case "write":
+            {
+                Events.Add("stack-write");
+                if (StackWriteBlocked) return Fail("[stack] compose.yaml already exists and is not managed by ShipRight, so it was left alone.");
+                var files = new Dictionary<string, string>();
+                foreach (Match f in Regex.Matches(cmd, @"w (\S+) \d+ '([A-Za-z0-9+/=]*)'"))
+                    files[f.Groups[1].Value] = Encoding.UTF8.GetString(Convert.FromBase64String(f.Groups[2].Value));
+                StackWrites.Add(files);
+                foreach (var kv in files) StackFiles[kv.Key] = kv.Value;
+                return Ok();
+            }
+            case "config":
+                Events.Add("stack-config");
+                return StackConfigFails
+                    ? Fail("error while loading compose file: (root) Additional property include is not allowed")
+                    : Ok((StackConfigJson ?? _lastConfigJson).Split('\n'));
+            case "version":
+                Events.Add("stack-version");
+                return Ok(StackVersion);
+            case "remove":
+                Events.Add("stack-remove");
+                return Ok();
+        }
+        return null;
+    }
+
     private (int, string[]) Handle(string cmd)
     {
         var prep = HandlePrepare(cmd);
         if (prep is not null) return prep.Value;
+        var stack = HandleStack(cmd);
+        if (stack is not null) return stack.Value;
+        if (cmd.StartsWith(": 'images:missing'; "))
+        {
+            Events.Add("images-missing-check");
+            var refs = Regex.Match(cmd, @"for r in ([^;]+);").Groups[1].Value.Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(x => x.Trim('\''));
+            return Ok(refs.Where(ThirdPartyMissing.Contains).Select(r => "missing:" + r).ToArray());
+        }
+        if (cmd.Contains(" pull '"))
+        {
+            var names = Regex.Matches(cmd[(cmd.IndexOf(" pull ", StringComparison.Ordinal) + 6)..], @"'([^']+)'").Select(x => x.Groups[1].Value).ToList();
+            Events.Add("pull:" + string.Join(",", names));
+            if (PullFails) return Fail("Error response from daemon: toomanyrequests: You have reached your pull rate limit.");
+            foreach (var n in names) { var s = Stack.FirstOrDefault(x => x.Name == n); if (s is not null) ThirdPartyMissing.Remove(DefaultImage(s)); }
+            return Ok(names.Select(n => $" Image {n} Pulled").ToArray());
+        }
+        if (cmd.Contains("echo \"svc|") || cmd.Contains("echo \"compose|"))
+        {
+            Events.Add("fingerprint-probe");
+            var psha = Short(Regex.Match(cmd, @"quiet '([0-9a-f]+)[:^]").Groups[1].Value);
+            var rows = Regex.Matches(cmd, @"echo ""svc\|([a-z0-9_-]+)\|").Select(m => $"svc|{m.Groups[1].Value}|{TreeOf(psha, m.Groups[1].Value)}|dockerfile1|0");
+            return Ok(new[] { "compose|c1" }.Concat(rows).ToArray());
+        }
+        if (cmd.Contains("inspect -f '{{.Id}}'"))
+        {
+            Events.Add("image-id");
+            var iref = Regex.Match(cmd, @"\{\{\.Id\}\}' '([^']+)'").Groups[1].Value;
+            return Images.Contains(iref) ? Ok(ImageIdOf(iref)) : Fail();
+        }
+        if (cmd.Contains("deploy.env") && cmd.Contains("base64 -d"))
+        {
+            if (EnvWriteFails) return Fail("cannot write the variables file");
+            var m = Regex.Match(cmd, @"echo '([A-Za-z0-9+/=]+)' \| base64 -d");
+            EnvContent = Encoding.UTF8.GetString(Convert.FromBase64String(m.Groups[1].Value));
+            Events.Add("env-written");
+            return Ok();
+        }
         if (cmd.Contains("compose.override.yml") && cmd.Contains("base64 -d"))
         {
             var m = Regex.Match(cmd, @"echo '([A-Za-z0-9+/=]+)' \| base64 -d");
@@ -193,7 +285,8 @@ public sealed class FakeRemote : ISshRunner
         {
             Events.Add("config");
             if (ConfigFails) return Fail("fatal: cannot change to the repository folder: No such file or directory");
-            return Ok((ComposeJsonFor?.Invoke(Short(CheckedOut)) ?? RenderCompose(cmd)).Split('\n'));
+            _lastConfigJson = ComposeJsonFor?.Invoke(Short(CheckedOut)) ?? RenderCompose(cmd);
+            return Ok(_lastConfigJson.Split('\n'));
         }
         if (cmd.Contains("build --progress=plain"))
         {
@@ -207,8 +300,27 @@ public sealed class FakeRemote : ISshRunner
                     var svc = Stack.Single(s => s.Name == n);
                     var r = Tags(cmd).GetValueOrDefault(svc.Var ?? "");
                     if (r is not null) Images.Add(r);
+                    else ThirdPartyMissing.Remove(DefaultImage(svc));
                 }
             return Ok(new[] { "#1 building..." }.Concat(ExtraBuildLines ?? []).Append("#9 naming to image done").ToArray());
+        }
+        if (cmd.Contains(" down -t "))
+        {
+            Events.Add("down");
+            Running.Clear();
+            return Ok();
+        }
+        if (cmd.Contains("up -d --no-build --pull never") && !cmd.Contains("--no-deps"))
+        {
+            Events.Add("up-all");
+            var tags = Tags(cmd);
+            foreach (var s in Stack)
+            {
+                var image = s.Var is not null && tags.TryGetValue(s.Var, out var r) ? r : DefaultImage(s);
+                Running[s.Name] = image;
+                _probeCounts[$"{s.Name}@{(image.Contains(':') ? image[(image.LastIndexOf(':') + 1)..] : "")}"] = 0;
+            }
+            return Ok();
         }
         if (cmd.Contains(" stop -t "))
         {
@@ -270,7 +382,7 @@ public sealed class FakeRemote : ISshRunner
         {
             var image = s.Var is not null && tags.TryGetValue(s.Var, out var r) ? r : DefaultImage(s);
             var deps = s.Deps.Length == 0 ? "" : ", \"depends_on\": {" + string.Join(",", s.Deps.Select(d => $"\"{d}\": {{\"condition\": \"service_started\"}}")) + "}";
-            var build = s.Build ? ", \"build\": {\"context\": \"/r\"}" : "";
+            var build = s.Build ? ", \"build\": {\"context\": \"" + (BuildContextInsideRepo ? "/home/deploy/shop/repo/" + s.Name : "/r") + "\"}" : "";
             return $"\"{s.Name}\": {{ \"image\": \"{image}\"{build}{deps} }}";
         })));
         sb.Append("} }");

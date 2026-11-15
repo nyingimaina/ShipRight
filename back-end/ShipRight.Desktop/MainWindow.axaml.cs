@@ -23,6 +23,7 @@ public partial class MainWindow : Window
         _serverManager = serverManager;
         _notificationBridge = notificationBridge;
         InitializeComponent();
+        Title = WindowTitle.For(_serverManager.GetDesktopVersion());
         _probe = probe ?? new WebView2Probe(Browser);
 
         if (_notificationBridge != null)

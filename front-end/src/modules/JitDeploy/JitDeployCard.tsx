@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
+import ZestButton from 'jattac.libs.web.zest-button';
 import HoverTip from '@/shared/components/HoverTip';
 import styles from './Styles/JitDeploy.module.css';
 import StreamLog from '@/shared/components/StreamLog/StreamLog';
@@ -14,12 +15,18 @@ import JitComposeServices, { ServiceHelp } from './JitComposeServices';
 import {
   addressOptions, addressWarning, branchAfterPick, JitHintsResponse, JitStacksResponse, prefillPatch,
 } from './jitHints';
+import { describeEnv, envKeys, envSummary } from './envVars';
+import { envFileWarnings } from '@/modules/ServerDeploy/envFileWarnings';
+import { stepText } from './jitSteps';
 
 interface Props {
   projectId: string;
 }
 
 type OpStatus = 'idle' | 'running' | 'success' | 'error';
+
+/** This card tracks its own busy state, so ZestButton must not also lock itself after a click. */
+const NOBUSY = { busyOptions: { handleInternally: false } };
 
 
 function Field(props: {
@@ -59,14 +66,19 @@ export default function JitDeployCard({ projectId }: Props) {
   const [dependents, setDependents] = useState<JitDependents | null>(null);
 
   const [force, setForce] = useState(false);
+  const [rebuildAll, setRebuildAll] = useState(false);
   const [commit, setCommit] = useState('');
   const [confirmTag, setConfirmTag] = useState<string | null>(null);
+  const [confirmRestart, setConfirmRestart] = useState(false);
+  const kindRef = useRef<'deploy' | 'restart'>('deploy');
 
   const [op, setOp] = useState<{ status: OpStatus; logs: string[]; message: string }>({ status: 'idle', logs: [], message: '' });
+  const [steps, setSteps] = useState<string[]>([]);
   const esRef = useRef<EventSource | null>(null);
 
   const base = `/api/jit/${projectId}`;
   const dirty = JSON.stringify(cfg) !== JSON.stringify(saved);
+  const envWarnings = useMemo(() => envFileWarnings(cfg.envText), [cfg.envText]);
 
   useEffect(() => () => { esRef.current?.close(); }, []);
 
@@ -175,16 +187,21 @@ export default function JitDeployCard({ projectId }: Props) {
         const { type, data } = JSON.parse(event.data) as { type: string; data: Record<string, string> };
         if (type === 'LogLine') {
           setOp(o => ({ ...o, logs: [...o.logs, data.line] }));
+          const done = stepText(data.line);
+          if (done) {
+            setSteps(prev => [...prev, done]);
+            toast.success(done, { id: 'jit-step' });   // one notification that always shows the latest finished step
+          }
         } else if (type === 'DeployCompleted') {
           es.close();
           const ok = data.status === 'Deployed';
           api.get<{ errorSummary?: string | null }>(`/api/builds/${buildId}`)
             .then(b => b?.errorSummary ?? null).catch(() => null)
-            .then(summary => setOp(o => ({
-              ...o,
-              status: ok ? 'success' : 'error',
-              message: ok ? 'Deployed successfully.' : (summary ?? 'It did not finish. See the log above.'),
-            })));
+            .then(summary => {
+              const message = ok ? (kindRef.current === 'restart' ? 'Every service was restarted.' : 'Deployed successfully.') : (summary ?? 'It did not finish. See the log above.');
+              setOp(o => ({ ...o, status: ok ? 'success' : 'error', message }));
+              if (ok) toast.success(message, { id: 'jit-step' }); else toast.error(message, { id: 'jit-step' });
+            });
           loadServer();
         }
       } catch { /* ignore a malformed event */ }
@@ -198,7 +215,10 @@ export default function JitDeployCard({ projectId }: Props) {
   const start = async (path: string, body: unknown) => {
     esRef.current?.close();
     setConfirmTag(null);
+    setConfirmRestart(false);
+    kindRef.current = path.endsWith('/restart-all') ? 'restart' : 'deploy';
     setOp({ status: 'running', logs: [], message: '' });
+    setSteps([]);
     try {
       const res = await api.post<{ buildId: string }>(path, body);
       stream(res.buildId);
@@ -212,6 +232,7 @@ export default function JitDeployCard({ projectId }: Props) {
   const running = op.status === 'running';
   const needsAttention = releases?.needsAttention === true;
   const canDeploy = saved.enabled && !dirty && !running && !needsAttention;
+  const canRestart = saved.enabled && !running && !needsAttention && !!releases?.currentTag;
   const effectiveRestart = (service: string, dependent: string, fallback: boolean) =>
     cfg.dependentChoices.find(c => c.service === service && c.dependent === dependent)?.restart ?? fallback;
 
@@ -277,7 +298,7 @@ export default function JitDeployCard({ projectId }: Props) {
             <div className={styles.mt10}>
               {stackWarnings.map(w => <p key={w} className={`${styles.muted} ${styles.warn}`}>{w}</p>)}
               {stacks?.suggestedName && cfg.composeProject !== stacks.suggestedName && (
-                <button type="button" className={styles.btn} onClick={() => set('composeProject', stacks.suggestedName!)}>Take over &apos;{stacks.suggestedName}&apos;</button>
+                <ZestButton onClick={() => set('composeProject', stacks.suggestedName!)} zest={{ ...NOBUSY, semanticType: 'edit', buttonStyle: 'outline' }}>Take over &apos;{stacks.suggestedName}&apos;</ZestButton>
               )}
             </div>
           )}
@@ -294,32 +315,47 @@ export default function JitDeployCard({ projectId }: Props) {
                   <li key={s.name} className={styles.item}>
                     <span>{s.name}:</span>
                     <code>{s.composeImageLine}</code>
-                    <button type="button" className={`${styles.btn} ${styles.small}`}
-                      aria-label={`Copy the image line for ${s.name}`}
-                      onClick={() => navigator.clipboard.writeText(`image: ${s.composeImageLine}`)}>Copy</button>
+                    <ZestButton aria-label={`Copy the image line for ${s.name}`}
+                      onClick={() => navigator.clipboard.writeText(`image: ${s.composeImageLine}`)}
+                      zest={{ ...NOBUSY, semanticType: 'copy', buttonStyle: 'outline', visualOptions: { size: 'sm' } }}>Copy</ZestButton>
                   </li>
                 ))}
               </ul>
             </div>
           )}
 
+          <Field id="jit-envtext" label="Variables for compose (optional)" tipLabel="Variables for compose" error={errors.envText}
+            tip={'The private settings your compose file reads, such as passwords and keys, written one per line as NAME=value. ShipRight writes them to a protected file on the server before every deploy.\n\nThe settings of the server this project deploys to already supply their own variables. Anything you write here replaces the server\'s value of the same name, and the rest of the server\'s variables still apply.\n\nWhere to get them: your repository usually has a .env.example listing every setting. Never share these values.'}>
+            <>
+              <textarea id="jit-envtext" className={styles.textarea} rows={6} spellCheck={false}
+                placeholder={'NAME=value\nANOTHER=value'} value={cfg.envText} onChange={e => set('envText', e.target.value)} />
+              <span className={styles.muted}>
+                {cfg.envFile.trim() !== ''
+                  ? 'Not used because an env file on the server is named under advanced settings.'
+                  : describeEnv(envSummary(hints?.envFile, cfg.envText))}
+              </span>
+              {cfg.envFile.trim() === '' && envKeys(hints?.envFile).length > 0 && (
+                <span className={styles.muted}>From the server settings: {envKeys(hints?.envFile).join(', ')}</span>
+              )}
+              {cfg.envFile.trim() === '' && envWarnings.length > 0 && (
+                <div className={styles.envWarn} role="status">
+                  <strong>Check these values — a character may be read as something else:</strong>
+                  <ul>{envWarnings.map((w, i) => <li key={i}>{w.message}</li>)}</ul>
+                </div>
+              )}
+            </>
+          </Field>
+
           <div className={styles.mt12}>
-            <button type="button" className={styles.btn} onClick={() => setAdvanced(a => !a)}>
+            <ZestButton onClick={() => setAdvanced(a => !a)} zest={{ ...NOBUSY, semanticType: 'settings', buttonStyle: 'text' }}>
               {advanced ? 'Hide advanced settings' : 'Show advanced settings'}
-            </button>
+            </ZestButton>
           </div>
           {advanced && (
             <div>
               <Field id="jit-env" label="Env file on the server (optional)" tipLabel="Env file on the server" error={errors.envFile}
-                tip={'If your app reads settings from an env file that lives on the server (and not in git), give its full path, for example /home/ubuntu/shop/.env. Leave empty if you have none.'}>
-                <>
-                  <input id="jit-env" className={styles.input} value={cfg.envFile} onChange={e => set('envFile', e.target.value)} />
-                  {cfg.envFile.trim() === '' && hints?.envFile && (
-                    <div>
-                      <button type="button" className={styles.btn} onClick={() => set('envFile', hints.envFile!)}>Use {hints.envFile} (from your server settings)</button>
-                    </div>
-                  )}
-                </>
+                tip={'Only if you keep and manage an env file on the server yourself (and not in git): give its full path, for example /home/ubuntu/shop/.env. ShipRight uses that file exactly as it is and does not create or change it. The variables above are then not used. Leave empty to let ShipRight write the file for you.'}>
+                <input id="jit-env" className={styles.input} value={cfg.envFile} onChange={e => set('envFile', e.target.value)} />
               </Field>
               <Field id="jit-project" label="Compose project name (optional)" tipLabel="Compose project name" error={errors.composeProject}
                 tip={'The name docker uses to group this app\'s containers. Leave it empty and one is made from your project name. Only change it to match an app that is already running under a different name.'}>
@@ -374,6 +410,13 @@ export default function JitDeployCard({ projectId }: Props) {
                   <span>Deploy even if nothing has changed</span>
                 </label>
                 <label className={styles.inline}>
+                  <input type="checkbox" aria-label="Rebuild every image, even if its files have not changed" checked={rebuildAll} onChange={e => setRebuildAll(e.target.checked)} />
+                  <span>Rebuild every image, even if its files have not changed</span>
+                  <HoverTip label="Rebuild every image">
+                    {'ShipRight works out which images have exactly the same inputs as the running release. For now it only reports this in the log and still builds everything; once reuse is switched on, an unchanged image is reused instead of rebuilt. Tick this to build every image anyway, for example to pick up a base image security update.'}
+                  </HoverTip>
+                </label>
+                <label className={styles.inline}>
                   <span>Deploy this exact commit (optional)</span>
                   <input aria-label="Deploy this exact commit (optional)" className={`${styles.input} ${styles.narrow}`} value={commit}
                     placeholder="ab8b4a9" onChange={e => setCommit(e.target.value)} />
@@ -391,7 +434,7 @@ export default function JitDeployCard({ projectId }: Props) {
       )}
 
       <div className={styles.saveRow}>
-        <button type="button" className={styles.primary} disabled={saving} onClick={save}>Save settings</button>
+        <ZestButton disabled={saving} onClick={save} zest={{ ...NOBUSY, semanticType: 'save' }}>Save settings</ZestButton>
         {dirty && <span className={styles.muted}>You have unsaved changes.</span>}
       </div>
 
@@ -406,23 +449,36 @@ export default function JitDeployCard({ projectId }: Props) {
           {needsAttention && (
             <div className={styles.confirmBad}>
               <div>{releases?.attention}</div>
-              <button type="button" className={`${styles.btn} ${styles.mt8}`} disabled={running}
-                onClick={() => start(`${base}/recover`, {})}>Recover</button>
+              <ZestButton disabled={running} onClick={() => start(`${base}/recover`, {})}
+                zest={{ ...NOBUSY, semanticType: 'undo', buttonStyle: 'outline' }}>Recover</ZestButton>
             </div>
           )}
 
           <div className={styles.actions}>
-            <button type="button" className={styles.primary} disabled={!canDeploy} onClick={() =>
-              start(`${base}/deploy`, { force, commit: commit.trim() || null, allowWithoutRollback: false })}>Deploy now</button>
+            <ZestButton disabled={!canDeploy} zest={{ ...NOBUSY, semanticType: 'send' }} onClick={() =>
+              start(`${base}/deploy`, { force, commit: commit.trim() || null, allowWithoutRollback: false, rebuildAll })}>Deploy now</ZestButton>
+            <ZestButton disabled={!canRestart} onClick={() => { setConfirmTag(null); setConfirmRestart(true); }}
+              zest={{ ...NOBUSY, semanticType: 'refresh', buttonStyle: 'outline' }}>Restart all services</ZestButton>
             {dirty && <span className={styles.muted}>Save your settings before deploying.</span>}
           </div>
 
           {op.status !== 'idle' && (
             <div className={styles.mt12}>
-              <div role="log" aria-label="Deploy log" className={styles.log}>
+              {steps.length > 0 && (
+                <ol aria-label="Progress" className={styles.steps}>
+                  {steps.map((text, i) => <li key={i} className={styles.step}>{text}</li>)}
+                </ol>
+              )}
+              <div role="log" aria-label="Deploy log" className={`${styles.log} ${styles.mt12}`}>
                 <StreamLog lines={logLines} isLive={running} filename="deploy.log" emptyText="Starting…" />
               </div>
               {op.status === 'success' && <p className={`${styles.message} ${styles.ok}`}>{op.message}</p>}
+              {op.status === 'success' && kindRef.current === 'deploy' && canRestart && (
+                <p className={styles.muted}>
+                  Want a completely fresh start? That stops every service and starts them all again.{' '}
+                  <ZestButton onClick={() => setConfirmRestart(true)} zest={{ ...NOBUSY, semanticType: 'refresh', buttonStyle: 'text' }}>Restart everything now</ZestButton>
+                </p>
+              )}
               {op.status === 'error' && <p role="alert" className={`${styles.message} ${styles.bad}`}>{op.message}</p>}
             </div>
           )}
@@ -433,7 +489,7 @@ export default function JitDeployCard({ projectId }: Props) {
               {releases?.error && (
                 <p className={`${styles.muted} ${styles.bad}`}>
                   {releases.error}{' '}
-                  <button type="button" className={`${styles.btn} ${styles.small}`} onClick={() => loadServer()}>Try again</button>
+                  <ZestButton onClick={() => loadServer()} zest={{ ...NOBUSY, semanticType: 'refresh', buttonStyle: 'outline', visualOptions: { size: 'sm' } }}>Try again</ZestButton>
                 </p>
               )}
               {releases && releases.releases.length > 0 && (
@@ -446,13 +502,30 @@ export default function JitDeployCard({ projectId }: Props) {
                       {r.isCurrent && <span className={styles.ok}>running now</span>}
                       {r.isPrevious && <span className={styles.warn}>previous</span>}
                       {!r.isCurrent && (
-                        <button type="button" className={`${styles.btn} ${styles.small} ${styles.pushRight}`} disabled={running}
-                          aria-label={`Roll back to ${r.tag}`} onClick={() => setConfirmTag(r.tag)}>Roll back</button>
+                        <span className={styles.pushRight}>
+                          <ZestButton disabled={running} aria-label={`Roll back to ${r.tag}`} onClick={() => { setConfirmRestart(false); setConfirmTag(r.tag); }}
+                            zest={{ ...NOBUSY, semanticType: 'undo', buttonStyle: 'outline', visualOptions: { size: 'sm' } }}>Roll back</ZestButton>
+                        </span>
                       )}
                     </li>
                   ))}
                 </ul>
               )}
+            </div>
+          )}
+
+          {confirmRestart && (
+            <div className={styles.confirm}>
+              <div>Restart every service?</div>
+              <p className={styles.muted}>
+                This stops all of this project&apos;s services and starts them again on the release that is running
+                {releases?.currentTag ? ` (${releases.currentTag})` : ''}. Expect a short downtime. Your data volumes are kept,
+                and your saved variables are applied again. Nothing is built.
+              </p>
+              <div className={styles.confirmActions}>
+                <ZestButton onClick={() => start(`${base}/restart-all`, {})} zest={{ ...NOBUSY, semanticType: 'approve' }}>Yes, restart everything</ZestButton>
+                <ZestButton onClick={() => setConfirmRestart(false)} zest={{ ...NOBUSY, semanticType: 'cancel' }}>No, leave them running</ZestButton>
+              </div>
             </div>
           )}
 
@@ -464,8 +537,8 @@ export default function JitDeployCard({ projectId }: Props) {
                 so if a newer release changed how it is stored, going back may not work.
               </p>
               <div className={styles.confirmActions}>
-                <button type="button" className={styles.primary} onClick={() => start(`${base}/rollback`, { tag: confirmTag })}>Yes, roll back</button>
-                <button type="button" className={styles.btn} onClick={() => setConfirmTag(null)}>No, keep it as it is</button>
+                <ZestButton onClick={() => start(`${base}/rollback`, { tag: confirmTag })} zest={{ ...NOBUSY, semanticType: 'approve' }}>Yes, roll back</ZestButton>
+                <ZestButton onClick={() => setConfirmTag(null)} zest={{ ...NOBUSY, semanticType: 'cancel' }}>No, keep it as it is</ZestButton>
               </div>
             </div>
           )}

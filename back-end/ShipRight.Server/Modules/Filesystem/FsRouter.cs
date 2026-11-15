@@ -10,7 +10,21 @@ public static class FsRouter
     private const int MaxPathLength = 4096;
     private const int SshConnectTimeoutSecs = 15;
     private const long MaxReadBytes = 512 * 1024;
-public static void MapFsRoutes(this WebApplication app)
+
+    /// <summary>
+    /// The answer for a file over the preview limit. Same plain message as ever, plus the size and the limit, so a screen can offer
+    /// to go on without a preview (the file itself is never limited: running a script reads it where it is).
+    /// </summary>
+    public static object TooLargeToPreview(long length) => new
+    {
+        isError = true,
+        message = $"File too large to preview ({length:N0} bytes; limit is {MaxReadBytes / 1024} KB).",
+        tooLarge = true,
+        sizeBytes = length,
+        limitBytes = MaxReadBytes,
+    };
+
+    public static void MapFsRoutes(this WebApplication app)
     {
         app.MapGet("/api/fs/shortcuts", async () =>
         {
@@ -109,7 +123,7 @@ public static void MapFsRoutes(this WebApplication app)
 
             var info = new FileInfo(path);
             if (info.Length > MaxReadBytes)
-                return Results.BadRequest(new { isError = true, message = $"File too large to preview ({info.Length:N0} bytes; limit is {MaxReadBytes / 1024} KB)." });
+                return Results.BadRequest(TooLargeToPreview(info.Length));
 
             try
             {

@@ -6,7 +6,7 @@ using ShipRight.Shared.SshRunner;
 
 namespace ShipRight.Modules.JitDeploy;
 
-public sealed record JitDeployOptions(bool Force = false, string? Commit = null, bool AllowWithoutRollback = false);
+public sealed record JitDeployOptions(bool Force = false, string? Commit = null, bool AllowWithoutRollback = false, bool RebuildAll = false);
 
 /// <summary>The record exists as soon as the deploy starts; <see cref="Completion"/> finishes when it is over.</summary>
 public sealed record JitStartResult(BuildRecord? Record, string? Error, Task? Completion, bool NotFound = false);
@@ -37,6 +37,11 @@ public sealed class JitDeployService(
         StartAsync(projectId, initiator, rollbackTag: null, isRollback: false, new JitDeployOptions(),
             (req, log, ct) => _deployer.RecoverAsync(req, log, ct));
 
+    /// <summary>Stops all of the project's services and starts them again on the release that is already running.</summary>
+    public Task<JitStartResult> StartRestartAllAsync(string projectId, string? initiator) =>
+        StartAsync(projectId, initiator, rollbackTag: null, isRollback: false, new JitDeployOptions(),
+            (req, log, ct) => _deployer.RestartAllAsync(req, log, ct));
+
     public async Task<JitStartResult> StartRollbackAsync(string projectId, string tag, string? initiator)
     {
         if (!ReleaseTag.TryParse(tag, out _, out _))
@@ -56,11 +61,11 @@ public sealed class JitDeployService(
         try { cfg = await configs.GetAsync(projectId); }
         catch (InvalidDataException ex) { return new(null, ex.Message, null); }
 
-        var map = JitDeployMapper.Map(project, cfg, options.Commit, options.Force, options.AllowWithoutRollback);
+        var map = JitEnvMapper.Map(project, cfg, options.Commit, options.Force, options.AllowWithoutRollback);
         if (!map.Ok) return new(null, JitServiceHelp.StartMessage(map.Problems), null);
         var (withCredential, credentialError) = await JitCredentialResolver.ApplyAsync(map.Request!, cfg, credentials, projectId);
         if (credentialError is not null) return new(null, credentialError, null);
-        var request = withCredential!;
+        var request = withCredential! with { RebuildAll = options.RebuildAll };
 
         var record = new BuildRecord
         {

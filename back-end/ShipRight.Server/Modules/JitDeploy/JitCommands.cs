@@ -71,6 +71,17 @@ public static class JitCommands
         $"cd {Q(Repo(t))} && git reset --hard --quiet && git clean -fdx --quiet && git checkout --detach --quiet {Q(JitNames.Sha(sha))} && " +
         "if [ -f .gitmodules ]; then git submodule update --init --recursive --quiet; fi";
 
+    /// <summary>
+    /// Like <see cref="Checkout"/> but safe for data kept inside the checkout. Ignored files (logs, uploads, other runtime
+    /// data) are never deleted, and a stray file that cannot be removed (for example one a container created as root) is
+    /// reported and left in place instead of stopping the deploy. Tracked files are still reset to the exact commit.
+    /// </summary>
+    public static string CheckoutKeepingData(JitTarget t, string sha) =>
+        $"cd {Q(Repo(t))} && git reset --hard --quiet && " +
+        "{ git clean -fd --quiet || echo 'Note: some untracked files could not be removed (permission denied) and were left in place.'; } && " +
+        $"git checkout --detach --quiet {Q(JitNames.Sha(sha))} && " +
+        "if [ -f .gitmodules ]; then git submodule update --init --recursive --quiet; fi";
+
     // ── compose ──────────────────────────────────────────────────────────────
 
     public static string ComposeConfig(ComposeContext ctx, IReadOnlyList<TagBinding> bindings, string tag) =>
@@ -94,6 +105,46 @@ public static class JitCommands
     /// <summary>Starts one service from images that already exist: no build, no pull, no touching its dependencies.</summary>
     public static string StartService(ComposeContext ctx, string service, IReadOnlyList<TagBinding> bindings, string tag) =>
         Prefix(ctx, bindings, tag) + Compose(ctx, null, $"up -d --no-deps --no-build --pull never {Q(JitNames.Service(service))}");
+
+    private static readonly global::System.Text.RegularExpressions.Regex ImageShape =
+        new(@"^[A-Za-z0-9][A-Za-z0-9._/:@-]{0,254}$", global::System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>Prints <c>missing:&lt;image&gt;</c> for each of these image references that is not on the server. Changes nothing.</summary>
+    public static string MissingImages(IEnumerable<string> imageRefs)
+    {
+        var refs = imageRefs.Distinct(StringComparer.Ordinal).ToList();
+        foreach (var r in refs)
+            if (!ImageShape.IsMatch(r)) throw new ArgumentException($"'{r}' is not an image reference.");
+        if (refs.Count == 0) return "true";
+        return ": 'images:missing'; for r in " + string.Join(" ", refs.Select(Q)) +
+               "; do docker image inspect \"$r\" >/dev/null 2>&1 || echo \"missing:$r\"; done; true";
+    }
+
+    public static IReadOnlyList<string> ParseMissingImages(IEnumerable<string> lines) =>
+        lines.Select(l => l.Trim()).Where(l => l.StartsWith("missing:", StringComparison.Ordinal)).Select(l => l["missing:".Length..]).ToList();
+
+    /// <summary>Downloads the images of exactly these services (ones with no build section). Never removes anything.</summary>
+    public static string PullServices(ComposeContext ctx, IReadOnlyList<TagBinding> bindings, string tag, IEnumerable<string> services)
+    {
+        var names = string.Join(" ", services.Select(s => Q(JitNames.Service(s))));
+        if (names.Length == 0) throw new ArgumentException("There is nothing to download.");
+        return Prefix(ctx, bindings, tag) + Compose(ctx, null, $"pull {names}");
+    }
+
+    /// <summary>The compose command exactly as ShipRight runs it, with the caller's own arguments appended ("$@"). Used by the dc helper.</summary>
+    public static string ComposeByHand(ComposeContext ctx, IReadOnlyList<TagBinding> bindings, string tag) =>
+        Prefix(ctx, bindings, tag) + Compose(ctx, null, "\"$@\"");
+
+    /// <summary>Stops and removes every container of the project, then nothing else: volumes and images are never touched.</summary>
+    public static string DownAll(ComposeContext ctx, int graceSeconds, IReadOnlyList<TagBinding> bindings, string tag)
+    {
+        if (graceSeconds < 0) throw new ArgumentOutOfRangeException(nameof(graceSeconds), "The stop grace period cannot be negative.");
+        return Prefix(ctx, bindings, tag) + Compose(ctx, null, $"down -t {graceSeconds}");
+    }
+
+    /// <summary>Starts every service of the project from images that already exist: no build, no pull.</summary>
+    public static string UpAll(ComposeContext ctx, IReadOnlyList<TagBinding> bindings, string tag) =>
+        Prefix(ctx, bindings, tag) + Compose(ctx, null, "up -d --no-build --pull never");
 
     /// <summary>Prints <c>state|health|restarts</c> for each container of the service; see <see cref="ProbeParser"/>.</summary>
     public static string ProbeService(ComposeContext ctx, string service, IReadOnlyList<TagBinding> bindings, string tag) =>

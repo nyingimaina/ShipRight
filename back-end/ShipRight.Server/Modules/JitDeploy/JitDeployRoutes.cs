@@ -21,6 +21,8 @@ public static class JitDeployRoutes
             HandleDeployAsync(id, options, Who(user), svc));
         app.MapPost("/api/jit/{id}/recover", (string id, ClaimsPrincipal user, JitDeployService svc) =>
             HandleRecoverAsync(id, Who(user), svc));
+        app.MapPost("/api/jit/{id}/restart-all", (string id, ClaimsPrincipal user, JitDeployService svc) =>
+            HandleRestartAllAsync(id, Who(user), svc));
         app.MapPost("/api/jit/{id}/rollback", (string id, RollbackRequest req, ClaimsPrincipal user, JitDeployService svc) =>
             HandleRollbackAsync(id, req, Who(user), svc));
         app.MapGet("/api/jit/{id}/releases", (string id, JitDeployService svc) => HandleReleasesAsync(id, svc));
@@ -61,7 +63,7 @@ public static class JitDeployRoutes
     {
         if (await projects.GetByIdAsync(id) is null) return Results.NotFound(Err($"Project '{id}' not found."));
 
-        var problems = JitDeployConfigValidator.Validate(body);
+        var problems = JitEnvConfigValidator.Validate(body);
         if (problems.Count > 0)
             return Results.BadRequest(new { isError = true, message = problems[0].Message, errors = problems.Select(p => Err(p.Message, p.Field)).ToList() });
 
@@ -76,6 +78,9 @@ public static class JitDeployRoutes
 
     internal static async Task<IResult> HandleRecoverAsync(string id, string? initiator, JitDeployService svc) =>
         Started(await svc.StartRecoverAsync(id, initiator), "Recovery started");
+
+    internal static async Task<IResult> HandleRestartAllAsync(string id, string? initiator, JitDeployService svc) =>
+        Started(await svc.StartRestartAllAsync(id, initiator), "Restart started");
 
     internal static async Task<IResult> HandleRollbackAsync(string id, RollbackRequest req, string? initiator, JitDeployService svc)
     {
