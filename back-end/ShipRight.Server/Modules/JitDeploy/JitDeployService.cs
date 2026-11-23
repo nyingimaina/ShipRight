@@ -25,33 +25,34 @@ public sealed record JitReleasesView(
 /// </summary>
 public sealed class JitDeployService(
     IProjectStore projects, IJitConfigStore configs, IBuildStore builds, BuildEventBus bus,
-    ISshRunner ssh, IJitClock clock, JitDeployLock? locks = null, ShipRight.Modules.Resources.Stores.ICredentialResourceStore? credentials = null)
+    ISshRunner ssh, IJitClock clock, JitDeployLock? locks = null, ShipRight.Modules.Resources.Stores.ICredentialResourceStore? credentials = null,
+    JitLocalBranchGuard? localBranchGuard = null)
 {
     private readonly JitDeployer _deployer = new(ssh, clock, locks);
 
     public Task<JitStartResult> StartDeployAsync(string projectId, JitDeployOptions? options, string? initiator) =>
-        StartAsync(projectId, initiator, rollbackTag: null, isRollback: false, options ?? new JitDeployOptions(),
+        StartAsync(projectId, initiator, rollbackTag: null, isRollback: false, buildingFromSource: true, options ?? new JitDeployOptions(),
             (req, log, ct) => _deployer.DeployAsync(req, log, ct));
 
     public Task<JitStartResult> StartRecoverAsync(string projectId, string? initiator) =>
-        StartAsync(projectId, initiator, rollbackTag: null, isRollback: false, new JitDeployOptions(),
+        StartAsync(projectId, initiator, rollbackTag: null, isRollback: false, buildingFromSource: false, new JitDeployOptions(),
             (req, log, ct) => _deployer.RecoverAsync(req, log, ct));
 
     /// <summary>Stops all of the project's services and starts them again on the release that is already running.</summary>
     public Task<JitStartResult> StartRestartAllAsync(string projectId, string? initiator) =>
-        StartAsync(projectId, initiator, rollbackTag: null, isRollback: false, new JitDeployOptions(),
+        StartAsync(projectId, initiator, rollbackTag: null, isRollback: false, buildingFromSource: false, new JitDeployOptions(),
             (req, log, ct) => _deployer.RestartAllAsync(req, log, ct));
 
     public async Task<JitStartResult> StartRollbackAsync(string projectId, string tag, string? initiator)
     {
         if (!ReleaseTag.TryParse(tag, out _, out _))
             return new(null, $"'{tag}' is not a release tag.", null);
-        return await StartAsync(projectId, initiator, tag, isRollback: true, new JitDeployOptions(),
+        return await StartAsync(projectId, initiator, tag, isRollback: true, buildingFromSource: false, new JitDeployOptions(),
             (req, log, ct) => _deployer.RollbackToAsync(req, tag, log, ct));
     }
 
     private async Task<JitStartResult> StartAsync(
-        string projectId, string? initiator, string? rollbackTag, bool isRollback, JitDeployOptions options,
+        string projectId, string? initiator, string? rollbackTag, bool isRollback, bool buildingFromSource, JitDeployOptions options,
         Func<JitDeployRequest, Func<string, Task>, CancellationToken, Task<JitDeployResult>> action)
     {
         var project = await projects.GetByIdAsync(projectId);
@@ -63,6 +64,16 @@ public sealed class JitDeployService(
 
         var map = JitEnvMapper.Map(project, cfg, options.Commit, options.Force, options.AllowWithoutRollback);
         if (!map.Ok) return new(null, JitServiceHelp.StartMessage(map.Problems), null);
+
+        // A source build takes origin/branch from the server. Refuse it here, before a build record or any SSH work,
+        // if the matching local checkout still has uncommitted or unpushed changes. An explicit commit builds that
+        // SHA rather than "latest", so it is not subject to the branch check.
+        if (buildingFromSource && localBranchGuard is not null && string.IsNullOrWhiteSpace(options.Commit) && cfg is not null)
+        {
+            var local = await localBranchGuard.CheckAsync(project, cfg);
+            if (local.Problem is not null) return new(null, local.Problem, null);
+        }
+
         var (withCredential, credentialError) = await JitCredentialResolver.ApplyAsync(map.Request!, cfg, credentials, projectId);
         if (credentialError is not null) return new(null, credentialError, null);
         var request = withCredential! with { RebuildAll = options.RebuildAll };

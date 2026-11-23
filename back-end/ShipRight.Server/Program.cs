@@ -341,6 +341,7 @@ static void RegisterDesktopServices(IServiceCollection services, string dataDir)
     // Build-on-server deploys (opt-in per project; stored apart from the project so nothing about it changes).
     services.AddSingleton<IJitConfigStore>(_ => new JsonJitConfigStore(dataDir));
     services.AddSingleton<IJitClock, SystemJitClock>();
+    services.AddSingleton<JitLocalBranchGuard>();
     services.AddSingleton<JitDeployService>();
     services.AddSingleton<MariaDbProvider>();
     services.AddSingleton<SqlServerProvider>();

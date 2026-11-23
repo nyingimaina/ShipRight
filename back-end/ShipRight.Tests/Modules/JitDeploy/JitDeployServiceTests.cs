@@ -4,6 +4,7 @@ using ShipRight.Modules.Builds;
 using ShipRight.Modules.JitDeploy;
 using ShipRight.Modules.Projects;
 using ShipRight.Shared.Events;
+using ShipRight.Tests.Modules.Setup;
 
 namespace ShipRight.Tests.Modules.JitDeploy;
 
@@ -50,7 +51,7 @@ public class JitDeployServiceTests
         public FakeClock Clock { get; } = new();
         public JitDeployService Service { get; }
 
-        public Rig(bool enabled = true)
+        public Rig(bool enabled = true, JitLocalBranchGuard? localBranchGuard = null)
         {
             ProjectStore.Items["p1"] = new ProjectConfig
             {
@@ -63,7 +64,19 @@ public class JitDeployServiceTests
                 Server = new ServerConfig { Host = "10.0.0.5", Username = "deploy", SshKeyPath = "/keys/k", RemoteWorkingDir = "/home/deploy/shop" },
             };
             ConfigStore.Items["p1"] = new JitDeployConfig { Enabled = enabled, RepoUrl = "git@github.com:o/r.git", ComposeProject = "shop" };
-            Service = new JitDeployService(ProjectStore, ConfigStore, BuildStore, Bus, Remote, Clock, new JitDeployLock());
+            Service = new JitDeployService(ProjectStore, ConfigStore, BuildStore, Bus, Remote, Clock, new JitDeployLock(), null, localBranchGuard);
+        }
+
+        public Rig WithLocalRepo(string repoPath = @"D:\work\shop") =>
+            this.With(items => items["p1"] = items["p1"] with
+            {
+                GitRepos = [new GitConfig { RepoPath = repoPath, DeployBranch = "master" }]
+            });
+
+        private Rig With(Action<Dictionary<string, ProjectConfig>> change)
+        {
+            change(ProjectStore.Items);
+            return this;
         }
 
         public async Task<BuildRecord> DeployAsync(JitDeployOptions? options = null)
@@ -99,6 +112,54 @@ public class JitDeployServiceTests
         Assert.IsTrue(rec.Versions.All(v => v.NewVersion == "r1-aaaaaaa"));
         Assert.IsTrue(rec.StepDurations.ContainsKey("Deploy"));
         StringAssert.Contains(rec.GetLogOutput(), "[deploy] Release r1-aaaaaaa is live");
+    }
+
+    [TestMethod]
+    public async Task UnpushedLocalWork_RefusesTheDeployBeforeTouchingTheServer()
+    {
+        var runner = new RecordingRunner()
+            .When((_, a) => a.Contains("remote") && a.Contains("get-url"), 0, "git@github.com:o/r.git\n")
+            .When((_, a) => a.Contains("--abbrev-ref"), 0, "master\n")
+            .When((_, a) => a.Any(x => x.StartsWith("--porcelain", StringComparison.Ordinal)), 0, "M  Program.cs\n")
+            .When((_, a) => a.Contains("--verify"), 0, FakeRemote.Sha1 + "\n")
+            .When((_, a) => a.Contains("rev-list"), 0, "0 1\n");
+        var rig = new Rig(localBranchGuard: new JitLocalBranchGuard(runner)).WithLocalRepo();
+
+        var start = await rig.Service.StartDeployAsync("p1", null, "tester");
+
+        Assert.IsNotNull(start.Error);
+        StringAssert.Contains(start.Error!, "commit", StringComparison.OrdinalIgnoreCase);
+        Assert.IsNull(start.Record);
+        Assert.IsNull(start.Completion);
+        Assert.AreEqual(0, rig.BuildStore.Count, "no build record is created for a deploy that never left the machine");
+        Assert.AreEqual(0, rig.Remote.Commands.Count, "the server is not contacted at all");
+    }
+
+    [TestMethod]
+    public async Task CleanPushedBranch_StillDeploys()
+    {
+        var runner = new RecordingRunner()
+            .When((_, a) => a.Contains("remote") && a.Contains("get-url"), 0, "git@github.com:o/r.git\n")
+            .When((_, a) => a.Contains("--abbrev-ref"), 0, "master\n")
+            .When((_, a) => a.Any(x => x.StartsWith("--porcelain", StringComparison.Ordinal)), 0, "")
+            .When((_, a) => a.Contains("--verify"), 0, FakeRemote.Sha1 + "\n")
+            .When((_, a) => a.Contains("rev-list"), 0, "0 0\n");
+        var rig = new Rig(localBranchGuard: new JitLocalBranchGuard(runner)).WithLocalRepo();
+
+        var record = await rig.DeployAsync();
+
+        Assert.AreEqual(BuildStatus.Deployed, record.Status);
+    }
+
+    [TestMethod]
+    public async Task DeployingAnExplicitCommit_DoesNotRunTheBranchGuard()
+    {
+        var runner = new RecordingRunner();
+        var rig = new Rig(localBranchGuard: new JitLocalBranchGuard(runner)).WithLocalRepo();
+
+        await rig.DeployAsync(new JitDeployOptions(Commit: FakeRemote.Sha2));
+
+        Assert.AreEqual(0, runner.Calls.Count, "an explicit SHA builds that commit rather than the branch's latest work");
     }
 
     [TestMethod]
