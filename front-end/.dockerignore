@@ -1,0 +1,10 @@
+# Keeps dependencies, git history and secrets out of the image build.
+node_modules
+.git
+.env
+.env.*
+!.env.example
+.next
+dist
+coverage
+npm-debug.log*
