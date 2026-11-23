@@ -209,6 +209,30 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
             lock (lines) return (exit, lines.ToList());
         }
 
+        /// <summary>
+        /// Like <see cref="Exec"/>, but keeps stderr too: docker writes compose errors there. The two streams stay
+        /// separate so a warning on stderr cannot corrupt the JSON that is parsed when the check succeeds.
+        /// </summary>
+        private async Task<(int Exit, List<string> Output, List<string> Errors)> ExecWithStderr(string command, CancellationToken ct)
+        {
+            var output = new List<string>();
+            var errors = new List<string>();
+            Task Out(string l) { lock (output) output.Add(l); return Task.CompletedTask; }
+            Task Err(string l) { lock (errors) errors.Add(l); return Task.CompletedTask; }
+            var exit = await _ssh.RunAsync(_t.Host, _t.Username, _t.SshKeyPath, command, Out, Err, ct);
+            lock (output) return (exit, output.ToList(), errors.ToList());
+        }
+
+        /// <summary>Shows the real reason in the live log and in the server log, before the deploy finishes.</summary>
+        private async Task<string> ComposeFailureAsync(string sha, string tag,
+            (int Exit, List<string> Output, List<string> Errors) config)
+        {
+            var message = DeployDiagnostics.ComposeFailure(_ctx.ComposeFile, tag, sha, config.Output, config.Errors);
+            await Say(message);
+            Serilog.Log.Warning("Compose check failed for {Project} at {Sha} ({Tag}): {Reason}", _req.Project, sha, tag, message);
+            return message;
+        }
+
         private async Task Save(ReleaseState next, CancellationToken ct = default)
         {
             await _store.WriteAsync(_t, next with { UpdatedUtc = _clock.UtcNow }, ct);
@@ -344,13 +368,13 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
                 if (checkout.Exit != 0) return await Abort($"Could not check out commit {rec.Sha[..7]}: {Tail(checkout.Lines)}");
                 if (await WriteOverrideAsync(ct) is { } overrideError) return await Abort(overrideError);
                 if (await WriteEnvAsync(ct) is { } envError) return await Abort(envError);
-                var config = await Exec(JitCommands.ComposeConfig(_ctx, _bindings, target), false, ct);
-                if (config.Exit != 0) return await Abort($"The compose file of that release is not valid: {Tail(config.Lines)}");
+                var config = await ExecWithStderr(JitCommands.ComposeConfig(_ctx, _bindings, target), ct);
+                if (config.Exit != 0) return await Abort(await ComposeFailureAsync(rec.Sha, target, config));
 
                 IReadOnlyList<string> startOrder;
                 try
                 {
-                    var graph = ComposeConfig.Graph(ComposeConfig.Parse(string.Join("\n", config.Lines)));
+                    var graph = ComposeConfig.Graph(ComposeConfig.Parse(string.Join("\n", config.Output)));
                     var managed = _req.Services.Select(s => s.Name).Where(graph.ContainsKey).ToList();
                     var affected = AffectedSet.Compute(graph, managed, _req.DependentChoices);
                     startOrder = DependencyOrderer.StartOrder(graph, affected.Select(a => a.Name));
@@ -403,14 +427,14 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
                 if (checkout.Exit != 0) return Failed($"Could not check out commit {current.Sha[..7]}: {Tail(checkout.Lines)}");
                 if (await WriteOverrideAsync(ct) is { } overrideError) return Failed(overrideError);
                 if (await WriteEnvAsync(ct) is { } envError) return Failed(envError);
-                var config = await Exec(JitCommands.ComposeConfig(_ctx, _bindings, current.Tag), false, ct);
-                if (config.Exit != 0) return Failed($"The compose file is not valid: {Tail(config.Lines)}");
+                var config = await ExecWithStderr(JitCommands.ComposeConfig(_ctx, _bindings, current.Tag), ct);
+                if (config.Exit != 0) return Failed(await ComposeFailureAsync(current.Sha, current.Tag, config));
 
                 IReadOnlyList<string> order;
                 IReadOnlyList<ComposeService> allServices;
                 try
                 {
-                    allServices = ComposeConfig.Parse(string.Join("\n", config.Lines));
+                    allServices = ComposeConfig.Parse(string.Join("\n", config.Output));
                     var graph = ComposeConfig.Graph(allServices);
                     order = DependencyOrderer.StartOrder(graph, graph.Keys);
                 }
@@ -787,15 +811,15 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
             if (await WriteEnvAsync(ct) is { } envError) return await AbortSync(envError);
 
             // 3. Understand the compose file before building anything.
-            var config = await Exec(JitCommands.ComposeConfig(_ctx, _bindings, tag), false, ct);
-            if (config.Exit != 0) return await AbortSync($"The compose file is not valid: {Tail(config.Lines)}");
+            var config = await ExecWithStderr(JitCommands.ComposeConfig(_ctx, _bindings, tag), ct);
+            if (config.Exit != 0) return await AbortSync(await ComposeFailureAsync(sha, tag, config));
 
             IReadOnlyList<ComposeService> services;
             IReadOnlyList<AffectedService> affected;
             IReadOnlyList<string> startOrder;
             try
             {
-                services = ComposeConfig.Parse(string.Join("\n", config.Lines));
+                services = ComposeConfig.Parse(string.Join("\n", config.Output));
                 var graph = ComposeConfig.Graph(services);
                 DependencyOrderer.StartOrder(graph);
                 var problems = ComposeConfig.CheckBuilds(services, _req.Services.Select(s => new BuildExpectation(s.Name, s.TagVariable, ExpectedRef(s, tag))));
@@ -846,7 +870,7 @@ public sealed class JitDeployer(ISshRunner ssh, IJitClock clock, JitDeployLock? 
                     await Step($"Supporting services started: {string.Join(", ", early)}", stepClock);
                 }
             }
-            await ShadowFingerprintAsync(config.Lines, sha, tag, buildClock.Elapsed, ct);
+            await ShadowFingerprintAsync(config.Output, sha, tag, buildClock.Elapsed, ct);
 
             // 5. The point of no return. The state is saved first, so a crash from here on can be undone.
             var record = new ReleaseRecord(tag, sha, ExpectedRefs(tag), _clock.UtcNow);

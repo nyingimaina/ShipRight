@@ -98,7 +98,7 @@ public sealed class JitDeployService(
             await ctx.EmitLogAsync($"Connecting to {request.Target.Username}@{request.Target.Host}…", "ssh");
             var result = await action(request, line => ctx.EmitLogAsync(line, "deploy"), CancellationToken.None);
             Apply(record, result);
-            Log.Information("Build-on-server deploy {BuildId} for {ProjectId} finished: {Outcome}", record.Id, record.ProjectId, result.Outcome);
+            LogOutcome(record, result);
         }
         catch (Exception ex)
         {
@@ -113,6 +113,16 @@ public sealed class JitDeployService(
         record.AppendLogLine($"[Deployment finished: {record.Status}]");
         await builds.SaveAsync(record);
         await ctx.DeployCompletedAsync();
+    }
+
+    /// <summary>Persists why a deploy failed, not just that it did, so the server log is useful without the UI.</summary>
+    private static void LogOutcome(BuildRecord record, JitDeployResult result)
+    {
+        if (result.Success)
+            Log.Information("Build-on-server deploy {BuildId} for {ProjectId} finished: {Outcome}", record.Id, record.ProjectId, result.Outcome);
+        else
+            Log.Warning("Build-on-server deploy {BuildId} for {ProjectId} failed: {Outcome} — {Reason}",
+                record.Id, record.ProjectId, result.Outcome, result.Message);
     }
 
     private static void Apply(BuildRecord record, JitDeployResult result)
