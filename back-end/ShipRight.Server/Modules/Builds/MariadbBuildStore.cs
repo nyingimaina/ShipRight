@@ -106,7 +106,9 @@ public class MariaDbBuildStore : IBuildStore
         string? gitTag, int page, int pageSize)
     {
         using var qb = AppQBuilderExtensions.NewQBuilder();
-        qb.UseSelector().Select<Record>("Data");
+        // The MySQL paging builder wraps this in a derived table and orders by StartedAt outside it,
+        // so the inner select must project that column too.
+        qb.UseSelector().Select<Record>("Data").Select<Record>("StartedAt");
 
         if (!string.IsNullOrWhiteSpace(projectId))
             qb.UseTableBoundFilter<Record>()
@@ -291,7 +293,8 @@ public class CompanyScopedBuildStore(IDatabaseHelper<Guid> db, CompanyScope scop
         string? gitTag, int page, int pageSize)
     {
         using var qb = AppQBuilderExtensions.NewQBuilder();
-        qb.UseSelector().Select<Row>("Data");
+        // See QueryAsync above: the outer ORDER BY needs StartedAt in the derived table's select list.
+        qb.UseSelector().Select<Row>("Data").Select<Row>("StartedAt");
         ApplyQueryFilters(qb, projectId, status, from, to);
         qb.UseMySqlServerPagingBuilder<Row>().PageBy(r => r.StartedAt, (uint)page, (ushort)pageSize, false);
         var built = qb.BuildWithParameters();
