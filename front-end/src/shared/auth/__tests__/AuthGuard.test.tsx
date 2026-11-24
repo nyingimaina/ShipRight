@@ -12,7 +12,7 @@ jest.mock('@/shared/auth/AuthApi', () => ({
 const mockRouter = { pathname: '/projects', replace: jest.fn() };
 jest.mock('next/router', () => ({ useRouter: () => mockRouter }));
 
-let mockMode = 'cloud';
+let mockMode: string | null = 'cloud';
 jest.mock('@/shared/serverInfo', () => ({
   useServerMode: () => mockMode,
 }));
@@ -40,6 +40,23 @@ describe('AuthGuard', () => {
 
     expect(await screen.findByTestId('child')).toBeInTheDocument();
     expect(meMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('checks the session once the server mode resolves from null to cloud', async () => {
+    mockMode = null;
+    meMock.mockResolvedValue({ user: sessionUser });
+    const { rerender } = render(
+      <AuthGuard><div data-testid="child">content</div></AuthGuard>,
+    );
+
+    expect(meMock).not.toHaveBeenCalled();
+
+    mockMode = 'cloud';
+    rerender(<AuthGuard><div data-testid="child">content</div></AuthGuard>);
+
+    expect(await screen.findByTestId('child')).toBeInTheDocument();
+    expect(meMock).toHaveBeenCalledTimes(1);
+    expect(mockRouter.replace).not.toHaveBeenCalled();
   });
 
   it('redirects to /login when the identity cookie is rejected on a protected page', async () => {

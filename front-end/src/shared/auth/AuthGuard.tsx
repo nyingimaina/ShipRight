@@ -22,7 +22,9 @@ export default function AuthGuard({ children }: Props) {
   // The server's identity cookie is the source of truth: ask once who is signed in, then let the
   // store and this guard react. Desktop mode needs no sign-in and no check.
   useEffect(() => {
-    if (started.current) return;
+    // mode is null until /api/health resolves. Waiting here matters: marking the check as started while it is
+    // still null meant a fresh page load never asked the server for the session, even with a valid cookie.
+    if (mode === null || started.current) return;
     started.current = true;
 
     if (mode !== 'cloud') {
