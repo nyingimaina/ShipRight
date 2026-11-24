@@ -169,7 +169,7 @@ try
             ForwardedHeaders = ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost
         };
         forwarded.KnownProxies.Clear();
-        forwarded.KnownNetworks.Clear();
+        forwarded.KnownIPNetworks.Clear();
         app.UseForwardedHeaders(forwarded);
 
         app.UseRateLimiter();
@@ -185,6 +185,7 @@ try
         // Sign-in: the cookie identifies the person, their company claim scopes every query, and the
         // fallback policy (role rules) guards every endpoint that is not explicitly marked public.
         app.UseAuthentication();
+        app.UseMiddleware<AuthDiagnosticsMiddleware>();
         app.UseMiddleware<CompanyContextMiddleware>();
         app.UseAuthorization();
     }
