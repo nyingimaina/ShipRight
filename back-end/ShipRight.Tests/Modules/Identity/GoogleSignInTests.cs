@@ -119,12 +119,14 @@ public class GoogleSignInTests
     }
 
     [TestMethod]
-    public async Task GoogleChallenge_UsesTheHttpsPublicUrlForItsCallback_BehindAnHttpProxy()
+    public async Task GoogleChallenge_UsesTheForwardedHttpsRequestForItsCallback_BehindAnHttpProxy()
     {
-        // A reverse proxy forwards to the app over plain HTTP. Google must still be told the public HTTPS
-        // callback, otherwise it rejects the sign-in with redirect_uri_mismatch.
+        // Caddy terminates TLS and forwards to the app over plain HTTP. Both the authorization redirect and the
+        // later token exchange must see the public HTTPS address, or Google rejects the sign-in.
         using var factory = new InMemoryCloudFactory(google: true);
         var client = factory.NewClient();
+        client.Http.DefaultRequestHeaders.Add("X-Forwarded-Proto", "https");
+        client.Http.DefaultRequestHeaders.Add("X-Forwarded-Host", "app.example.test");
 
         var start = await client.Http.GetAsync("/api/auth/google/start");
 

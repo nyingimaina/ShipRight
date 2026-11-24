@@ -6,6 +6,7 @@ using Dapper.Contrib.Extensions;
 using Jattac.Libs.Tempo;
 using Jattac.Libs.Tempo.Scheduling;
 using Microsoft.AspNetCore.Http.Json;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Logging;
 using Rocket.Libraries.DatabaseIntegrator;
 using Serilog;
@@ -159,6 +160,18 @@ try
 
     if (cloudMode)
     {
+        // Caddy terminates TLS and forwards to the app over plain HTTP on the compose network. Without this the
+        // OAuth handler builds http:// callback URLs for both the challenge and the token exchange, which Google
+        // rejects. The app is not exposed publicly (only localhost and the compose network), so trusting the
+        // proxy's forwarded headers is safe; without the Clear() calls only loopback proxies are trusted.
+        var forwarded = new ForwardedHeadersOptions
+        {
+            ForwardedHeaders = ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost
+        };
+        forwarded.KnownProxies.Clear();
+        forwarded.KnownNetworks.Clear();
+        app.UseForwardedHeaders(forwarded);
+
         app.UseRateLimiter();
         app.UseMiddleware<DatabaseTransactionMiddleware>();
     }

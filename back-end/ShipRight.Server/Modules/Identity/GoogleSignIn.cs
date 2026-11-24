@@ -67,19 +67,6 @@ public static class GoogleSignIn
         };
     }
 
-    // Additive wrapper for deployments behind a TLS-terminating proxy. Configure() is left as-is; this only
-    // replaces the redirect_uri Google receives, because the proxy forwards to the app over plain HTTP.
-    public static void ConfigureBehindProxy(OAuthOptions options, GoogleSettings settings)
-    {
-        Configure(options, settings);
-        options.Events.OnRedirectToAuthorizationEndpoint = context =>
-        {
-            context.Response.Redirect(
-                GoogleCallbackUrl.ReplaceIn(context.RedirectUri, GoogleCallbackUrl.FromEnvironment()));
-            return Task.CompletedTask;
-        };
-    }
-
     public static void MapGoogleSignInRoutes(this WebApplication app)
     {
         // Public: starts the redirect to Google for a person who is not signed in yet.
