@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import ZestButton from 'jattac.libs.web.zest-button';
 import { api } from '@/shared/ApiService';
+import { errorMessage, runZestAction } from '@/shared/components/ZestAsync/zestAction';
 import type { IBundleInspection, IBundleWarning, IImportOutcome } from '@/shared/types/IBundle';
 import styles from './ImportBundleDialog.module.css';
 
@@ -30,8 +31,6 @@ const field: React.CSSProperties = {
 const label: React.CSSProperties = { ...muted, display: 'block', marginTop: 12 };
 const fileRow: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 };
 
-const errorMessage = (e: unknown, fallback: string) => (e as { message?: string })?.message ?? fallback;
-
 function Warnings({ warnings }: { warnings: IBundleWarning[] }) {
   if (warnings.length === 0) return <p style={muted}>Nothing to double-check.</p>;
   return (
@@ -52,6 +51,7 @@ export default function ImportBundleDialog({ onClose, onImported }: Props) {
   const [outcome, setOutcome] = useState<IImportOutcome | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const errorRef = useRef<HTMLParagraphElement>(null);
 
   const passphraseHeaders = (): Record<string, string> =>
     passphrase.length > 0 ? { 'X-ShipRight-Passphrase': passphrase } : {};
@@ -71,11 +71,15 @@ export default function ImportBundleDialog({ onClose, onImported }: Props) {
     setBusy(true);
     try {
       const headers = passphraseHeaders();
-      setInspection(Object.keys(headers).length
-        ? await api.upload<IBundleInspection>('/api/projects/import/inspect', chosen, headers)
-        : await api.upload<IBundleInspection>('/api/projects/import/inspect', chosen));
-    } catch (e) {
-      setError(errorMessage(e, 'Could not read that file.'));
+      return await runZestAction(async () => {
+        setInspection(Object.keys(headers).length
+          ? await api.upload<IBundleInspection>('/api/projects/import/inspect', chosen, headers)
+          : await api.upload<IBundleInspection>('/api/projects/import/inspect', chosen));
+      }, {
+        fallbackMessage: 'Could not read that file.',
+        onError: setError,
+        errorRef,
+      });
     } finally {
       setBusy(false);
     }
@@ -84,7 +88,7 @@ export default function ImportBundleDialog({ onClose, onImported }: Props) {
   const choose = (chosen: File | undefined) => {
     if (!chosen) return;
     setFile(chosen);
-    void read(chosen);
+    void read(chosen).catch(() => undefined);
   };
 
   const changePassphrase = (value: string) => {
@@ -99,11 +103,12 @@ export default function ImportBundleDialog({ onClose, onImported }: Props) {
     setBusy(true);
     setError('');
     try {
-      const result = await withHeaders<IImportOutcome>('/api/projects/import', importHeaders());
+      const result = await runZestAction(
+        () => withHeaders<IImportOutcome>('/api/projects/import', importHeaders()),
+        { fallbackMessage: 'Import failed.', onError: setError, errorRef },
+      );
       setOutcome(result);
       onImported(result);
-    } catch (e) {
-      setError(errorMessage(e, 'Import failed.'));
     } finally {
       setBusy(false);
     }
@@ -148,13 +153,14 @@ export default function ImportBundleDialog({ onClose, onImported }: Props) {
             </label>
 
             <div style={{ display: 'flex', marginTop: 12 }}>
-              <ZestButton onClick={() => file && void read(file)} disabled={!file || busy} zest={{ buttonStyle: 'outline' }}>
+              <ZestButton onClick={() => (file ? read(file) : undefined)} disabled={!file || busy}
+                zest={{ semanticType: 'import', buttonStyle: 'outline' }}>
                 Read bundle
               </ZestButton>
             </div>
 
             {busy && !inspection && <p style={muted}>Reading…</p>}
-            {error && <p style={{ color: '#E5604D' }}>{error}</p>}
+            {error && <p ref={errorRef} role="alert" style={{ color: '#E5604D' }}>{error}</p>}
 
             {inspection && (
               <>
@@ -189,7 +195,7 @@ export default function ImportBundleDialog({ onClose, onImported }: Props) {
               <ZestButton onClick={onClose} zest={{ buttonStyle: 'outline' }}>Cancel</ZestButton>
               {inspection && (
                 <ZestButton onClick={doImport} disabled={busy || !inspection.importable}
-                  zest={{ visualOptions: { variant: 'standard' } }}>Import project</ZestButton>
+                  zest={{ semanticType: 'import', visualOptions: { variant: 'standard' } }}>Import project</ZestButton>
               )}
             </div>
           </>

@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import ZestButton from 'jattac.libs.web.zest-button';
+import { runZestAction } from '@/shared/components/ZestAsync/zestAction';
 import { exportProject } from './exportProject';
 
 interface Props {
@@ -31,6 +32,7 @@ export default function ExportProjectDialog({ projectId, projectName, onClose, o
   const [acknowledged, setAcknowledged] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const errorRef = useRef<HTMLParagraphElement>(null);
 
   const mismatch = confirm.length > 0 && passphrase !== confirm;
   const canExport = acknowledged && passphrase.length > 0 && !mismatch && !busy;
@@ -39,11 +41,12 @@ export default function ExportProjectDialog({ projectId, projectName, onClose, o
     if (!canExport) return;
     setBusy(true); setError('');
     try {
-      await exportProject(projectId, { includeSecrets: true, passphrase });
+      await runZestAction(
+        () => exportProject(projectId, { includeSecrets: true, passphrase }),
+        { fallbackMessage: 'Export failed.', onError: setError, errorRef },
+      );
       onExported();
       onClose();
-    } catch (e) {
-      setError((e as { message?: string })?.message ?? 'Export failed.');
     } finally { setBusy(false); }
   };
 
@@ -72,11 +75,12 @@ export default function ExportProjectDialog({ projectId, projectName, onClose, o
           <input type="checkbox" checked={acknowledged} onChange={e => setAcknowledged(e.target.checked)} disabled={busy} />
           <span>I understand that this export contains live secrets and keys, and that I am responsible for keeping it safe.</span>
         </label>
-        {error && <p style={{ color: '#E5604D' }}>{error}</p>}
+        {error && <p ref={errorRef} role="alert" style={{ color: '#E5604D' }}>{error}</p>}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
           <ZestButton onClick={onClose} zest={{ buttonStyle: 'outline' }}>Cancel</ZestButton>
-          <ZestButton onClick={submit} disabled={!canExport} zest={{ visualOptions: { variant: 'standard' } }}>
+          <ZestButton onClick={submit} disabled={!canExport}
+            zest={{ semanticType: 'export', visualOptions: { variant: 'standard' } }}>
             Export with secrets
           </ZestButton>
         </div>

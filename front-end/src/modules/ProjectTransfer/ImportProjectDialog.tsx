@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import ZestButton from 'jattac.libs.web.zest-button';
 import { api } from '@/shared/ApiService';
+import { errorMessage, runZestAction } from '@/shared/components/ZestAsync/zestAction';
 import type { IBundleInspection, IBundleWarning, IImportOutcome } from '@/shared/types/IBundle';
 
 interface Props {
@@ -28,8 +29,6 @@ const field: React.CSSProperties = {
 };
 const label: React.CSSProperties = { ...muted, display: 'block', marginTop: 12 };
 
-const errorMessage = (e: unknown, fallback: string) => (e as { message?: string })?.message ?? fallback;
-
 function Warnings({ warnings }: { warnings: IBundleWarning[] }) {
   if (warnings.length === 0) return <p style={muted}>Nothing to double-check.</p>;
   return (
@@ -50,6 +49,7 @@ export default function ImportProjectDialog({ onClose, onImported }: Props) {
   const [outcome, setOutcome] = useState<IImportOutcome | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const errorRef = useRef<HTMLParagraphElement>(null);
 
   const headers = () => {
     const h: Record<string, string> = {};
@@ -65,28 +65,34 @@ export default function ImportProjectDialog({ onClose, onImported }: Props) {
   const withHeaders = <T,>(path: string, h: Record<string, string>) =>
     Object.keys(h).length ? api.upload<T>(path, file!, h) : api.upload<T>(path, file!);
 
-  const choose = async (chosen: File | undefined) => {
-    if (!chosen) return;
-    setFile(chosen); setInspection(null); setError(''); setBusy(true);
+  const inspect = async (chosen: File) => {
+    setInspection(null); setError(''); setBusy(true);
     try {
-      const h = inspectHeaders();
-      setInspection(Object.keys(h).length
-        ? await api.upload<IBundleInspection>('/api/projects/import/inspect', chosen, h)
-        : await api.upload<IBundleInspection>('/api/projects/import/inspect', chosen));
-    } catch (e) {
-      setError(errorMessage(e, 'Could not read that file.'));
+      return await runZestAction(async () => {
+        const h = inspectHeaders();
+        setInspection(Object.keys(h).length
+          ? await api.upload<IBundleInspection>('/api/projects/import/inspect', chosen, h)
+          : await api.upload<IBundleInspection>('/api/projects/import/inspect', chosen));
+      }, { fallbackMessage: 'Could not read that file.', onError: setError, errorRef });
     } finally { setBusy(false); }
+  };
+
+  const choose = (chosen: File | undefined) => {
+    if (!chosen) return;
+    setFile(chosen);
+    void inspect(chosen).catch(() => undefined);
   };
 
   const doImport = async () => {
     if (!file) return;
     setBusy(true); setError('');
     try {
-      const result = await withHeaders<IImportOutcome>('/api/projects/import', headers());
+      const result = await runZestAction(
+        () => withHeaders<IImportOutcome>('/api/projects/import', headers()),
+        { fallbackMessage: 'Import failed.', onError: setError, errorRef },
+      );
       setOutcome(result);
       onImported(result);
-    } catch (e) {
-      setError(errorMessage(e, 'Import failed.'));
     } finally { setBusy(false); }
   };
 
@@ -122,7 +128,7 @@ export default function ImportProjectDialog({ onClose, onImported }: Props) {
             </label>
 
             {busy && !inspection && <p style={muted}>Reading…</p>}
-            {error && <p style={{ color: '#E5604D' }}>{error}</p>}
+            {error && <p ref={errorRef} role="alert" style={{ color: '#E5604D' }}>{error}</p>}
 
             {inspection && (
               <>
@@ -157,7 +163,7 @@ export default function ImportProjectDialog({ onClose, onImported }: Props) {
               <ZestButton onClick={onClose} zest={{ buttonStyle: 'outline' }}>Cancel</ZestButton>
               {inspection && (
                 <ZestButton onClick={doImport} disabled={busy || !inspection.importable}
-                  zest={{ visualOptions: { variant: 'standard' } }}>Import project</ZestButton>
+                  zest={{ semanticType: 'import', visualOptions: { variant: 'standard' } }}>Import project</ZestButton>
               )}
             </div>
           </>

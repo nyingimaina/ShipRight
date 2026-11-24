@@ -21,7 +21,7 @@ RUN dotnet publish ShipRight.Server/ShipRight.Server.csproj \
     --self-contained false
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS runtime
-RUN apk add --no-cache curl
+RUN apk add --no-cache curl openssh-client
 WORKDIR /app
 COPY --from=backend /publish .
 EXPOSE 5200

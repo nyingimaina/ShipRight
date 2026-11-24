@@ -30,6 +30,22 @@ public class DockerBuildInputsTests
     }
 
     [TestMethod]
+    public void Dockerfile_RuntimeImageIncludesOpenSshClient_SoTheOnlineServerWizardCanCreateItsKey()
+    {
+        var lines = File.ReadAllLines(RepoFile("Dockerfile"));
+        var runtimeStart = Array.FindIndex(lines,
+            l => l.StartsWith("FROM ", StringComparison.Ordinal) && l.Contains(" AS runtime", StringComparison.OrdinalIgnoreCase));
+        Assert.IsTrue(runtimeStart >= 0, "No runtime stage found in Dockerfile.");
+
+        var runtime = lines[runtimeStart..];
+        Assert.IsTrue(runtime.Any(l =>
+                l.TrimStart().StartsWith("RUN ", StringComparison.Ordinal) &&
+                l.Contains("apk add", StringComparison.Ordinal) &&
+                l.Contains("openssh-client", StringComparison.Ordinal)),
+            "The Alpine image must install openssh-client so the server wizard can generate its managed SSH key.");
+    }
+
+    [TestMethod]
     public void Dockerfile_FailsTheInstallStep_WhenNpmCiLeavesNoNextBinary()
     {
         var install = File.ReadAllLines(RepoFile("Dockerfile")).First(l => l.TrimStart().StartsWith("RUN") && l.Contains("npm ci"));

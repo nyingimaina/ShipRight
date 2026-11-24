@@ -6,8 +6,8 @@ import { api } from '@/shared/ApiService';
 jest.mock('@/shared/ApiService', () => ({ api: { upload: jest.fn() } }));
 jest.mock('jattac.libs.web.zest-button', () => ({
   __esModule: true,
-  default: ({ children, onClick, disabled }: any) => (
-    <button type="button" onClick={onClick} disabled={disabled}>{children}</button>
+  default: ({ children, onClick, disabled, zest }: any) => (
+    <button type="button" data-semantic={zest?.semanticType} onClick={(e: any) => { void Promise.resolve(onClick(e)).catch(() => undefined); }} disabled={disabled}>{children}</button>
   ),
 }));
 const upload = (api as any).upload as jest.Mock;
@@ -79,6 +79,36 @@ describe('ImportBundleDialog', () => {
     choose();
     await waitFor(() => expect(screen.getByText('App')).toBeInTheDocument());
     expect(upload).toHaveBeenCalledWith('/api/projects/import/inspect', file);
+  });
+
+  it('shows the real failure message, marks it as an alert and scrolls to it after a pause', async () => {
+    jest.useFakeTimers();
+    const scrollIntoView = jest.fn();
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    upload.mockResolvedValueOnce(inspection());
+    upload.mockRejectedValueOnce(new Error('Import rejected. Check logs for request ID abc.'));
+    render(<ImportBundleDialog onClose={jest.fn()} onImported={jest.fn()} />);
+
+    choose();
+    await waitFor(() => expect(screen.getByText('App')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Import project' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Import rejected. Check logs for request ID abc.');
+    expect(scrollIntoView).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(250);
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'nearest' });
+    jest.useRealTimers();
+  });
+
+  it('gives the async buttons import semantics so Zest shows busy, success and fail states', async () => {
+    upload.mockResolvedValue(inspection());
+    render(<ImportBundleDialog onClose={jest.fn()} onImported={jest.fn()} />);
+
+    choose();
+    await waitFor(() => expect(screen.getByText('App')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Read bundle' })).toHaveAttribute('data-semantic', 'import');
+    expect(screen.getByRole('button', { name: 'Import project' })).toHaveAttribute('data-semantic', 'import');
   });
 
   it('imports a protected bundle with a destination root', async () => {

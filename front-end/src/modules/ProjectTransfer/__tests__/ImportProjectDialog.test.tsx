@@ -5,8 +5,8 @@ import { api } from '@/shared/ApiService';
 jest.mock('@/shared/ApiService', () => ({ api: { upload: jest.fn() } }));
 jest.mock('jattac.libs.web.zest-button', () => ({
   __esModule: true,
-  default: ({ children, onClick, disabled }: any) => (
-    <button type="button" onClick={onClick} disabled={disabled}>{children}</button>
+  default: ({ children, onClick, disabled, zest }: any) => (
+    <button type="button" data-semantic={zest?.semanticType} onClick={(e: any) => { void Promise.resolve(onClick(e)).catch(() => undefined); }} disabled={disabled}>{children}</button>
   ),
 }));
 const upload = (api as any).upload as jest.Mock;
@@ -56,6 +56,34 @@ describe('ImportProjectDialog', () => {
     choose();
     await waitFor(() => expect(screen.getByText('This is not a ShipRight export.')).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: 'Import project' })).toBeNull();
+  });
+
+  it('shows the real import failure as an alert and scrolls to it after a pause', async () => {
+    jest.useFakeTimers();
+    const scrollIntoView = jest.fn();
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    upload.mockResolvedValueOnce(inspection());
+    upload.mockRejectedValueOnce(new Error('Import rejected. Check logs for request ID abc.'));
+    render(<ImportProjectDialog onClose={jest.fn()} onImported={jest.fn()} />);
+    choose();
+    await waitFor(() => expect(screen.getByText('App')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Import project' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Import rejected. Check logs for request ID abc.');
+    expect(scrollIntoView).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(250);
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'nearest' });
+    jest.useRealTimers();
+  });
+
+  it('marks its async import button with import semantics for Zest feedback', async () => {
+    upload.mockResolvedValue(inspection());
+    render(<ImportProjectDialog onClose={jest.fn()} onImported={jest.fn()} />);
+    choose();
+    await waitFor(() => expect(screen.getByText('App')).toBeInTheDocument());
+
+    expect(screen.getByRole('button', { name: 'Import project' })).toHaveAttribute('data-semantic', 'import');
   });
 
   it('imports on confirm, tells the parent, and repeats the things to fix', async () => {

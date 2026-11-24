@@ -5,8 +5,8 @@ import { exportProject } from '../exportProject';
 jest.mock('../exportProject', () => ({ exportProject: jest.fn() }));
 jest.mock('jattac.libs.web.zest-button', () => ({
   __esModule: true,
-  default: ({ children, onClick, disabled }: any) => (
-    <button type="button" onClick={onClick} disabled={disabled}>{children}</button>
+  default: ({ children, onClick, disabled, zest }: any) => (
+    <button type="button" data-semantic={zest?.semanticType} onClick={(e: any) => { void Promise.resolve(onClick(e)).catch(() => undefined); }} disabled={disabled}>{children}</button>
   ),
 }));
 
@@ -38,6 +38,34 @@ describe('ExportProjectDialog', () => {
     await waitFor(() => expect(exportMock).toHaveBeenCalledWith('p1', {
       includeSecrets: true, passphrase: 'long-passphrase',
     }));
+  });
+
+  it('marks the export button with export semantics so Zest can report busy, success and failure', () => {
+    renderDialog();
+    fireEvent.change(screen.getByLabelText('Passphrase'), { target: { value: 'long-passphrase' } });
+    fireEvent.change(screen.getByLabelText('Confirm passphrase'), { target: { value: 'long-passphrase' } });
+    fireEvent.click(screen.getByLabelText(/I understand/));
+
+    expect(screen.getByRole('button', { name: 'Export with secrets' })).toHaveAttribute('data-semantic', 'export');
+  });
+
+  it('shows the real export failure as an alert and scrolls to it after a pause', async () => {
+    jest.useFakeTimers();
+    const scrollIntoView = jest.fn();
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    exportMock.mockRejectedValueOnce(new Error('Export rejected. Check logs for request ID abc.'));
+    renderDialog();
+    fireEvent.change(screen.getByLabelText('Passphrase'), { target: { value: 'long-passphrase' } });
+    fireEvent.change(screen.getByLabelText('Confirm passphrase'), { target: { value: 'long-passphrase' } });
+    fireEvent.click(screen.getByLabelText(/I understand/));
+    fireEvent.click(screen.getByRole('button', { name: 'Export with secrets' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Export rejected. Check logs for request ID abc.');
+    expect(scrollIntoView).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(250);
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'nearest' });
+    jest.useRealTimers();
   });
 
   it('refuses mismatched passphrases', () => {
