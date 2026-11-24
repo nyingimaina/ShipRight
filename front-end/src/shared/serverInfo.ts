@@ -11,7 +11,9 @@ export function loadServerMode(): Promise<ServerMode> {
         if (!res.ok) throw new Error('Health check failed');
         return res.json() as Promise<{ mode?: string }>;
       })
-      .then((data) => (data?.mode === 'cloud' ? 'cloud' : 'desktop'))
+      // The server serializes AppMode.Cloud as "Cloud". Comparing case-sensitively made hosted deployments look like
+      // desktop mode, which skipped the auth guard and showed the project page without a sign-in prompt.
+      .then((data) => (typeof data?.mode === 'string' && data.mode.toLowerCase() === 'cloud' ? 'cloud' : 'desktop'))
       .catch(() => 'desktop');
   }
   return cached;

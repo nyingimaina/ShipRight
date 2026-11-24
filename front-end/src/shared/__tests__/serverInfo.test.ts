@@ -17,6 +17,15 @@ describe('serverInfo', () => {
     await expect(loadServerMode()).resolves.toBe('cloud');
   });
 
+  it('returns cloud mode for the casing the server actually sends', async () => {
+    // The back-end serializes the AppMode.Cloud enum as "Cloud", not "cloud". Treating that as desktop skips the
+    // sign-in guard entirely on a hosted deployment.
+    jsonMock.mockResolvedValue({ mode: 'Cloud' });
+    fetchMock.mockResolvedValue({ ok: true, json: jsonMock });
+
+    await expect(loadServerMode()).resolves.toBe('cloud');
+  });
+
   it('returns desktop mode when health payload reports desktop', async () => {
     jsonMock.mockResolvedValue({ mode: 'desktop' });
     fetchMock.mockResolvedValue({ ok: true, json: jsonMock });
