@@ -17,7 +17,8 @@ public class ProjectBundleImporter(TransferStores stores, string? targetRoot = n
         var now = DateTime.UtcNow;
 
         var name = await UniqueNameAsync(bundle.Project.Name);
-        var projectId = await ProjectRouter.GenerateUniqueIdAsync(name, stores.Projects);
+        // Cloud stores index project ids as Guids, so imports must not reuse the source's slug-style id.
+        var projectId = Guid.NewGuid().ToString();
 
         var aws = bundle.AwsProfiles.ToDictionary(r => r.Id, _ => Guid.NewGuid());
         var registries = bundle.Registries.ToDictionary(r => r.Id, _ => Guid.NewGuid());

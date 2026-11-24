@@ -508,6 +508,29 @@ public class ProjectBundleTests : IDisposable
     }
 
     [TestMethod]
+    public async Task Import_UsesAGuidProjectIdSoCloudResourceStoresCanSaveScopedRecords()
+    {
+        await SeedAsync();
+        await _source.Pipelines.SaveAsync((await _source.Pipelines.GetByIdAsync(PipelineId))! with
+        {
+            Scope = PipelineScope.Project,
+            ProjectId = "app",
+        });
+        var outcome = await new ProjectBundleImporter(_target).ImportAsync(await ExportAsync());
+
+        Assert.IsTrue(Guid.TryParse(outcome.ProjectId, out _),
+            "MariaDB cloud stores parse project ids as Guids; a source slug such as 'app' throws FormatException.");
+
+        var project = (await _target.Projects.GetByIdAsync(outcome.ProjectId))!;
+        var server = (await _target.Servers.GetByIdAsync(project.ServerId))!;
+        var pipeline = (await _target.Pipelines.GetByIdAsync(server.PipelineResourceId!.Value))!;
+        var script = (await _target.Scripts.GetByProjectAsync(outcome.ProjectId)).Single();
+
+        Assert.AreEqual(outcome.ProjectId, pipeline.ProjectId);
+        Assert.AreEqual(outcome.ProjectId, script.ProjectId);
+    }
+
+    [TestMethod]
     public async Task Import_IntoTheSameInstance_RenamesInsteadOfOverwriting()
     {
         await SeedAsync();
