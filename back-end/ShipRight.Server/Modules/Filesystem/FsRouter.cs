@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using System.Text;
-using Renci.SshNet;
+using ShipRight.Modules.ServerNetwork;
 using ShipRight.Shared.SshRunner;
 
 namespace ShipRight.Modules.Filesystem;
@@ -136,7 +136,7 @@ public static class FsRouter
             }
         });
 
-        app.MapGet("/api/fs/remote/list", async (string host, string user, string keyPath, string? path, KnownHostsStore knownHosts, bool showHidden = false) =>
+        app.MapGet("/api/fs/remote/list", async (string host, string user, string keyPath, string? path, KnownHostsStore knownHosts, IServerNetworkResolver networks, bool showHidden = false) =>
         {
             if (string.IsNullOrWhiteSpace(host) || string.IsNullOrWhiteSpace(user) || string.IsNullOrWhiteSpace(keyPath))
                 return Results.BadRequest(new { isError = true, message = "host, user, and keyPath are required." });
@@ -147,18 +147,9 @@ public static class FsRouter
 
             try
             {
-                using var keyFile = await SshKeyLoader.LoadAsync(keyPath);
-                using var sftp = new SftpClient(host, user, keyFile);
-
-                sftp.ConnectionInfo.Timeout = TimeSpan.FromSeconds(SshConnectTimeoutSecs);
-                sftp.HostKeyReceived += (_, e) =>
-                {
-                    var fingerprint = BitConverter.ToString(e.FingerPrint).Replace("-", ":").ToLowerInvariant();
-                    knownHosts.Add(host, fingerprint);
-                    e.CanTrust = true;
-                };
-
-                sftp.Connect();
+                using var connection = await RoutedSftp.OpenForHostAsync(
+                    networks, host, 22, user, keyPath, knownHosts, TimeSpan.FromSeconds(SshConnectTimeoutSecs));
+                var sftp = connection.Client;
                 Console.WriteLine($"[fs/remote/list] connected {user}@{host} path={remotePath}");
 
                 try
@@ -191,7 +182,7 @@ public static class FsRouter
     /// <summary>POST /api/fs/remote/mkdir — creates one folder under a remote directory (the picker's "New folder").</summary>
     public static void MapFsRemoteMkdirRoute(this WebApplication app)
     {
-        app.MapPost("/api/fs/remote/mkdir", async (RemoteMkdirRequest req, KnownHostsStore knownHosts) =>
+        app.MapPost("/api/fs/remote/mkdir", async (RemoteMkdirRequest req, KnownHostsStore knownHosts, IServerNetworkResolver networks) =>
         {
             if (string.IsNullOrWhiteSpace(req.Host) || string.IsNullOrWhiteSpace(req.User) || string.IsNullOrWhiteSpace(req.KeyPath))
                 return Results.BadRequest(new { isError = true, message = "host, user, and keyPath are required." });
@@ -204,15 +195,9 @@ public static class FsRouter
             var target = RemoteFolderName.Join(req.Parent, req.Name!);
             try
             {
-                using var keyFile = await SshKeyLoader.LoadAsync(req.KeyPath);
-                using var sftp = new SftpClient(req.Host, req.User, keyFile);
-                sftp.ConnectionInfo.Timeout = TimeSpan.FromSeconds(SshConnectTimeoutSecs);
-                sftp.HostKeyReceived += (_, e) =>
-                {
-                    knownHosts.Add(req.Host, BitConverter.ToString(e.FingerPrint).Replace("-", ":").ToLowerInvariant());
-                    e.CanTrust = true;
-                };
-                sftp.Connect();
+                using var connection = await RoutedSftp.OpenForHostAsync(
+                    networks, req.Host, 22, req.User, req.KeyPath, knownHosts, TimeSpan.FromSeconds(SshConnectTimeoutSecs));
+                var sftp = connection.Client;
                 try
                 {
                     if (sftp.Exists(target))

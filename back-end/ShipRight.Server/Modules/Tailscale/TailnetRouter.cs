@@ -22,7 +22,8 @@ public static class TailnetRouter
 
         app.MapPost("/api/tailnets", async (TailnetRequest request, ITailnetStore store) =>
         {
-            var error = Validate(request);
+            var existing = string.IsNullOrWhiteSpace(request.Id) ? null : await store.GetByIdAsync(request.Id);
+            var error = Validate(request, existing is not null);
             if (error is not null) return Results.BadRequest(new { isError = true, message = error });
 
             var connection = new TailnetConnection
@@ -30,9 +31,10 @@ public static class TailnetRouter
                 Id = string.IsNullOrWhiteSpace(request.Id) ? Guid.NewGuid().ToString("N") : request.Id,
                 Name = request.Name.Trim(),
                 Tailnet = string.IsNullOrWhiteSpace(request.Tailnet) ? "-" : request.Tailnet.Trim(),
-                AuthKey = request.AuthKey?.Trim() ?? string.Empty,
-                OAuthClientId = request.OAuthClientId?.Trim() ?? string.Empty,
-                OAuthClientSecret = request.OAuthClientSecret?.Trim() ?? string.Empty,
+                // A blank secret means "keep the stored one", so renaming or retagging never needs the key again.
+                AuthKey = Keep(request.AuthKey, existing?.AuthKey),
+                OAuthClientId = Keep(request.OAuthClientId, existing?.OAuthClientId),
+                OAuthClientSecret = Keep(request.OAuthClientSecret, existing?.OAuthClientSecret),
                 Tags = string.IsNullOrWhiteSpace(request.Tags) ? "tag:shipright" : request.Tags.Trim(),
             };
             await store.SaveAsync(connection);
@@ -79,16 +81,19 @@ public static class TailnetRouter
         });
     }
 
-    private static string? Validate(TailnetRequest request)
+    private static string? Validate(TailnetRequest request, bool isExisting)
     {
         if (string.IsNullOrWhiteSpace(request.Name)) return "A name is required.";
         var hasKey = !string.IsNullOrWhiteSpace(request.AuthKey);
         var hasOAuth = !string.IsNullOrWhiteSpace(request.OAuthClientId) &&
                        !string.IsNullOrWhiteSpace(request.OAuthClientSecret);
-        if (!hasKey && !hasOAuth)
+        if (!hasKey && !hasOAuth && !isExisting)
             return "Add a Tailscale auth key, or an OAuth client id and secret.";
         return null;
     }
+
+    private static string Keep(string? incoming, string? stored) =>
+        string.IsNullOrWhiteSpace(incoming) ? stored ?? string.Empty : incoming.Trim();
 
     private static TailnetView View(TailnetConnection connection, TailnetRuntime? runtime) =>
         new(

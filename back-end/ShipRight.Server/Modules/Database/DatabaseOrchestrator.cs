@@ -2,10 +2,10 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
-using Renci.SshNet;
 using Serilog;
 using ShipRight.Modules.Database.Providers;
 using ShipRight.Modules.Projects;
+using ShipRight.Modules.ServerNetwork;
 using ShipRight.Shared.Events;
 using ShipRight.Shared.SshRunner;
 using ShipRight.Shared.Store;
@@ -25,18 +25,21 @@ public class DatabaseOrchestrator
     private readonly ISshRunner _ssh;
     private readonly KnownHostsStore _knownHosts;
     private readonly BuildEventBus _bus;
+    private readonly IServerNetworkResolver? _networks;
     private readonly ConcurrentDictionary<string, string> _activeOps = new();
 
     public DatabaseOrchestrator(
         IDbProviderResolver resolver,
         ISshRunner ssh,
         KnownHostsStore knownHosts,
-        BuildEventBus bus)
+        BuildEventBus bus,
+        IServerNetworkResolver? networks = null)
     {
         _resolver  = resolver;
         _ssh       = ssh;
         _knownHosts = knownHosts;
         _bus       = bus;
+        _networks  = networks;
     }
 
     // ── Backup ─────────────────────────────────────────────────────────────────
@@ -640,63 +643,24 @@ public class DatabaseOrchestrator
 
     private async Task SftpUploadAsync(ServerConfig server, string localPath, string remotePath, CancellationToken ct)
     {
-        using var keyFile = await SshKeyLoader.LoadAsync(server.SshKeyPath);
-        using var sftp    = new SftpClient(server.Host, server.Username, keyFile);
-        sftp.ConnectionInfo.Timeout = TimeSpan.FromSeconds(30);
-        sftp.HostKeyReceived += (_, e) =>
-        {
-            var fp = BitConverter.ToString(e.FingerPrint).Replace("-", ":").ToLowerInvariant();
-            _knownHosts.Add(server.Host, fp);
-            e.CanTrust = true;
-        };
-        sftp.Connect();
-        try
-        {
-            using var fs = File.OpenRead(localPath);
-            sftp.UploadFile(fs, remotePath);
-        }
-        finally { sftp.Disconnect(); }
+        using var connection = await RoutedSftp.OpenAsync(_networks, server, _knownHosts, ct: ct);
+        using var fs = File.OpenRead(localPath);
+        connection.Client.UploadFile(fs, remotePath);
     }
 
     /// <summary>The same upload as <see cref="SftpUploadAsync"/>, reporting how much has gone (the callback runs on the upload's thread).</summary>
     private async Task SftpUploadWithProgressAsync(ServerConfig server, string localPath, string remotePath, ProgressReporter progress, CancellationToken ct)
     {
-        using var keyFile = await SshKeyLoader.LoadAsync(server.SshKeyPath);
-        using var sftp    = new SftpClient(server.Host, server.Username, keyFile);
-        sftp.ConnectionInfo.Timeout = TimeSpan.FromSeconds(30);
-        sftp.HostKeyReceived += (_, e) =>
-        {
-            var fp = BitConverter.ToString(e.FingerPrint).Replace("-", ":").ToLowerInvariant();
-            _knownHosts.Add(server.Host, fp);
-            e.CanTrust = true;
-        };
-        sftp.Connect();
-        try
-        {
-            using var fs = File.OpenRead(localPath);
-            sftp.UploadFile(fs, remotePath, uploaded => progress.Report((long)uploaded));
-            progress.Report(fs.Length);
-        }
-        finally { sftp.Disconnect(); }
+        using var connection = await RoutedSftp.OpenAsync(_networks, server, _knownHosts, ct: ct);
+        using var fs = File.OpenRead(localPath);
+        connection.Client.UploadFile(fs, remotePath, uploaded => progress.Report((long)uploaded));
+        progress.Report(fs.Length);
     }
 
     private async Task SftpDownloadAsync(ServerConfig server, string remotePath, string localPath, CancellationToken ct)
     {
-        using var keyFile = await SshKeyLoader.LoadAsync(server.SshKeyPath);
-        using var sftp    = new SftpClient(server.Host, server.Username, keyFile);
-        sftp.ConnectionInfo.Timeout = TimeSpan.FromSeconds(30);
-        sftp.HostKeyReceived += (_, e) =>
-        {
-            var fp = BitConverter.ToString(e.FingerPrint).Replace("-", ":").ToLowerInvariant();
-            _knownHosts.Add(server.Host, fp);
-            e.CanTrust = true;
-        };
-        sftp.Connect();
-        try
-        {
-            using var fs = File.Create(localPath);
-            sftp.DownloadFile(remotePath, fs);
-        }
-        finally { sftp.Disconnect(); }
+        using var connection = await RoutedSftp.OpenAsync(_networks, server, _knownHosts, ct: ct);
+        using var fs = File.Create(localPath);
+        connection.Client.DownloadFile(remotePath, fs);
     }
 }

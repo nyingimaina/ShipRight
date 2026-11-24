@@ -1,4 +1,5 @@
 using Serilog;
+using ShipRight.Modules.ServerNetwork;
 using ShipRight.Modules.Servers;
 using ShipRight.Shared.SshRunner;
 
@@ -17,8 +18,8 @@ public static class ConnectionTestRoutes
 {
     public static void MapConnectionTestRoutes(this WebApplication app) =>
         app.MapPost("/api/servers/{serverId}/connection-test",
-            (string serverId, IServerStore store, ISshRunner ssh, CancellationToken ct) =>
-                HandleAsync(serverId, store, ssh, new DiagnosticTcpProbe(new TcpProbe()), ct));
+            (string serverId, IServerStore store, ISshRunner ssh, IServerNetworkResolver networks, CancellationToken ct) =>
+                HandleAsync(serverId, store, ssh, new DiagnosticTcpProbe(new RoutedTcpProbe(new TcpProbe(), networks)), ct));
 
     internal static async Task<IResult> HandleAsync(string serverId, IServerStore store, ISshRunner ssh, ITcpProbe tcp, CancellationToken ct)
     {

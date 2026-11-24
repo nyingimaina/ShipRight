@@ -134,8 +134,9 @@ public sealed class TailnetManager : ITailnetManager, IDisposable
 
         var root = Path.Combine(_dataDir ?? DataDirectory.Resolve(), "tailscale", session.Connection.CompanyId.ToString("N"), session.Id);
         Directory.CreateDirectory(root);
-        session.SocketPath = Path.Combine(root, "tailscaled.sock");
-        session.StateFile = Path.Combine(root, "tailscaled.state");
+        // Short file names: a Unix domain socket path must fit in 108 characters on Linux.
+        session.SocketPath = Path.Combine(root, "ts.sock");
+        session.StateFile = Path.Combine(root, "ts.state");
         session.SocksPort = FreeLoopbackPort();
 
         var daemon = _getEnv("TAILSCALED_PATH");
@@ -162,12 +163,29 @@ public sealed class TailnetManager : ITailnetManager, IDisposable
 
         await WaitForSocketAsync(session, ct);
 
-        var key = session.Connection.AuthKey;
-        if (string.IsNullOrWhiteSpace(key))
-            key = await _oauth.CreateAuthKeyAsync(session.Connection, ct);
+        // A node that is already signed in keeps its identity in the state file: reuse it rather than
+        // spending another (often single-use, short-lived) auth key.
+        var (backend, online) = await ReadStatusAsync(session, ct);
+        if (online)
+        {
+            session.Online = true;
+            return;
+        }
+
+        var needsKey = string.IsNullOrEmpty(backend) ||
+                       backend.Equals("NeedsLogin", StringComparison.OrdinalIgnoreCase);
+        var key = string.Empty;
+        if (needsKey)
+        {
+            key = session.Connection.AuthKey;
+            if (string.IsNullOrWhiteSpace(key))
+                key = await _oauth.CreateAuthKeyAsync(session.Connection, ct);
+        }
 
         var hostname = $"shipright-{session.Id[..Math.Min(8, session.Id.Length)]}";
-        var args = new List<string> { "up", $"--auth-key={key}", $"--hostname={hostname}" };
+        var args = new List<string> { "up", $"--hostname={hostname}" };
+        if (!string.IsNullOrWhiteSpace(key))
+            args.Add($"--auth-key={key}");
         if (!string.IsNullOrWhiteSpace(session.Connection.Tags))
             args.Add($"--advertise-tags={session.Connection.Tags}");
 
@@ -176,10 +194,14 @@ public sealed class TailnetManager : ITailnetManager, IDisposable
             throw new NetworkUnavailableException($"Tailscale could not join '{session.Connection.Name}': {result.Error}");
     }
 
-    private async Task<bool> IsOnlineAsync(Session session, CancellationToken ct)
+    private async Task<bool> IsOnlineAsync(Session session, CancellationToken ct) =>
+        (await ReadStatusAsync(session, ct)).Online;
+
+    /// <summary>The daemon's backend state and whether this node is online. A failed read is (null, false).</summary>
+    private async Task<(string? Backend, bool Online)> ReadStatusAsync(Session session, CancellationToken ct)
     {
         var result = await RunTailscaleAsync(session, ["status", "--json"], ct);
-        if (result.ExitCode != 0) return false;
+        if (result.ExitCode != 0) return (null, false);
 
         try
         {
@@ -188,11 +210,11 @@ public sealed class TailnetManager : ITailnetManager, IDisposable
             var backend = root.TryGetProperty("BackendState", out var b) ? b.GetString() : null;
             var online = root.TryGetProperty("Self", out var self) &&
                          self.TryGetProperty("Online", out var o) && o.ValueKind == JsonValueKind.True;
-            return string.Equals(backend, "Running", StringComparison.OrdinalIgnoreCase) && online;
+            return (backend, online && string.Equals(backend, "Running", StringComparison.OrdinalIgnoreCase));
         }
         catch (JsonException)
         {
-            return false;
+            return (null, false);
         }
     }
 

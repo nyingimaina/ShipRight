@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http.Features;
 using Serilog;
 using ShipRight.Modules.Projects;
 using ShipRight.Modules.RemoteHost;
+using ShipRight.Modules.ServerNetwork;
 using ShipRight.Shared.SshRunner;
 
 namespace ShipRight.Modules.Servers;
@@ -9,7 +10,7 @@ namespace ShipRight.Modules.Servers;
 /// <summary>
 /// Files tab API for a saved server. The connection (host, user, key) always comes from the stored
 /// server — never from the request — so callers cannot point ShipRight at arbitrary hosts or keys.
-/// Upload sends the raw file as the request body (?path=<dir>&amp;name=<file>) to avoid multipart limits.
+/// Upload sends the raw file as the request body (?path=&lt;dir&gt;&amp;name=&lt;file&gt;) to avoid multipart limits.
 /// </summary>
 public static class ServerFilesRouter
 {
@@ -17,22 +18,22 @@ public static class ServerFilesRouter
     {
         var g = app.MapGroup("/api/servers/{serverId}/files");
 
-        g.MapGet("", (string serverId, string? path, bool? showHidden, IServerStore store, KnownHostsStore kh, ISshRunner ssh, CancellationToken ct) =>
-            Run(serverId, store, kh, ssh, async (svc, s) => Results.Ok(await svc.ListAsync(s, path, showHidden ?? false, ct))));
+        g.MapGet("", (string serverId, string? path, bool? showHidden, IServerStore store, KnownHostsStore kh, ISshRunner ssh, IServerNetworkResolver networks, CancellationToken ct) =>
+            Run(serverId, store, kh, ssh, networks, async (svc, s) => Results.Ok(await svc.ListAsync(s, path, showHidden ?? false, ct))));
 
-        g.MapGet("/read", (string serverId, string path, IServerStore store, KnownHostsStore kh, ISshRunner ssh, CancellationToken ct) =>
-            Run(serverId, store, kh, ssh, async (svc, s) => Results.Text(await svc.ReadTextAsync(s, path, ct), "text/plain; charset=utf-8")));
+        g.MapGet("/read", (string serverId, string path, IServerStore store, KnownHostsStore kh, ISshRunner ssh, IServerNetworkResolver networks, CancellationToken ct) =>
+            Run(serverId, store, kh, ssh, networks, async (svc, s) => Results.Text(await svc.ReadTextAsync(s, path, ct), "text/plain; charset=utf-8")));
 
-        g.MapGet("/download", (string serverId, string path, IServerStore store, KnownHostsStore kh, ISshRunner ssh, CancellationToken ct) =>
-            Run(serverId, store, kh, ssh, async (svc, s) =>
+        g.MapGet("/download", (string serverId, string path, IServerStore store, KnownHostsStore kh, ISshRunner ssh, IServerNetworkResolver networks, CancellationToken ct) =>
+            Run(serverId, store, kh, ssh, networks, async (svc, s) =>
             {
                 var name = await svc.DownloadNameAsync(s, path, ct);   // 404s before any bytes are sent
                 Log.Information("File download: server={ServerId} path={Path}", s.Id, path);
                 return Results.Stream(stream => svc.DownloadAsync(s, path, stream, ct), "application/octet-stream", name);
             }));
 
-        g.MapPost("/upload", (string serverId, string path, string name, HttpRequest req, IServerStore store, KnownHostsStore kh, ISshRunner ssh, CancellationToken ct) =>
-            Run(serverId, store, kh, ssh, async (svc, s) =>
+        g.MapPost("/upload", (string serverId, string path, string name, HttpRequest req, IServerStore store, KnownHostsStore kh, ISshRunner ssh, IServerNetworkResolver networks, CancellationToken ct) =>
+            Run(serverId, store, kh, ssh, networks, async (svc, s) =>
             {
                 req.HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>()!.MaxRequestBodySize = RemoteFileService.MaxUploadBytes + 1;
                 await svc.UploadAsync(s, path, name, req.Body, ct: ct);
@@ -40,8 +41,8 @@ public static class ServerFilesRouter
                 return Results.Ok(new { uploaded = name });
             }));
 
-        g.MapDelete("", (string serverId, string path, IServerStore store, KnownHostsStore kh, ISshRunner ssh, CancellationToken ct) =>
-            Run(serverId, store, kh, ssh, async (svc, s) =>
+        g.MapDelete("", (string serverId, string path, IServerStore store, KnownHostsStore kh, ISshRunner ssh, IServerNetworkResolver networks, CancellationToken ct) =>
+            Run(serverId, store, kh, ssh, networks, async (svc, s) =>
             {
                 await svc.DeleteAsync(s, path, ct);
                 return Results.Ok(new { deleted = path });
@@ -50,6 +51,7 @@ public static class ServerFilesRouter
 
     private static async Task<IResult> Run(
         string serverId, IServerStore store, KnownHostsStore knownHosts, ISshRunner ssh,
+        IServerNetworkResolver networks,
         Func<RemoteFileService, ServerConfig, Task<IResult>> action)
     {
         var server = await store.GetByIdAsync(serverId);
@@ -60,11 +62,15 @@ public static class ServerFilesRouter
 
         try
         {
-            return await action(new RemoteFileService(new SftpRemoteFileClient(knownHosts), ssh), server);
+            return await action(new RemoteFileService(new RoutedSftpRemoteFileClient(networks, knownHosts), ssh), server);
         }
         catch (RemoteFileException ex)
         {
             return Results.Json(new { isError = true, message = ex.Message }, statusCode: ex.StatusCode);
+        }
+        catch (NetworkUnavailableException ex)
+        {
+            return Results.Json(new { isError = true, message = ex.Message }, statusCode: 503);
         }
         catch (Exception ex)
         {
