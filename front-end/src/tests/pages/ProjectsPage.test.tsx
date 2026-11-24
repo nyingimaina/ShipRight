@@ -32,7 +32,7 @@ jest.mock('../../modules/AppShell/AppShell', () => ({ __esModule: true, default:
 jest.mock('../../modules/ProjectConfig/QuickSetup/ProjectPane', () => ({ __esModule: true, default: () => <div>pane</div> }));
 jest.mock('../../modules/AdoptSetup/AdoptLauncher', () => ({ __esModule: true, default: () => <span>adopt</span> }));
 jest.mock('../../modules/ProjectDetail/ProjectDetailPanel', () => ({ __esModule: true, default: ({ projectId }: { projectId: string }) => <div>detail of {projectId}</div> }));
-jest.mock('../../modules/ProjectTransfer/ImportProjectDialog', () => ({ __esModule: true, default: () => <div role="dialog">import dialog</div> }));
+jest.mock('../../modules/ProjectTransfer/ImportBundleDialog', () => ({ __esModule: true, default: () => <div role="dialog">import dialog</div> }));
 jest.mock('../../modules/ProjectTransfer/exportProject', () => ({ exportProject: jest.fn().mockResolvedValue(undefined) }));
 
 const mocked = api as jest.Mocked<typeof api>;

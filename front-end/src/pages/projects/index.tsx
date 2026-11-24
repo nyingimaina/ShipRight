@@ -9,7 +9,7 @@ import ZestButton from 'jattac.libs.web.zest-button';
 import ProjectPane from '@/modules/ProjectConfig/QuickSetup/ProjectPane';
 import AdoptLauncher from '@/modules/AdoptSetup/AdoptLauncher';
 import ProjectDetailPanel from '@/modules/ProjectDetail/ProjectDetailPanel';
-import ImportProjectDialog from '@/modules/ProjectTransfer/ImportProjectDialog';
+import ImportBundleDialog from '@/modules/ProjectTransfer/ImportBundleDialog';
 import ExportProjectDialog from '@/modules/ProjectTransfer/ExportProjectDialog';
 import { exportProject } from '@/modules/ProjectTransfer/exportProject';
 import { api } from '@/shared/ApiService';
@@ -180,7 +180,7 @@ export default function ProjectList() {
           )}
         </ZestResponsiveLayout>
         {importOpen && (
-          <ImportProjectDialog
+          <ImportBundleDialog
             onClose={() => setImportOpen(false)}
             onImported={() => load()}
           />
