@@ -63,7 +63,7 @@ public static class IdentityRegistration
         var authentication = services.AddAuthentication(IdentityConstants.ApplicationScheme);
         authentication.AddIdentityCookies();
         if (google.Enabled)
-            authentication.AddOAuth(GoogleSettings.Scheme, o => GoogleSignIn.Configure(o, google));
+            authentication.AddOAuth(GoogleSettings.Scheme, o => GoogleSignIn.ConfigureBehindProxy(o, google));
 
         services.ConfigureApplicationCookie(options =>
         {

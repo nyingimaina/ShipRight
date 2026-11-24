@@ -1,6 +1,7 @@
 using System.Net;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using ShipRight.Modules.Identity;
@@ -115,6 +116,23 @@ public class GoogleSignInTests
 
         Assert.AreEqual(off.Id, user!.Id);
         Assert.IsFalse(user.IsActive);
+    }
+
+    [TestMethod]
+    public async Task GoogleChallenge_UsesTheHttpsPublicUrlForItsCallback_BehindAnHttpProxy()
+    {
+        // A reverse proxy forwards to the app over plain HTTP. Google must still be told the public HTTPS
+        // callback, otherwise it rejects the sign-in with redirect_uri_mismatch.
+        using var factory = new InMemoryCloudFactory(google: true);
+        var client = factory.NewClient();
+
+        var start = await client.Http.GetAsync("/api/auth/google/start");
+
+        Assert.AreEqual(HttpStatusCode.Redirect, start.StatusCode, await start.Content.ReadAsStringAsync());
+        var location = start.Headers.Location!;
+        StringAssert.StartsWith(location.AbsoluteUri, "https://accounts.google.com/o/oauth2/v2/auth");
+        var query = QueryHelpers.ParseQuery(location.Query);
+        Assert.AreEqual("https://app.example.test/api/auth/google/callback", query["redirect_uri"].ToString());
     }
 
     [TestMethod]
