@@ -204,6 +204,7 @@ try
     if (!cloudMode)
     {
         app.MapJitDeployRoutes();   // build-on-server deploys: their own paths, off unless a project turns them on
+        app.MapJitEnvDuplicateRoutes();
         app.MapJitHintRoutes();
         app.MapJitDeployKeyRoutes();
         app.MapJitCredentialRoutes();

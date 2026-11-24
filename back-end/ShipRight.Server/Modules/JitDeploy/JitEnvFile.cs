@@ -48,6 +48,39 @@ public static class JitEnvFile
         return sb.ToString();
     }
 
+    /// <summary>
+    /// The last value assigned to each variable, including multiline quoted values. Used only by the deploy-time
+    /// duplicate warning, which deliberately shows values; the deploy log and summary stay names-only.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> ValuesOf(string? text)
+    {
+        var values = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var entry in Parse(text))
+        {
+            if (entry.Key is null) continue;
+            values[entry.Key] = ValueOf(entry);
+        }
+        return values;
+    }
+
+    /// <summary>The same text without the named variables. Comments, multiline values and all other lines stay in order.</summary>
+    public static string Without(string? text, IEnumerable<string> names)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+        var drop = names.ToHashSet(StringComparer.Ordinal);
+        var kept = Parse(text).Where(e => e.Key is null || !drop.Contains(e.Key)).SelectMany(e => e.Lines).ToList();
+        var joined = string.Join("\n", kept);
+        return text.EndsWith('\n') && joined.Length > 0 ? joined + "\n" : joined;
+    }
+
+    private static string ValueOf(Entry entry)
+    {
+        var first = entry.Lines[0];
+        var equals = first.IndexOf('=');
+        var value = equals < 0 ? string.Empty : first[(equals + 1)..].TrimStart();
+        return entry.Lines.Count == 1 ? value : value + "\n" + string.Join("\n", entry.Lines.Skip(1));
+    }
+
     public static IEnumerable<string> KeysOf(string? text) =>
         Parse(text).Where(e => e.Key is not null).Select(e => e.Key!).Distinct(StringComparer.Ordinal);
 

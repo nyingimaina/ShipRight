@@ -16,6 +16,7 @@ import {
   addressOptions, addressWarning, branchAfterPick, JitHintsResponse, JitStacksResponse, prefillPatch,
 } from './jitHints';
 import { describeEnv, envKeys, envSummary } from './envVars';
+import { DuplicateChoice, EnvDuplicate, EnvDuplicatesResponse } from './envDuplicates';
 import { envFileWarnings } from '@/modules/ServerDeploy/envFileWarnings';
 import { stepText } from './jitSteps';
 
@@ -70,6 +71,8 @@ export default function JitDeployCard({ projectId }: Props) {
   const [commit, setCommit] = useState('');
   const [confirmTag, setConfirmTag] = useState<string | null>(null);
   const [confirmRestart, setConfirmRestart] = useState(false);
+  const [pendingDeploy, setPendingDeploy] = useState<{ path: string; body: unknown } | null>(null);
+  const [duplicates, setDuplicates] = useState<EnvDuplicate[]>([]);
   const kindRef = useRef<'deploy' | 'restart'>('deploy');
 
   const [op, setOp] = useState<{ status: OpStatus; logs: string[]; message: string }>({ status: 'idle', logs: [], message: '' });
@@ -226,6 +229,38 @@ export default function JitDeployCard({ projectId }: Props) {
       setOp({ status: 'idle', logs: [], message: '' });
       toast.error((e as { message?: string })?.message ?? 'Could not start.');
     }
+  };
+
+  // A deploy first asks the server which variables are set on both sides. An older server (or one where the check
+  // fails) simply carries on as before, so this never blocks a deploy that used to work.
+  const askDeploy = async (path: string, body: unknown) => {
+    try {
+      const found = await api.get<EnvDuplicatesResponse>(`${base}/env-duplicates`);
+      if (!found.skipped && found.duplicates.length > 0) {
+        setDuplicates(found.duplicates);
+        setPendingDeploy({ path, body });
+        return;
+      }
+    } catch { /* check unavailable: deploy exactly as before */ }
+    start(path, body);
+  };
+
+  const resolveDuplicates = async (choice: DuplicateChoice) => {
+    const pending = pendingDeploy;
+    if (!pending) return;
+    if (choice !== 'none') {
+      try {
+        await api.post(`${base}/env-duplicates/remove`, { removeFrom: choice, names: duplicates.map(d => d.name) });
+        if (choice === 'project') await loadConfig();
+        else await api.get<JitHintsResponse>(`${base}/hints`).then(setHints).catch(() => undefined);
+      } catch (e) {
+        toast.error((e as { message?: string })?.message ?? 'Could not remove those variables.');
+        return;
+      }
+    }
+    setDuplicates([]);
+    setPendingDeploy(null);
+    start(pending.path, pending.body);
   };
 
   const logLines = useMemo(() => op.logs.map((text, id) => ({ id, text })), [op.logs]);
@@ -456,7 +491,7 @@ export default function JitDeployCard({ projectId }: Props) {
 
           <div className={styles.actions}>
             <ZestButton disabled={!canDeploy} zest={{ ...NOBUSY, semanticType: 'send' }} onClick={() =>
-              start(`${base}/deploy`, { force, commit: commit.trim() || null, allowWithoutRollback: false, rebuildAll })}>Deploy now</ZestButton>
+              askDeploy(`${base}/deploy`, { force, commit: commit.trim() || null, allowWithoutRollback: false, rebuildAll })}>Deploy now</ZestButton>
             <ZestButton disabled={!canRestart} onClick={() => { setConfirmTag(null); setConfirmRestart(true); }}
               zest={{ ...NOBUSY, semanticType: 'refresh', buttonStyle: 'outline' }}>Restart all services</ZestButton>
             {dirty && <span className={styles.muted}>Save your settings before deploying.</span>}
@@ -539,6 +574,28 @@ export default function JitDeployCard({ projectId }: Props) {
               <div className={styles.confirmActions}>
                 <ZestButton onClick={() => start(`${base}/rollback`, { tag: confirmTag })} zest={{ ...NOBUSY, semanticType: 'approve' }}>Yes, roll back</ZestButton>
                 <ZestButton onClick={() => setConfirmTag(null)} zest={{ ...NOBUSY, semanticType: 'cancel' }}>No, keep it as it is</ZestButton>
+              </div>
+            </div>
+          )}
+
+          {pendingDeploy && duplicates.length > 0 && (
+            <div className={styles.confirm} role="alertdialog" aria-label="Duplicate variables">
+              <div>Some variables are set in both the server settings and this project.</div>
+              <p className={styles.muted}>
+                The project&apos;s value is the one a deploy would use. Choose which side to remove them from, or keep both.
+              </p>
+              <ul className={styles.list}>
+                {duplicates.map(d => (
+                  <li key={d.name} className={styles.item}>
+                    <b>{d.name}</b>: server <code>{d.serverValue}</code>, project <code>{d.projectValue}</code>
+                  </li>
+                ))}
+              </ul>
+              <div className={styles.confirmActions}>
+                <ZestButton onClick={() => resolveDuplicates('server')} zest={{ ...NOBUSY, semanticType: 'approve' }}>Remove from server</ZestButton>
+                <ZestButton onClick={() => resolveDuplicates('project')} zest={{ ...NOBUSY, semanticType: 'edit' }}>Remove from project</ZestButton>
+                <ZestButton onClick={() => resolveDuplicates('none')} zest={{ ...NOBUSY, semanticType: 'send' }}>Keep both and deploy</ZestButton>
+                <ZestButton onClick={() => { setDuplicates([]); setPendingDeploy(null); }} zest={{ ...NOBUSY, semanticType: 'cancel' }}>Cancel</ZestButton>
               </div>
             </div>
           )}
