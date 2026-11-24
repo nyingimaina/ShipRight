@@ -27,7 +27,7 @@ public static class TailnetRouter
 
             var connection = new TailnetConnection
             {
-                Id = request.Id ?? string.Empty,
+                Id = string.IsNullOrWhiteSpace(request.Id) ? Guid.NewGuid().ToString("N") : request.Id,
                 Name = request.Name.Trim(),
                 Tailnet = string.IsNullOrWhiteSpace(request.Tailnet) ? "-" : request.Tailnet.Trim(),
                 AuthKey = request.AuthKey?.Trim() ?? string.Empty,
