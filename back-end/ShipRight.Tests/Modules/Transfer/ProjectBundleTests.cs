@@ -362,6 +362,21 @@ public class ProjectBundleTests : IDisposable
     // ── Import ────────────────────────────────────────────────────────────────
 
     [TestMethod]
+    public async Task Import_UsesAGuidServerIdSoCloudServerStoresCanSaveIt()
+    {
+        await SeedAsync();
+        var outcome = await new ProjectBundleImporter(_target).ImportAsync(await ExportAsync());
+
+        var project = (await _target.Projects.GetByIdAsync(outcome.ProjectId))!;
+        var server = (await _target.Servers.GetByIdAsync(project.ServerId))!;
+
+        Assert.IsTrue(Guid.TryParse(server.Id, out _),
+            "MariaDB server stores parse ids as Guids; a source slug such as 'srv-1' throws FormatException.");
+        Assert.AreEqual(server.Id, project.ServerId);
+        Assert.AreEqual("10.0.0.5", server.Host);
+    }
+
+    [TestMethod]
     public async Task Import_RecreatesTheProjectAndEverythingItDependsOn_RelinkedToNewIds()
     {
         await SeedAsync();
@@ -372,7 +387,8 @@ public class ProjectBundleTests : IDisposable
 
         var server = (await _target.Servers.GetByIdAsync(project.ServerId))!;
         Assert.AreEqual("Prod box", server.Name);
-        Assert.AreEqual("srv-1", server.Id, "the source id is preserved so shared servers are not duplicated");
+        Assert.AreEqual(ImportedServerId("srv-1"), server.Id,
+            "the source id maps to a stable Guid so shared servers are not duplicated");
 
         var registry = (await _target.Registries.GetByIdAsync(project.Services[0].DockerRegistryResourceId!.Value))!;
         Assert.AreEqual("prod-ecr", registry.Name);
@@ -423,8 +439,8 @@ public class ProjectBundleTests : IDisposable
         var first = await importer.ImportAsync(bundle);
         var second = await importer.ImportAsync(bundle);
 
-        Assert.AreEqual("srv-1", (await _target.Projects.GetByIdAsync(first.ProjectId))!.ServerId);
-        Assert.AreEqual("srv-1", (await _target.Projects.GetByIdAsync(second.ProjectId))!.ServerId);
+        Assert.AreEqual(ImportedServerId("srv-1"), (await _target.Projects.GetByIdAsync(first.ProjectId))!.ServerId);
+        Assert.AreEqual(ImportedServerId("srv-1"), (await _target.Projects.GetByIdAsync(second.ProjectId))!.ServerId);
         Assert.AreEqual(1, (await _target.Servers.GetAllAsync()).Count);
     }
 
@@ -434,26 +450,29 @@ public class ProjectBundleTests : IDisposable
         await SeedAsync();
         await _target.Servers.SaveAsync(new ServerConfig
         {
-            Id = "srv-1", Name = "Target name", Host = "10.0.0.5", EnvFile = "KEEP=this",
+            Id = ImportedServerId("srv-1"), Name = "Target name", Host = "10.0.0.5", EnvFile = "KEEP=this",
         });
 
-        await new ProjectBundleImporter(_target).ImportAsync(await ExportAsync());
+        var outcome = await new ProjectBundleImporter(_target).ImportAsync(await ExportAsync());
 
-        var server = (await _target.Servers.GetByIdAsync("srv-1"))!;
+        var server = (await _target.Servers.GetByIdAsync(ImportedServerId("srv-1")))!;
         Assert.AreEqual("Target name", server.Name);
         Assert.AreEqual("KEEP=this", server.EnvFile);
+        Assert.AreEqual(server.Id, (await _target.Projects.GetByIdAsync(outcome.ProjectId))!.ServerId);
+        Assert.AreEqual(1, (await _target.Servers.GetAllAsync()).Count);
     }
 
     [TestMethod]
     public async Task Import_WithAConflictingServerId_CreatesAFreshServer()
     {
         await SeedAsync();
-        await _target.Servers.SaveAsync(new ServerConfig { Id = "srv-1", Name = "Other box", Host = "10.9.9.9" });
+        await _target.Servers.SaveAsync(new ServerConfig { Id = ImportedServerId("srv-1"), Name = "Other box", Host = "10.9.9.9" });
 
         var outcome = await new ProjectBundleImporter(_target).ImportAsync(await ExportAsync());
         var serverId = (await _target.Projects.GetByIdAsync(outcome.ProjectId))!.ServerId;
 
-        Assert.AreNotEqual("srv-1", serverId);
+        Assert.AreNotEqual(ImportedServerId("srv-1"), serverId);
+        Assert.IsTrue(Guid.TryParse(serverId, out _));
         Assert.AreEqual(2, (await _target.Servers.GetAllAsync()).Count);
     }
 
@@ -585,6 +604,13 @@ public class ProjectBundleTests : IDisposable
         });
         var outcome = await new ProjectBundleImporter(_target).ImportAsync(bundle);
         Assert.IsNotNull(await _target.Projects.GetByIdAsync(outcome.ProjectId));
+    }
+
+    // Cloud stores require Guid server ids; the importer maps stable source ids with this same derivation.
+    private static string ImportedServerId(string sourceId)
+    {
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(sourceId));
+        return new Guid(hash.AsSpan(0, 16)).ToString();
     }
 
     private static byte[] ToBytes(ZipArchive zip)

@@ -67,8 +67,15 @@ public class ProjectBundleImporter(TransferStores stores, string? targetRoot = n
         if (bundle.Server is not null)
         {
             var source = bundle.Server;
-            var sourceId = string.IsNullOrWhiteSpace(source.Id) ? $"srv-{Guid.NewGuid():N}"[..12] : source.Id;
-            var existing = await stores.Servers.GetByIdAsync(sourceId);
+            // Cloud server stores require Guid ids. A source id that is already a Guid is kept; other ids
+            // (e.g. "srv-1") map deterministically so bundles sharing a server keep sharing it after import.
+            var rawId = source.Id?.Trim() ?? string.Empty;
+            var sourceId = string.IsNullOrWhiteSpace(rawId)
+                ? Guid.NewGuid().ToString()
+                : Guid.TryParse(rawId, out var parsed) ? parsed.ToString() : ServerIdFor(rawId);
+            // Legacy stores may already hold the original non-Guid id; keep linking to it there.
+            var existing = await stores.Servers.GetByIdAsync(sourceId)
+                ?? (sourceId != rawId && rawId.Length > 0 ? await stores.Servers.GetByIdAsync(rawId) : null);
 
             if (existing is not null && string.Equals(existing.Host, source.Host, StringComparison.OrdinalIgnoreCase))
             {
@@ -78,7 +85,7 @@ public class ProjectBundleImporter(TransferStores stores, string? targetRoot = n
             }
             else
             {
-                serverId = existing is null ? sourceId : $"srv-{Guid.NewGuid():N}"[..12];
+                serverId = existing is null ? sourceId : Guid.NewGuid().ToString();
                 server = source with
                 {
                     Id = serverId,
@@ -125,6 +132,13 @@ public class ProjectBundleImporter(TransferStores stores, string? targetRoot = n
             });
 
         return new ImportOutcome(projectId, name, bundle.Manifest.Warnings);
+    }
+
+    /// <summary>Stable Guid for a source server id that is not already a Guid.</summary>
+    internal static string ServerIdFor(string sourceId)
+    {
+        var hash = global::System.Security.Cryptography.SHA256.HashData(global::System.Text.Encoding.UTF8.GetBytes(sourceId));
+        return new Guid(hash.AsSpan(0, 16)).ToString();
     }
 
     private async Task<string> UniqueNameAsync(string name)
