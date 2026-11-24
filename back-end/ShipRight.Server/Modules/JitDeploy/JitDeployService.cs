@@ -26,7 +26,7 @@ public sealed record JitReleasesView(
 public sealed class JitDeployService(
     IProjectStore projects, IJitConfigStore configs, IBuildStore builds, BuildEventBus bus,
     ISshRunner ssh, IJitClock clock, JitDeployLock? locks = null, ShipRight.Modules.Resources.Stores.ICredentialResourceStore? credentials = null,
-    JitLocalBranchGuard? localBranchGuard = null)
+    JitLocalBranchGuard? localBranchGuard = null, Modules.Servers.IServerStore? servers = null)
 {
     private readonly JitDeployer _deployer = new(ssh, clock, locks);
 
@@ -62,7 +62,17 @@ public sealed class JitDeployService(
         try { cfg = await configs.GetAsync(projectId); }
         catch (InvalidDataException ex) { return new(null, ex.Message, null); }
 
-        var map = JitEnvMapper.Map(project, cfg, options.Commit, options.Force, options.AllowWithoutRollback);
+        // The server record owns the server-level variables. The project's embedded copy can be stale, so prefer the
+        // record whenever one exists. Older callers with no server store keep the original behaviour.
+        var serverEnv = project.Server.EnvFile;
+        if (servers is not null)
+        {
+            var serverId = string.IsNullOrWhiteSpace(project.Server.Id) ? project.ServerId : project.Server.Id;
+            if (!string.IsNullOrWhiteSpace(serverId) && await servers.GetByIdAsync(serverId) is { } serverRecord)
+                serverEnv = serverRecord.EnvFile;
+        }
+
+        var map = JitEnvMapper.MapWithServerEnv(project, cfg, serverEnv, options.Commit, options.Force, options.AllowWithoutRollback);
         if (!map.Ok) return new(null, JitServiceHelp.StartMessage(map.Problems), null);
 
         // A source build takes origin/branch from the server. Refuse it here, before a build record or any SSH work,

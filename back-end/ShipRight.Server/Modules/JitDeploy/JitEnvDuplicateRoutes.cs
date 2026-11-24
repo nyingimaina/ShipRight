@@ -22,26 +22,27 @@ public static class JitEnvDuplicateRoutes
 
     public static void MapJitEnvDuplicateRoutes(this WebApplication app)
     {
-        app.MapGet("/api/jit/{id}/env-duplicates", (string id, IProjectStore projects, IJitConfigStore configs) =>
-            HandleGetDuplicatesAsync(id, projects, configs));
+        app.MapGet("/api/jit/{id}/env-duplicates", (string id, IProjectStore projects, IJitConfigStore configs, IServerStore servers) =>
+            HandleGetDuplicatesAsync(id, projects, configs, servers));
         app.MapPost("/api/jit/{id}/env-duplicates/remove", (string id, EnvDuplicateRemoval body, IProjectStore projects, IJitConfigStore configs, IServerStore servers) =>
             HandleRemoveAsync(id, body, projects, configs, servers));
     }
 
-    internal static async Task<IResult> HandleGetDuplicatesAsync(string id, IProjectStore projects, IJitConfigStore configs)
+    internal static async Task<IResult> HandleGetDuplicatesAsync(string id, IProjectStore projects, IJitConfigStore configs, IServerStore? servers = null)
     {
         var project = await projects.GetByIdAsync(id);
         if (project is null) return Results.NotFound(ProjectRouter.Error($"Project '{id}' not found."));
         var cfg = await configs.GetAsync(id) ?? new JitDeployConfig();
-        return Results.Ok(View(project, cfg));
+        return Results.Ok(View(await ServerEnvAsync(project, servers), cfg));
     }
 
-    internal static async Task<IResult> HandleRemoveAsync(string id, EnvDuplicateRemoval body, IProjectStore projects, IJitConfigStore configs, IServerStore servers)
+    internal static async Task<IResult> HandleRemoveAsync(string id, EnvDuplicateRemoval body, IProjectStore projects, IJitConfigStore configs, IServerStore? servers = null)
     {
         var project = await projects.GetByIdAsync(id);
         if (project is null) return Results.NotFound(ProjectRouter.Error($"Project '{id}' not found."));
         var cfg = await configs.GetAsync(id) ?? new JitDeployConfig();
-        var view = View(project, cfg);
+        var serverEnv = await ServerEnvAsync(project, servers);
+        var view = View(serverEnv, cfg);
         var choice = (body.RemoveFrom ?? "none").Trim().ToLowerInvariant();
 
         if (choice == "none") return Results.Ok(view);
@@ -65,25 +66,37 @@ public static class JitEnvDuplicateRoutes
                 return Results.BadRequest(new { isError = true, message = problems[0].Message, errors = problems.Select(p => ProjectRouter.Error(p.Message, p.Field)).ToList() });
             await configs.SaveAsync(id, updated);
             Log.Information("Project {ProjectId}: removed duplicate variables {Names} from the project's variables", id, string.Join(", ", names));
-            return Results.Ok(View(project, updated));
+            return Results.Ok(View(serverEnv, updated));
         }
 
-        var serverText = JitEnvDuplicates.Remove(project.Server.EnvFile, names);
+        var serverText = JitEnvDuplicates.Remove(serverEnv, names);
         var saved = project with { Server = project.Server with { EnvFile = serverText } };
         await projects.SaveAsync(saved);
 
         var serverId = string.IsNullOrWhiteSpace(project.Server.Id) ? project.ServerId : project.Server.Id;
-        if (!string.IsNullOrWhiteSpace(serverId) && await servers.GetByIdAsync(serverId) is { } server)
+        if (servers is not null && !string.IsNullOrWhiteSpace(serverId) && await servers.GetByIdAsync(serverId) is { } server)
             await servers.SaveAsync(server with { EnvFile = serverText });
 
         Log.Information("Project {ProjectId}: removed duplicate variables {Names} from the server's variables", id, string.Join(", ", names));
-        return Results.Ok(View(saved, cfg));
+        return Results.Ok(View(serverText, cfg));
     }
 
-    private static DuplicatesView View(ProjectConfig project, JitDeployConfig cfg)
+    /// <summary>The server record owns these variables; fall back to the project's copy when there is no record.</summary>
+    private static async Task<string?> ServerEnvAsync(ProjectConfig project, IServerStore? servers)
+    {
+        if (servers is not null)
+        {
+            var id = string.IsNullOrWhiteSpace(project.Server.Id) ? project.ServerId : project.Server.Id;
+            if (!string.IsNullOrWhiteSpace(id) && await servers.GetByIdAsync(id) is { } server)
+                return server.EnvFile;
+        }
+        return project.Server.EnvFile;
+    }
+
+    private static DuplicatesView View(string? serverEnv, JitDeployConfig cfg)
     {
         if (!string.IsNullOrWhiteSpace(cfg.EnvFile))
             return new DuplicatesView([], true, "This project uses its own env file, so the server and project variables are not merged.");
-        return new DuplicatesView(JitEnvDuplicates.Detect(project.Server.EnvFile, cfg.EnvText), false, null);
+        return new DuplicatesView(JitEnvDuplicates.Detect(serverEnv, cfg.EnvText), false, null);
     }
 }

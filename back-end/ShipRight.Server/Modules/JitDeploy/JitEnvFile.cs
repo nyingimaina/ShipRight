@@ -175,6 +175,29 @@ public static class JitEnvFile
 /// </summary>
 public static class JitEnvMapper
 {
+    /// <summary>
+    /// The same mapping, but with the server-level variables supplied explicitly. Deploys use this with the server
+    /// record's variables: the copy embedded in a project can be stale when server settings change later.
+    /// </summary>
+    public static JitMapResult MapWithServerEnv(ProjectConfig project, JitDeployConfig? cfg, string? serverEnv,
+        string? commit = null, bool force = false, bool allowWithoutRollback = false)
+    {
+        var map = JitDeployMapper.Map(project, cfg, commit, force, allowWithoutRollback);
+        if (!map.Ok || cfg is null) return map;
+        if (!string.IsNullOrWhiteSpace(cfg.EnvFile)) return map;
+
+        var merged = JitEnvFile.Merge(serverEnv, cfg.EnvText);
+        if (merged is null) return map;
+
+        var request = map.Request! with
+        {
+            EnvFile = JitEnvFile.Path(map.Request!.Target),
+            EnvContent = merged,
+            EnvNote = JitEnvFile.Describe(JitEnvFile.Summarise(serverEnv, cfg.EnvText)),
+        };
+        return new JitMapResult(request, map.Problems);
+    }
+
     public static JitMapResult Map(ProjectConfig project, JitDeployConfig? cfg, string? commit = null, bool force = false, bool allowWithoutRollback = false)
     {
         var map = JitDeployMapper.Map(project, cfg, commit, force, allowWithoutRollback);

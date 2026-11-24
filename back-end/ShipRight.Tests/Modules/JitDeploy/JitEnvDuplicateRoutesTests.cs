@@ -91,6 +91,34 @@ public class JitEnvDuplicateRoutesTests
     }
 
     [TestMethod]
+    public async Task Route_GetDuplicates_UsesTheServerRecordWhenItDiffersFromTheProjectCopy()
+    {
+        var rig = new Rig();
+        rig.ServerStore.Items["s1"] = rig.ServerStore.Items["s1"] with { EnvFile = "DB=record-value\nKEEP=1\n" };
+
+        var r = await JitEnvDuplicateRoutes.HandleGetDuplicatesAsync("p1", rig.ProjectStore, rig.ConfigStore, rig.ServerStore);
+        var json = Json(Value(r));
+
+        Assert.AreEqual(200, Status(r));
+        StringAssert.Contains(json, "record-value");
+        Assert.IsFalse(json.Contains("server-db"), "the stale project copy is not what a deploy merges");
+    }
+
+    [TestMethod]
+    public async Task Route_RemoveFromServer_UsesTheServerRecordAndRefreshesTheProjectCopy()
+    {
+        var rig = new Rig(projectEnv: "DB=stale\nKEEP=1\nONLY_STALE=x\n", serverEnv: "DB=record-value\nKEEP=1\n");
+        rig.ServerStore.Items["s1"] = rig.ServerStore.Items["s1"] with { EnvFile = "DB=record-value\nKEEP=1\n" };
+
+        var r = await JitEnvDuplicateRoutes.HandleRemoveAsync("p1", new EnvDuplicateRemoval { RemoveFrom = "server", Names = ["DB"] },
+            rig.ProjectStore, rig.ConfigStore, rig.ServerStore);
+
+        Assert.AreEqual(200, Status(r));
+        Assert.AreEqual("KEEP=1\n", rig.ServerStore.Items["s1"].EnvFile);
+        Assert.AreEqual("KEEP=1\n", rig.ProjectStore.Items["p1"].Server.EnvFile);
+    }
+
+    [TestMethod]
     public async Task Route_GetDuplicates_ForAnUnknownProject_IsNotFound()
     {
         var rig = new Rig();

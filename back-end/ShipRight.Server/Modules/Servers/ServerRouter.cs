@@ -10,6 +10,29 @@ namespace ShipRight.Modules.Servers;
 
 public static class ServerRouter
 {
+    /// <summary>
+    /// Saves the server and refreshes the embedded server variables on every project that points at it. Projects keep
+    /// their own copy of the other server fields, so only the variables are carried across.
+    /// </summary>
+    internal static async Task<IResult> HandleUpdateAsync(string serverId, ServerConfig server, IServerStore store, IProjectStore projects)
+    {
+        var existing = await store.GetByIdAsync(serverId);
+        if (existing is null)
+            return Results.NotFound(new { isError = true, message = $"Server '{serverId}' not found." });
+
+        var saved = server with { Id = serverId };
+        await store.SaveAsync(saved);
+
+        foreach (var project in await projects.GetAllAsync())
+        {
+            var embeddedId = string.IsNullOrWhiteSpace(project.Server.Id) ? project.ServerId : project.Server.Id;
+            if (!string.Equals(embeddedId, serverId, StringComparison.OrdinalIgnoreCase)) continue;
+            if (string.Equals(project.Server.EnvFile, saved.EnvFile, StringComparison.Ordinal)) continue;
+            await projects.SaveAsync(project with { Server = project.Server with { EnvFile = saved.EnvFile } });
+        }
+        return Results.Ok(saved);
+    }
+
     public static void MapServerRoutes(this WebApplication app)
     {
         // ── CRUD ──────────────────────────────────────────────────────────────
@@ -36,16 +59,8 @@ public static class ServerRouter
             return Results.Created($"/api/servers/{saved.Id}", saved);
         });
 
-        app.MapPut("/api/servers/{serverId}", async (string serverId, ServerConfig server, IServerStore store) =>
-        {
-            var existing = await store.GetByIdAsync(serverId);
-            if (existing is null)
-                return Results.NotFound(new { isError = true, message = $"Server '{serverId}' not found." });
-
-            var saved = server with { Id = serverId };
-            await store.SaveAsync(saved);
-            return Results.Ok(saved);
-        });
+        app.MapPut("/api/servers/{serverId}", async (string serverId, ServerConfig server, IServerStore store, IProjectStore projects) =>
+            await HandleUpdateAsync(serverId, server, store, projects));
 
         app.MapDelete("/api/servers/{serverId}", async (string serverId, IServerStore store) =>
         {

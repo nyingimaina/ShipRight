@@ -17,6 +17,7 @@ import {
 } from './jitHints';
 import { describeEnv, envKeys, envSummary } from './envVars';
 import { DuplicateChoice, EnvDuplicate, EnvDuplicatesResponse } from './envDuplicates';
+import EnvDivergenceWarning from './EnvDivergenceWarning';
 import { envFileWarnings } from '@/modules/ServerDeploy/envFileWarnings';
 import { stepText } from './jitSteps';
 
@@ -291,6 +292,7 @@ export default function JitDeployCard({ projectId }: Props) {
 
       {cfg.enabled && (
         <>
+          <EnvDivergenceWarning base={base} />
           <Field id="jit-repo" label="Git address" error={errors.repoUrl}
             tip={'The address the server uses to download your code.\nOn GitHub: open your repository, click the green Code button, choose SSH and copy the address.\nThe server needs permission to read it (a deploy key).'}>
             <>
