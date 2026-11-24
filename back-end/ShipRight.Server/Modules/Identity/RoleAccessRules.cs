@@ -20,6 +20,7 @@ public static class RoleAccessRules
         R(null, @"/api/system/docker-cleanup(/.*)?", AppRoles.Admin),
         R(null, @"/api/system/check(/.*)?", AppRoles.Admin),
         R(null, @"/api/system/disk-job(/.*)?", AppRoles.Admin),
+        R("GET", @"/api/system/stats", AppRoles.Viewer),
         R("POST", @"/api/builds/[^/]+/force-abort", AppRoles.Admin),
         R(null, @"/api/fs(/.*)?", AppRoles.Admin),
         R(null, @"/api/setup(/.*)?", AppRoles.Admin),
@@ -87,5 +88,5 @@ public static class RoleAccessRules
 
     // While a temporary password is still in place only these calls work.
     public static bool AllowedWhilePasswordChangeIsPending(string path) =>
-        path.TrimEnd('/') is "/api/auth/me" or "/api/auth/logout" or "/api/auth/change-password";
+        path.TrimEnd('/') is "/api/auth/me" or "/api/auth/logout" or "/api/auth/change-password" or "/api/system/stats";
 }

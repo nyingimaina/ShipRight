@@ -4,15 +4,16 @@ using ShipRight.Modules.Resources.Models;
 namespace ShipRight.Modules.Transfer;
 
 /// <summary>
-/// Recreates a bundled project beside whatever already exists. Every record gets a fresh id and every
-/// reference between them is rewritten to match, so an import can never overwrite or re-point
-/// existing data. The whole bundle is parsed before the first write, so a bad bundle changes nothing.
+/// Recreates a bundled project beside whatever already exists. Referenced resources get fresh ids so an
+/// import never overwrites them; the source server and saved key files keep their ids and are reused when
+/// already present, so shared servers/keys are not duplicated. The whole bundle is parsed before the first
+/// write, so a bad bundle changes nothing.
 /// </summary>
-public class ProjectBundleImporter(TransferStores stores)
+public class ProjectBundleImporter(TransferStores stores, string? targetRoot = null, string? passphrase = null)
 {
     public async Task<ImportOutcome> ImportAsync(byte[] bytes)
     {
-        var bundle = ProjectBundleReader.Read(bytes);
+        var bundle = ProjectBundleReader.Read(BundleCrypto.Decrypt(bytes, passphrase));
         var now = DateTime.UtcNow;
 
         var name = await UniqueNameAsync(bundle.Project.Name);
@@ -39,46 +40,88 @@ public class ProjectBundleImporter(TransferStores stores)
         foreach (var r in bundle.Credentials)
             await stores.Credentials.SaveAsync(r with { Id = credentials[r.Id], ProjectId = Scope(r.ProjectId), CreatedAt = now, ModifiedAt = now });
         foreach (var r in bundle.Scripts)
-            await stores.Scripts.SaveAsync(r with { Id = scripts[r.Id], ProjectId = Scope(r.ProjectId), CreatedAt = now, ModifiedAt = now });
+        {
+            var relocated = BundlePathRelocator.Resolve(r, targetRoot);
+            await stores.Scripts.SaveAsync(relocated with { Id = scripts[r.Id], ProjectId = Scope(r.ProjectId), CreatedAt = now, ModifiedAt = now });
+        }
         foreach (var r in bundle.Pipelines)
-            await stores.Pipelines.SaveAsync(r with
+        {
+            var relocated = BundlePathRelocator.Resolve(r, targetRoot);
+            await stores.Pipelines.SaveAsync(relocated with
             {
                 Id = pipelines[r.Id], ProjectId = Scope(r.ProjectId), CreatedAt = now, ModifiedAt = now,
-                Steps = r.Steps.Select(s => s with { Id = Guid.NewGuid(), ScriptResourceId = Map(scripts, s.ScriptResourceId) }).ToList(),
+                Steps = relocated.Steps.Select(s => s with { Id = Guid.NewGuid(), ScriptResourceId = Map(scripts, s.ScriptResourceId) }).ToList(),
             });
+        }
+
+        // Saved .pem files keep their ids so importing several projects that share a key does not duplicate it.
+        foreach (var k in bundle.KeyFiles)
+        {
+            if (await stores.KeyFiles.GetByIdAsync(k.Id) is null)
+                await stores.KeyFiles.SaveAsync(k with { CreatedAt = now, ModifiedAt = now });
+        }
 
         var serverId = string.Empty;
         ServerConfig? server = null;
         if (bundle.Server is not null)
         {
-            serverId = $"srv-{Guid.NewGuid():N}"[..12];
-            server = bundle.Server with
+            var source = bundle.Server;
+            var sourceId = string.IsNullOrWhiteSpace(source.Id) ? $"srv-{Guid.NewGuid():N}"[..12] : source.Id;
+            var existing = await stores.Servers.GetByIdAsync(sourceId);
+
+            if (existing is not null && string.Equals(existing.Host, source.Host, StringComparison.OrdinalIgnoreCase))
             {
-                Id = serverId,
-                RebuildScriptResourceId = Map(scripts, bundle.Server.RebuildScriptResourceId),
-                PipelineResourceId = Map(pipelines, bundle.Server.PipelineResourceId),
-                // The managed key never travels, so this machine has not authorized anything yet.
-                ManagedSshKeyAuthorized = false,
-            };
-            await stores.Servers.SaveAsync(server);
+                // Same server already here: link to it and leave its settings untouched.
+                serverId = existing.Id;
+                server = existing;
+            }
+            else
+            {
+                serverId = existing is null ? sourceId : $"srv-{Guid.NewGuid():N}"[..12];
+                server = source with
+                {
+                    Id = serverId,
+                    SshKeyPath = string.Empty,
+                    RebuildScriptResourceId = Map(scripts, source.RebuildScriptResourceId),
+                    PipelineResourceId = Map(pipelines, source.PipelineResourceId),
+                    ManagedSshKeyAuthorized = false,
+                };
+                if (bundle.ManagedKey is not null)
+                {
+                    await stores.SshKeys.SaveKeyPairAsync(projectId, bundle.ManagedKey.PrivateKey, bundle.ManagedKey.PublicKey);
+                    server = server with
+                    {
+                        SshKeyPath = stores.SshKeys.GetPrivateKeyPath(projectId),
+                        ManagedSshKey = true,
+                        ManagedSshKeyAuthorized = source.ManagedSshKeyAuthorized,
+                    };
+                }
+                await stores.Servers.SaveAsync(server);
+            }
         }
 
-        var project = bundle.Project with
+        var portableProject = BundlePathRelocator.Resolve(bundle.Project, targetRoot);
+        var project = portableProject with
         {
             Id = projectId,
             Name = name,
             ServerId = serverId,
-            Server = server ?? bundle.Project.Server,
+            Server = server ?? portableProject.Server,
             CreatedAt = now,
             ModifiedAt = now,
-            Services = bundle.Project.Services
+            Services = portableProject.Services
                 .Select(s => s with { DockerRegistryResourceId = Map(registries, s.DockerRegistryResourceId) })
                 .ToList(),
-            GitRepos = bundle.Project.GitRepos
+            GitRepos = portableProject.GitRepos
                 .Select(g => g with { CredentialResourceId = Map(credentials, g.CredentialResourceId) })
                 .ToList(),
         };
         await stores.Projects.SaveAsync(project);
+        if (bundle.Jit is not null)
+            await stores.Jit.SaveAsync(projectId, bundle.Jit with
+            {
+                CredentialResourceId = Map(credentials, bundle.Jit.CredentialResourceId),
+            });
 
         return new ImportOutcome(projectId, name, bundle.Manifest.Warnings);
     }

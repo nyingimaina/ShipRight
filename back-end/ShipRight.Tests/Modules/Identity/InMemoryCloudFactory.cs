@@ -173,6 +173,12 @@ public sealed class InMemoryIdentityRepository(IDatabaseHelper<Guid> db) : Ident
 
     public int CompanyCount { get; private set; }
     public List<string> CompanyNames { get; } = [];
+    private readonly Dictionary<Guid, string> _companyNames = new();
+
+    public override Task<string> GetCompanyNameAsync(Guid companyId)
+    {
+        lock (_gate) return Task.FromResult(_companyNames.GetValueOrDefault(companyId, string.Empty));
+    }
 
     public void Put(AppUser user)
     {
@@ -243,6 +249,7 @@ public sealed class InMemoryIdentityRepository(IDatabaseHelper<Guid> db) : Ident
             user.CompanyId = Guid.NewGuid();
             CompanyCount++;
             CompanyNames.Add(companyName);
+            _companyNames[user.CompanyId] = companyName;
             _users[user.Id] = Copy(user);
             return Task.FromResult(true);
         }

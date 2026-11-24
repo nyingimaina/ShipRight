@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using ShipRight.Modules.JitDeploy;
 using ShipRight.Modules.Projects;
 using ShipRight.Modules.Resources.Models;
 
@@ -24,6 +25,15 @@ internal static class BundleSecrets
         a with { AccessKeyId = string.Empty, SecretAccessKey = string.Empty, SessionToken = string.Empty };
 
     public static CredentialResource Strip(CredentialResource c) => c with { Value = string.Empty };
+
+    public static ScriptResource Strip(ScriptResource s) => s with { Variables = Blank(s.Variables) };
+
+    public static PipelineResource Strip(PipelineResource p) => p with { Variables = Blank(p.Variables) };
+
+    public static JitDeployConfig Strip(JitDeployConfig j) => j with { EnvText = string.Empty };
+
+    private static Dictionary<string, string> Blank(Dictionary<string, string> variables) =>
+        variables.ToDictionary(v => v.Key, _ => string.Empty);
 
     private static readonly Regex UrlUserInfo = new(@"^(https?://)[^/@\s]+@", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 

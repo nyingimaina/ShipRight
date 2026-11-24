@@ -18,8 +18,8 @@ internal static class BundleWarnings
             foreach (var w in Path(at, "build context", s.BuildContextPath)) yield return w;
             foreach (var w in Secret(at, "Docker password", s.DockerPassword)) yield return w;
         }
-        foreach (var g in p.GitRepos)
-            foreach (var w in Path($"git repo '{g.RepoPath}'", "repository path", g.RepoPath)) yield return w;
+        for (var i = 0; i < p.GitRepos.Count; i++)
+            foreach (var w in Path($"git repo {i + 1}", "repository path", p.GitRepos[i].RepoPath)) yield return w;
         foreach (var w in Path("project", "compose working directory", p.Wsl.WorkingDir)) yield return w;
         if (BundleSecrets.HasUrlCredentials(p.Wsl.ComposeRepoUrl)) yield return Secret("project", "compose repository URL token or password");
         if (p.Database is not null)
@@ -35,13 +35,13 @@ internal static class BundleWarnings
             yield return new BundleWarning
             {
                 Code = "ssh-key-not-transferred", Location = at,
-                Message = $"{at} used a ShipRight-managed SSH key. The key itself is never exported — generate and authorize a new one on this machine.",
+                Message = $"{at} used a ShipRight-managed SSH key. Its path is portable; authorize the restored key after importing if the server is the same.",
             };
         if (!string.IsNullOrWhiteSpace(s.RemoteWorkingDir))
             yield return new BundleWarning
             {
                 Severity = "info", Code = "remote-path", Location = at,
-                Message = $"{at} deploys into '{s.RemoteWorkingDir}' on the remote machine — fine if that machine is unchanged.",
+                Message = $"{at} keeps its deployment directory on the remote host. Check it points at the intended stack on the destination server.",
             };
         foreach (var w in Secret(at, ".env file", s.EnvFile)) yield return w;
     }
@@ -62,10 +62,22 @@ internal static class BundleWarnings
 
     public static IEnumerable<BundleWarning> ForCredential(CredentialResource c) => Secret($"credential '{c.Name}'", "value", c.Value);
 
-    public static IEnumerable<BundleWarning> ForScript(ScriptResource s) => Path($"script '{s.Name}'", "working directory", s.WorkingDirectory);
+    public static IEnumerable<BundleWarning> ForScript(ScriptResource s)
+    {
+        var at = $"script '{s.Name}'";
+        foreach (var w in Path(at, "working directory", s.WorkingDirectory)) yield return w;
+        if (s.Variables.Values.Any(v => !string.IsNullOrEmpty(v)))
+            yield return Secret(at, "variables");
+    }
 
-    public static IEnumerable<BundleWarning> ForPipeline(PipelineResource p) =>
-        p.Steps.SelectMany(step => Path($"pipeline '{p.Name}'", "step working directory", step.WorkingDirectory));
+    public static IEnumerable<BundleWarning> ForPipeline(PipelineResource p)
+    {
+        var at = $"pipeline '{p.Name}'";
+        foreach (var step in p.Steps)
+            foreach (var w in Path(at, "step working directory", step.WorkingDirectory)) yield return w;
+        if (p.Variables.Values.Any(v => !string.IsNullOrEmpty(v)))
+            yield return Secret(at, "variables");
+    }
 
     private static IEnumerable<BundleWarning> Path(string at, string what, string? value)
     {
@@ -73,7 +85,7 @@ internal static class BundleWarnings
         yield return new BundleWarning
         {
             Code = "path", Location = at,
-            Message = $"{at}: {what} is '{value}' — a location on the original machine. Update it if this machine differs.",
+            Message = $"{at}: {what} was a location on the original machine and is now portable. Choose the destination root when importing.",
         };
     }
 

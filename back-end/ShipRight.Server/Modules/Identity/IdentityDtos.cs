@@ -11,7 +11,7 @@ public record ChangePasswordRequest(string? CurrentPassword, string? NewPassword
 public record CreateTeammateRequest(string? Email, string? Name, string? TemporaryPassword, string? Role);
 public record ChangeRoleRequest(string? Role, string? ExpectedRole);
 
-public record SessionUserDto(Guid Id, string Email, string Name, Guid CompanyId, string Role, bool MustChangePassword);
+public record SessionUserDto(Guid Id, string Email, string Name, Guid CompanyId, string Role, bool MustChangePassword, string CompanyName = "");
 public record SessionDto(SessionUserDto User);
 public record ProvidersDto(bool Google);
 

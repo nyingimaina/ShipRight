@@ -18,8 +18,10 @@ public class StaticAssetCachingTests : IDisposable
         _webRoot = Path.Combine(Path.GetTempPath(), $"sr_static_test_{Guid.NewGuid():N}");
         Directory.CreateDirectory(Path.Combine(_webRoot, "_next", "static", "chunks"));
         Directory.CreateDirectory(Path.Combine(_webRoot, "projects"));
+        Directory.CreateDirectory(Path.Combine(_webRoot, "servers"));
         File.WriteAllText(Path.Combine(_webRoot, "index.html"), "<html>home</html>");
         File.WriteAllText(Path.Combine(_webRoot, "projects", "index.html"), "<html>projects</html>");
+        File.WriteAllText(Path.Combine(_webRoot, "servers", "index.html"), "<html>servers-page</html>");
         File.WriteAllText(Path.Combine(_webRoot, "version.json"), "{\"version\":\"1.0.0\"}");
         File.WriteAllText(Path.Combine(_webRoot, "_next", "static", "chunks", "4864-abc123.js"), "console.log(1)");
     }
@@ -58,6 +60,7 @@ public class StaticAssetCachingTests : IDisposable
         builder.WebHost.UseTestServer();
         builder.Environment.WebRootFileProvider = new PhysicalFileProvider(_webRoot);
         var app = builder.Build();
+        app.UsePageIndexRewrite(builder.Environment.WebRootFileProvider);
         app.UseDefaultFiles();
         app.UseStaticFiles(StaticAssetCaching.Options());
         app.MapFallbackToFile("index.html", StaticAssetCaching.FallbackOptions());
@@ -76,6 +79,22 @@ public class StaticAssetCachingTests : IDisposable
             Assert.AreEqual(System.Net.HttpStatusCode.OK, response.StatusCode, url);
             Assert.AreEqual("no-cache", response.Headers.CacheControl?.ToString(), url);
         }
+    }
+
+    [TestMethod]
+    public async Task RefreshingADeepPage_ServesThatPagesOwnHtmlNotTheHomeRedirect()
+    {
+        using var client = await StartAsync();
+
+        foreach (var url in new[] { "/servers/", "/servers", "/projects/" })
+        {
+            var response = await client.GetAsync(url);
+            var body = await response.Content.ReadAsStringAsync();
+            Assert.IsFalse(body.Contains("<html>home</html>"), $"{url} served the home page");
+        }
+
+        StringAssert.Contains(await (await client.GetAsync("/servers/")).Content.ReadAsStringAsync(), "servers-page");
+        StringAssert.Contains(await (await client.GetAsync("/projects/")).Content.ReadAsStringAsync(), "projects");
     }
 
     [TestMethod]

@@ -1,4 +1,6 @@
+using ShipRight.Modules.JitDeploy;
 using ShipRight.Modules.Projects;
+using ShipRight.Modules.RemoteHost;
 using ShipRight.Modules.Resources.Models;
 using ShipRight.Modules.Resources.Stores;
 using ShipRight.Modules.Servers;
@@ -13,7 +15,10 @@ public record TransferStores(
     IAwsProfileResourceStore AwsProfiles,
     ICredentialResourceStore Credentials,
     IScriptResourceStore Scripts,
-    IPipelineResourceStore Pipelines);
+    IPipelineResourceStore Pipelines,
+    IKeyFileResourceStore KeyFiles,
+    SshKeyStore SshKeys,
+    IJitConfigStore Jit);
 
 /// <summary>
 /// Something the person moving the project must look at. Codes: secret-omitted, path, remote-path,
@@ -31,7 +36,7 @@ public record BundleWarning
 public record BundleManifest
 {
     /// <summary>Bump when the bundle layout changes in a way an older ShipRight cannot read.</summary>
-    public const int CurrentFormatVersion = 1;
+    public const int CurrentFormatVersion = 2;
 
     public int FormatVersion { get; init; } = CurrentFormatVersion;
     public string ShipRightVersion { get; init; } = string.Empty;
@@ -41,15 +46,39 @@ public record BundleManifest
     /// <summary>Every entry in the zip except this manifest; import refuses a bundle missing any of them.</summary>
     public List<string> Files { get; init; } = [];
     public List<BundleWarning> Warnings { get; init; } = [];
+    /// <summary>True when secrets, key files and the managed SSH key were included in the bundle.</summary>
+    public bool SecretsIncluded { get; init; }
+    /// <summary>Portable description of paths that were relocated away from the source machine.</summary>
+    public BundlePortability? Portability { get; init; }
 }
+
+/// <summary>
+/// A bundle never carries an absolute path from the machine that made it. Local paths are stored as
+/// <c>{ProjectRoot}</c>-relative tokens and resolved against a target root chosen at import time.
+/// </summary>
+public record BundlePortability
+{
+    public List<string> RelocatedPaths { get; init; } = [];
+    public List<string> RequiredInputs { get; init; } = [];
+}
+
+public record PathBinding(string Pointer, string Token);
+
+/// <summary>What the export endpoint accepted. The acknowledgement itself is a UI concern.</summary>
+public record ExportOptions(bool IncludeSecrets = false, string? Passphrase = null);
+
+/// <summary>The generated ShipRight-managed key pair, only present in secret-bearing bundles.</summary>
+public record ManagedKeyBundle(string PrivateKey, string? PublicKey);
 
 public record BundleInspection
 {
     public string ProjectName { get; init; } = string.Empty;
     public BundleManifest Manifest { get; init; } = new();
     public bool Importable { get; init; }
+    public bool SecretsIncluded { get; init; }
     public List<string> Errors { get; init; } = [];
     public List<BundleWarning> Warnings { get; init; } = [];
+    public List<string> RequiredInputs { get; init; } = [];
     public Dictionary<string, int> Counts { get; init; } = [];
 }
 
@@ -69,4 +98,7 @@ public record ProjectBundle
     public List<CredentialResource> Credentials { get; init; } = [];
     public List<ScriptResource> Scripts { get; init; } = [];
     public List<PipelineResource> Pipelines { get; init; } = [];
+    public List<KeyFileResource> KeyFiles { get; init; } = [];
+    public ManagedKeyBundle? ManagedKey { get; init; }
+    public JitDeployConfig? Jit { get; init; }
 }

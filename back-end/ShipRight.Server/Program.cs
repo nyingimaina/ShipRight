@@ -140,6 +140,7 @@ try
     {
         RegisterDesktopServices(builder.Services, dataDir);
     }
+    builder.Services.AddSingleton<IHostStatsProvider, HostStatsService>();
 
     var app = builder.Build();
 
@@ -177,6 +178,7 @@ try
     }
 
     app.UseCors("ShipRightPolicy");
+    app.UsePageIndexRewrite(app.Environment.WebRootFileProvider);
     app.UseDefaultFiles();
     app.UseStaticFiles(StaticAssetCaching.Options());
 

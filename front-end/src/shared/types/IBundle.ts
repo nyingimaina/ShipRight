@@ -11,6 +11,11 @@ export interface IBundleInspection {
   errors: string[];
   warnings: IBundleWarning[];
   counts: Record<string, number>;
+  /** Protected bundles need the same passphrase at import that was chosen at export. */
+  secretsIncluded?: boolean;
+  /** Pointers to paths the source machine could not resolve; a destination root makes them portable. */
+  requiredInputs?: string[];
+  relocatedPaths?: string[];
 }
 
 export interface IImportOutcome {

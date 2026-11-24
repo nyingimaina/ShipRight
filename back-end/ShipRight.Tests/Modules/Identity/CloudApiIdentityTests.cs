@@ -81,6 +81,7 @@ public class CloudApiIdentityTests
         Assert.AreEqual(HttpStatusCode.OK, me.Status);
         Assert.AreEqual("Admin", me.Text("user", "role"));
         Assert.AreEqual(email, me.Text("user", "email"));
+        Assert.AreEqual("Test Co", me.Text("user", "companyName"));
     }
 
     [TestMethod]

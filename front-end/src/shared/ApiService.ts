@@ -46,11 +46,12 @@ async function getRaw(path: string): Promise<string> {
   return res.text();
 }
 
-/** POST a raw file body (used for server file uploads — avoids multipart size limits). */
-async function upload<T>(path: string, file: File): Promise<T> {
+/** POST a raw file body (used for server file uploads — avoids multipart size limits).
+ *  Extra headers carry the passphrase and destination root for protected, portable bundles. */
+async function upload<T>(path: string, file: File, headers: Record<string, string> = {}): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/octet-stream' },
+    headers: { 'Content-Type': 'application/octet-stream', ...headers },
     body: file,
     credentials: 'include',
   });

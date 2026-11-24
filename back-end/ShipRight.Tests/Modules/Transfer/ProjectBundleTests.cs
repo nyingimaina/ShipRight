@@ -1,8 +1,10 @@
 using System.IO.Compression;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Newtonsoft.Json;
+using ShipRight.Modules.JitDeploy;
 using ShipRight.Modules.Projects;
 using ShipRight.Modules.Resources.Models;
+using ShipRight.Modules.RemoteHost;
 using ShipRight.Modules.Resources.Stores;
 using ShipRight.Modules.Servers;
 using ShipRight.Modules.Transfer;
@@ -23,6 +25,7 @@ public class ProjectBundleTests : IDisposable
     private static readonly Guid PipelineScriptId = Guid.NewGuid();
     private static readonly Guid PipelineId = Guid.NewGuid();
     private static readonly Guid UnrelatedScriptId = Guid.NewGuid();
+    private static readonly Guid KeyFileId = Guid.NewGuid();
 
     public ProjectBundleTests()
     {
@@ -44,7 +47,8 @@ public class ProjectBundleTests : IDisposable
             new SqliteProjectStore(dir), new SqliteServerStore(dir),
             new SqliteDockerRegistryResourceStore(dir), new SqliteAwsProfileResourceStore(dir),
             new SqliteCredentialResourceStore(dir), new SqliteScriptResourceStore(dir),
-            new SqlitePipelineResourceStore(dir));
+            new SqlitePipelineResourceStore(dir), new SqliteKeyFileResourceStore(dir), new SshKeyStore(dir),
+            new JsonJitConfigStore(dir));
     }
 
     // A project wired to every kind of related record, with secrets and machine paths sprinkled in.
@@ -60,6 +64,7 @@ public class ProjectBundleTests : IDisposable
             AuthType = RegistryAuthType.AwsEcr, AwsProfileResourceId = AwsId,
         });
         await _source.Credentials.SaveAsync(new CredentialResource { Id = CredId, Name = "github-pat", Value = "ghp_secret", HostPattern = "github.com" });
+        await _source.KeyFiles.SaveAsync(new KeyFileResource { Id = KeyFileId, Name = "bootstrap.pem", Content = "PRIVATE-KEY-CONTENT" });
         await _source.Scripts.SaveAsync(new ScriptResource { Id = RebuildScriptId, Name = "rebuild", Content = "echo rebuild", Target = ExecutionTarget.Remote });
         await _source.Scripts.SaveAsync(new ScriptResource
         {
@@ -92,10 +97,15 @@ public class ProjectBundleTests : IDisposable
             Wsl = new WslConfig { WorkingDir = "/mnt/d/work/app-compose", ComposeRepoUrl = "https://user:urlpass@github.com/acme/compose.git" },
             Database = new DatabaseConfig { ContainerName = "db", DatabaseName = "app", RootPassword = "db-secret" },
         });
+        await _source.Jit.SaveAsync("app", new JitDeployConfig
+        {
+            Enabled = true, RepoUrl = "https://github.com/acme/app.git", EnvText = "JIT_SECRET=hidden",
+            CredentialResourceId = CredId,
+        });
     }
 
-    private async Task<byte[]> ExportAsync(TransferStores? from = null) =>
-        (await new ProjectBundleExporter(from ?? _source, "4.4.14").ExportAsync("app"))!;
+    private async Task<byte[]> ExportAsync(TransferStores? from = null, bool includeSecrets = false) =>
+        (await new ProjectBundleExporter(from ?? _source, "4.4.14", includeSecrets).ExportAsync("app"))!;
 
     private static string[] EntryNames(byte[] bundle)
     {
@@ -175,6 +185,66 @@ public class ProjectBundleTests : IDisposable
     }
 
     [TestMethod]
+    public async Task Export_WithSecrets_WritesSecretsKeyFilesAndAManifestFlag()
+    {
+        await SeedAsync();
+        var bundle = await ExportAsync(includeSecrets: true);
+        var manifest = JsonConvert.DeserializeObject<BundleManifest>(ReadEntry(bundle, "manifest.json"))!;
+
+        Assert.IsTrue(manifest.SecretsIncluded);
+        Assert.IsTrue(EntryNames(bundle).Contains($"resources/key-files/{KeyFileId}.json"));
+        CollectionAssert.Contains(manifest.Warnings.Select(w => w.Code).ToList(), "secrets-included");
+        CollectionAssert.DoesNotContain(manifest.Warnings.Select(w => w.Code).ToList(), "secret-omitted");
+
+        var allText = string.Join("\n", EntryNames(bundle).Select(n => ReadEntry(bundle, n)));
+        foreach (var secret in new[] { "svc-secret", "reg-secret", "aws-secret", "AKIA-SECRET", "ghp_secret", "db-secret", "hunter2", "ghp_urltoken", "urlpass", "PRIVATE-KEY-CONTENT" })
+            StringAssert.Contains(allText, secret, $"secret '{secret}' was not exported");
+    }
+
+    [TestMethod]
+    public async Task Export_RewritesMachinePathsToPortableTokens()
+    {
+        await SeedAsync();
+        var bundle = await ExportAsync();
+        var project = JsonConvert.DeserializeObject<ProjectConfig>(ReadEntry(bundle, "project.json"))!;
+        var server = JsonConvert.DeserializeObject<ServerConfig>(ReadEntry(bundle, "server.json"))!;
+
+        Assert.AreEqual("{ProjectRoot}", project.GitRepos[0].RepoPath);
+        Assert.AreEqual("{ProjectRoot}/api", project.Services[0].BuildContextPath);
+        Assert.AreEqual("{ProjectRoot}/api/version.txt", project.Services[0].VersionFilePath);
+        Assert.AreEqual("{ProjectRoot}/../app-compose", project.Wsl.WorkingDir);
+        Assert.AreEqual("{ManagedKeys}", server.SshKeyPath);
+    }
+
+    [TestMethod]
+    public async Task Export_ContainsNoSourceMachinePathsIncludingInWarnings()
+    {
+        await SeedAsync();
+        var bundle = await ExportAsync();
+        var allText = string.Join("\n", EntryNames(bundle).Select(n => ReadEntry(bundle, n)));
+
+        foreach (var path in new[] { @"D:\work\app", @"C:\Users\me\.ssh\prod.pem", "/mnt/d/work/app-compose" })
+            Assert.IsFalse(allText.Contains(path, StringComparison.OrdinalIgnoreCase), $"bundle leaked the source path '{path}'");
+    }
+
+    [TestMethod]
+    public async Task Export_IncludesJitConfigButStripsItsSecrets()
+    {
+        await SeedAsync();
+        var bundle = await ExportAsync();
+
+        Assert.IsTrue(EntryNames(bundle).Contains("jit.json"));
+        var jit = JsonConvert.DeserializeObject<JitDeployConfig>(ReadEntry(bundle, "jit.json"))!;
+        Assert.AreEqual("https://github.com/acme/app.git", jit.RepoUrl);
+        Assert.AreEqual("", jit.EnvText);
+        Assert.AreEqual(CredId, jit.CredentialResourceId);
+
+        var withSecrets = JsonConvert.DeserializeObject<JitDeployConfig>(
+            ReadEntry(await ExportAsync(includeSecrets: true), "jit.json"))!;
+        Assert.AreEqual("JIT_SECRET=hidden", withSecrets.EnvText);
+    }
+
+    [TestMethod]
     public async Task Export_WarnsAboutEachOmittedSecretAndEachMachinePath()
     {
         await SeedAsync();
@@ -182,8 +252,8 @@ public class ProjectBundleTests : IDisposable
 
         foreach (var code in new[] { "secret-omitted", "path", "ssh-key-not-transferred", "aws-profile-name" })
             Assert.IsTrue(warnings.Any(w => w.Code == code), $"missing warning '{code}'");
-        Assert.IsTrue(warnings.Any(w => w.Code == "path" && w.Message.Contains(@"D:\work\app\api")), "service build path not flagged");
-        Assert.IsTrue(warnings.Any(w => w.Code == "path" && w.Message.Contains(@"C:\Users\me\.ssh\prod.pem")), "ssh key path not flagged");
+        Assert.IsTrue(warnings.Any(w => w.Code == "path" && w.Location.Contains("api")), "service build path not flagged");
+        Assert.IsTrue(warnings.Any(w => w.Code == "ssh-key-not-transferred"), "managed ssh key not flagged");
         Assert.IsTrue(warnings.Any(w => w.Code == "secret-omitted" && w.Location.Contains("github-pat")), "credential not flagged");
     }
 
@@ -244,6 +314,18 @@ public class ProjectBundleTests : IDisposable
     }
 
     [TestMethod]
+    public async Task Inspect_ReportsSecretsAndKeyFilesIncludedInTheBundle()
+    {
+        await SeedAsync();
+        var bundle = await ExportAsync(includeSecrets: true);
+        var inspection = await new ProjectBundleInspector(_target, "4.4.14").InspectAsync(bundle);
+
+        Assert.IsTrue(inspection.SecretsIncluded);
+        Assert.AreEqual(1, inspection.Counts["keyFiles"]);
+        Assert.IsTrue(inspection.Warnings.Any(w => w.Code == "secrets-included"));
+    }
+
+    [TestMethod]
     public async Task Inspect_BundleFromANewerFormat_IsNotImportable()
     {
         await SeedAsync();
@@ -290,7 +372,7 @@ public class ProjectBundleTests : IDisposable
 
         var server = (await _target.Servers.GetByIdAsync(project.ServerId))!;
         Assert.AreEqual("Prod box", server.Name);
-        Assert.AreNotEqual("srv-1", server.Id, "ids are remapped so an import can never overwrite existing records");
+        Assert.AreEqual("srv-1", server.Id, "the source id is preserved so shared servers are not duplicated");
 
         var registry = (await _target.Registries.GetByIdAsync(project.Services[0].DockerRegistryResourceId!.Value))!;
         Assert.AreEqual("prod-ecr", registry.Name);
@@ -307,13 +389,15 @@ public class ProjectBundleTests : IDisposable
     }
 
     [TestMethod]
-    public async Task Import_KeepsPathsAsExported_AndStartsWithEmptySecrets()
+    public async Task Import_ResolvesPortablePathsAgainstTheTargetRoot_AndStartsWithEmptySecrets()
     {
         await SeedAsync();
-        var outcome = await new ProjectBundleImporter(_target).ImportAsync(await ExportAsync());
+        var outcome = await new ProjectBundleImporter(_target, "/opt/app").ImportAsync(await ExportAsync());
         var project = (await _target.Projects.GetByIdAsync(outcome.ProjectId))!;
 
-        Assert.AreEqual(@"D:\work\app\api", project.Services[0].BuildContextPath);
+        Assert.AreEqual("/opt/app/api", project.Services[0].BuildContextPath);
+        Assert.AreEqual("/opt/app", project.GitRepos[0].RepoPath);
+        Assert.AreEqual("/opt/app/../app-compose", project.Wsl.WorkingDir);
         Assert.AreEqual("", project.Services[0].DockerPassword);
         Assert.AreEqual("", project.Database!.RootPassword);
         Assert.AreEqual("", (await _target.Credentials.GetByIdAsync(project.GitRepos[0].CredentialResourceId!.Value))!.Value);
@@ -327,6 +411,90 @@ public class ProjectBundleTests : IDisposable
         var outcome = await new ProjectBundleImporter(_target).ImportAsync(await ExportAsync());
         var server = (await _target.Servers.GetByIdAsync((await _target.Projects.GetByIdAsync(outcome.ProjectId))!.ServerId))!;
         Assert.IsFalse(server.ManagedSshKeyAuthorized);
+    }
+
+    [TestMethod]
+    public async Task Import_LinksProjectsToAnExistingServerInsteadOfDuplicatingIt()
+    {
+        await SeedAsync();
+        var bundle = await ExportAsync();
+        var importer = new ProjectBundleImporter(_target);
+
+        var first = await importer.ImportAsync(bundle);
+        var second = await importer.ImportAsync(bundle);
+
+        Assert.AreEqual("srv-1", (await _target.Projects.GetByIdAsync(first.ProjectId))!.ServerId);
+        Assert.AreEqual("srv-1", (await _target.Projects.GetByIdAsync(second.ProjectId))!.ServerId);
+        Assert.AreEqual(1, (await _target.Servers.GetAllAsync()).Count);
+    }
+
+    [TestMethod]
+    public async Task Import_ReusingAnExistingServer_DoesNotOverwriteItsSettings()
+    {
+        await SeedAsync();
+        await _target.Servers.SaveAsync(new ServerConfig
+        {
+            Id = "srv-1", Name = "Target name", Host = "10.0.0.5", EnvFile = "KEEP=this",
+        });
+
+        await new ProjectBundleImporter(_target).ImportAsync(await ExportAsync());
+
+        var server = (await _target.Servers.GetByIdAsync("srv-1"))!;
+        Assert.AreEqual("Target name", server.Name);
+        Assert.AreEqual("KEEP=this", server.EnvFile);
+    }
+
+    [TestMethod]
+    public async Task Import_WithAConflictingServerId_CreatesAFreshServer()
+    {
+        await SeedAsync();
+        await _target.Servers.SaveAsync(new ServerConfig { Id = "srv-1", Name = "Other box", Host = "10.9.9.9" });
+
+        var outcome = await new ProjectBundleImporter(_target).ImportAsync(await ExportAsync());
+        var serverId = (await _target.Projects.GetByIdAsync(outcome.ProjectId))!.ServerId;
+
+        Assert.AreNotEqual("srv-1", serverId);
+        Assert.AreEqual(2, (await _target.Servers.GetAllAsync()).Count);
+    }
+
+    [TestMethod]
+    public async Task Import_RestoresSecretsKeyFilesAndTheManagedKey()
+    {
+        await SeedAsync();
+        var keyPath = _source.SshKeys.GetPrivateKeyPath("app");
+        Directory.CreateDirectory(Path.GetDirectoryName(keyPath)!);
+        File.WriteAllText(keyPath, "MANAGED-PRIVATE-KEY");
+        File.WriteAllText(Path.ChangeExtension(keyPath, ".pub"), "ssh-ed25519 AAAA test");
+        await _source.Servers.SaveAsync((await _source.Servers.GetByIdAsync("srv-1"))! with
+        {
+            SshKeyPath = keyPath, ManagedSshKey = true, ManagedSshKeyAuthorized = true,
+        });
+
+        var outcome = await new ProjectBundleImporter(_target).ImportAsync(await ExportAsync(includeSecrets: true));
+
+        var project = (await _target.Projects.GetByIdAsync(outcome.ProjectId))!;
+        var server = (await _target.Servers.GetByIdAsync(project.ServerId))!;
+        Assert.AreEqual("svc-secret", project.Services[0].DockerPassword);
+        Assert.AreEqual("db-secret", project.Database!.RootPassword);
+        Assert.AreEqual("DB_PASSWORD=hunter2", server.EnvFile);
+        Assert.AreEqual("ghp_secret", (await _target.Credentials.GetByIdAsync(project.GitRepos[0].CredentialResourceId!.Value))!.Value);
+        Assert.AreEqual("PRIVATE-KEY-CONTENT", (await _target.KeyFiles.GetByIdAsync(KeyFileId))!.Content);
+        Assert.AreEqual("MANAGED-PRIVATE-KEY", File.ReadAllText(server.SshKeyPath));
+        Assert.IsTrue(server.ManagedSshKeyAuthorized);
+    }
+
+    [TestMethod]
+    public async Task Import_RestoresJitConfigUnderTheNewProjectIdWithMappedCredential()
+    {
+        await SeedAsync();
+        var outcome = await new ProjectBundleImporter(_target).ImportAsync(await ExportAsync(includeSecrets: true));
+        var jit = (await _target.Jit.GetAsync(outcome.ProjectId))!;
+
+        Assert.IsTrue(jit.Enabled);
+        Assert.AreEqual("JIT_SECRET=hidden", jit.EnvText);
+        Assert.AreEqual(
+            (await _target.Projects.GetByIdAsync(outcome.ProjectId))!.GitRepos[0].CredentialResourceId,
+            jit.CredentialResourceId);
     }
 
     [TestMethod]
@@ -349,7 +517,7 @@ public class ProjectBundleTests : IDisposable
         Assert.AreNotEqual("app", outcome.ProjectId);
         Assert.AreEqual("App (imported)", outcome.ProjectName);
         Assert.AreEqual("App", (await _source.Projects.GetByIdAsync("app"))!.Name);
-        Assert.AreEqual(2, (await _source.Servers.GetAllAsync()).Count);
+        Assert.AreEqual(1, (await _source.Servers.GetAllAsync()).Count, "the existing server is linked, not duplicated");
     }
 
     [TestMethod]

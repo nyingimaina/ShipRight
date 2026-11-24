@@ -43,6 +43,9 @@ public class IdentityRepository(IDatabaseHelper<Guid> db)
 
     private const string DeleteCompany = "DELETE FROM Company WHERE Id = @Id";
 
+    private const string SelectCompanyName =
+        "SELECT Name FROM Company WHERE Id = @Id AND Deleted = 0";
+
     private const string InsertLogin =
         "INSERT INTO ExternalLogin (Provider, ProviderKey, UserId, Created) " +
         "VALUES (@Provider, @ProviderKey, @UserId, @Now)";
@@ -110,6 +113,9 @@ public class IdentityRepository(IDatabaseHelper<Guid> db)
         await db.ExecuteAsync(DeleteCompany, new { Id = companyId });
         return false;
     }
+
+    public virtual async Task<string> GetCompanyNameAsync(Guid companyId) =>
+        await db.ExecuteScalarAsync<string>(SelectCompanyName, new { Id = companyId }) ?? string.Empty;
 
     public virtual Task AddLoginAsync(Guid userId, string provider, string providerKey) =>
         db.ExecuteAsync(InsertLogin, new { Provider = provider, ProviderKey = providerKey, UserId = userId, Now = DateTime.UtcNow });

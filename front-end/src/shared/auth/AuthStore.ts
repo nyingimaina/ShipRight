@@ -7,6 +7,8 @@ export interface User {
   email: string;
   name: string;
   companyId: string;
+  /** Filled from the server session; optional because older sessions may not carry it. */
+  companyName?: string;
   role: Role;
   mustChangePassword: boolean;
 }

@@ -34,6 +34,7 @@ public class RoleAccessRulesTests
     [DataRow("GET", "/api/servers", AppRoles.Viewer)]
     [DataRow("GET", "/api/resources/scripts", AppRoles.Viewer)]
     [DataRow("GET", "/api/auth/me", AppRoles.Viewer)]
+    [DataRow("GET", "/api/system/stats", AppRoles.Viewer)]
     // Operator: build and deploy
     [DataRow("POST", "/api/builds/start", AppRoles.Operator)]
     [DataRow("POST", "/api/builds/abc/deploy", AppRoles.Operator)]
@@ -125,6 +126,7 @@ public class RoleAccessRulesTests
         Assert.IsTrue(RoleAccessRules.AllowedWhilePasswordChangeIsPending("/api/auth/change-password"));
         Assert.IsTrue(RoleAccessRules.AllowedWhilePasswordChangeIsPending("/api/auth/me"));
         Assert.IsTrue(RoleAccessRules.AllowedWhilePasswordChangeIsPending("/api/auth/logout"));
+        Assert.IsTrue(RoleAccessRules.AllowedWhilePasswordChangeIsPending("/api/system/stats"));
         Assert.IsFalse(RoleAccessRules.AllowedWhilePasswordChangeIsPending("/api/projects"));
         Assert.IsFalse(RoleAccessRules.AllowedWhilePasswordChangeIsPending("/api/builds/start"));
     }

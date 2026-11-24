@@ -19,6 +19,7 @@ import ThemeToggle from "@/shared/theme/ThemeToggle";
 import { authApi, useAuthStore } from "@/shared/auth";
 import styles from "./Styles/AppShell.module.css";
 import { useServerVersion } from "@/shared/serverInfo";
+import { useInRootShell } from "@/shared/layout/ShellContext";
 
 interface Props {
   children: React.ReactNode;
@@ -30,6 +31,10 @@ export default function AppShell({ children }: Props) {
   const role = useAuthStore((s) => s.user?.role);
   const isAdmin = role === 'Admin';
   const version = useServerVersion();
+  const inRootShell = useInRootShell();
+
+  // Pages still wrap themselves in AppShell; under the root layout that would draw a second sidebar.
+  if (inRootShell) return <>{children}</>;
 
   const handleLogout = async () => {
     // Desktop mode has no sign-in endpoints; the call fails harmlessly and we clear anyway.

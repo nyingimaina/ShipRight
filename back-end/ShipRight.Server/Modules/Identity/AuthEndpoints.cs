@@ -38,7 +38,7 @@ public static class AuthEndpoints
     }
 
     private static async Task<IResult> LoginAsync(
-        LoginRequest request, UserManager<AppUser> users, SignInManager<AppUser> signIn)
+        LoginRequest request, UserManager<AppUser> users, SignInManager<AppUser> signIn, IdentityRepository identity)
     {
         var email = IdentityValidation.Trimmed(request.Email);
         if (email.Length == 0 || string.IsNullOrEmpty(request.Password))
@@ -56,11 +56,11 @@ public static class AuthEndpoints
         if (!user.IsActive) return Results.Json(new { message = SwitchedOff, isError = true }, statusCode: 403);
 
         await signIn.SignInAsync(user, isPersistent: true);
-        return Results.Ok(ToSession(user));
+        return Results.Ok(await ToSessionAsync(user, identity));
     }
 
     private static async Task<IResult> RegisterAsync(
-        RegisterRequest request, RegistrationService registration, SignInManager<AppUser> signIn)
+        RegisterRequest request, RegistrationService registration, SignInManager<AppUser> signIn, IdentityRepository identity)
     {
         var errors = IdentityValidation.Register(request);
         if (errors.Count > 0) return Results.ValidationProblem(errors);
@@ -74,7 +74,7 @@ public static class AuthEndpoints
             });
 
         await signIn.SignInAsync(user, isPersistent: true);
-        return Results.Ok(ToSession(user));
+        return Results.Ok(await ToSessionAsync(user, identity));
     }
 
     private static async Task<IResult> ForgotPasswordAsync(
@@ -130,14 +130,15 @@ public static class AuthEndpoints
         return Results.Ok(new { message = "Signed out." });
     }
 
-    private static async Task<IResult> MeAsync(ClaimsPrincipal principal, UserManager<AppUser> users)
+    private static async Task<IResult> MeAsync(ClaimsPrincipal principal, UserManager<AppUser> users, IdentityRepository identity)
     {
         var user = await users.GetUserAsync(principal);
-        return user is { IsActive: true } ? Results.Ok(ToSession(user)) : Unauthorized("Sign in required.");
+        return user is { IsActive: true } ? Results.Ok(await ToSessionAsync(user, identity)) : Unauthorized("Sign in required.");
     }
 
     private static async Task<IResult> ChangePasswordAsync(
-        ChangePasswordRequest request, ClaimsPrincipal principal, UserManager<AppUser> users, SignInManager<AppUser> signIn)
+        ChangePasswordRequest request, ClaimsPrincipal principal, UserManager<AppUser> users,
+        SignInManager<AppUser> signIn, IdentityRepository identity)
     {
         var errors = IdentityValidation.NewPassword("newPassword", request.NewPassword);
         if (string.IsNullOrEmpty(request.CurrentPassword)) errors["currentPassword"] = ["Enter your current password."];
@@ -156,11 +157,13 @@ public static class AuthEndpoints
         user.MustChangePassword = false;
         await users.UpdateAsync(user);
         await signIn.RefreshSignInAsync(user);
-        return Results.Ok(ToSession(user));
+        return Results.Ok(await ToSessionAsync(user, identity));
     }
 
-    internal static SessionDto ToSession(AppUser user) =>
-        new(new SessionUserDto(user.Id, user.Email, user.Name, user.CompanyId, user.Role, user.MustChangePassword));
+    internal static async Task<SessionDto> ToSessionAsync(AppUser user, IdentityRepository identity) =>
+        new(new SessionUserDto(
+            user.Id, user.Email, user.Name, user.CompanyId, user.Role, user.MustChangePassword,
+            await identity.GetCompanyNameAsync(user.CompanyId)));
 
     private static IResult Unauthorized(string message) =>
         Results.Json(new { message, isError = true }, statusCode: 401);

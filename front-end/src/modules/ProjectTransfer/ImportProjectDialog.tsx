@@ -10,7 +10,7 @@ interface Props {
 
 const COUNT_LABELS: Record<string, string> = {
   services: 'services', servers: 'servers', registries: 'registries', awsProfiles: 'AWS profiles',
-  credentials: 'credentials', scripts: 'scripts', pipelines: 'pipelines',
+  credentials: 'credentials', keyFiles: 'saved key files', scripts: 'scripts', pipelines: 'pipelines', jit: 'build-on-server config',
 };
 
 const overlay: React.CSSProperties = {
@@ -22,6 +22,11 @@ const box: React.CSSProperties = {
   padding: 24, width: 560, maxWidth: '92vw', maxHeight: '86vh', overflowY: 'auto',
 };
 const muted: React.CSSProperties = { fontSize: 12, color: '#A8B8CC' };
+const field: React.CSSProperties = {
+  width: '100%', boxSizing: 'border-box', marginTop: 4, padding: 8, borderRadius: 6,
+  border: '1px solid rgba(255,255,255,0.2)', background: '#0D1627', color: '#F0F2F5',
+};
+const label: React.CSSProperties = { ...muted, display: 'block', marginTop: 12 };
 
 const errorMessage = (e: unknown, fallback: string) => (e as { message?: string })?.message ?? fallback;
 
@@ -40,15 +45,34 @@ function Warnings({ warnings }: { warnings: IBundleWarning[] }) {
 export default function ImportProjectDialog({ onClose, onImported }: Props) {
   const [file, setFile] = useState<File | null>(null);
   const [inspection, setInspection] = useState<IBundleInspection | null>(null);
+  const [passphrase, setPassphrase] = useState('');
+  const [targetRoot, setTargetRoot] = useState('');
   const [outcome, setOutcome] = useState<IImportOutcome | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+
+  const headers = () => {
+    const h: Record<string, string> = {};
+    if (passphrase) h['X-ShipRight-Passphrase'] = passphrase;
+    if (targetRoot.trim()) h['X-ShipRight-Target-Root'] = targetRoot.trim();
+    return h;
+  };
+  const inspectHeaders = () => {
+    const h: Record<string, string> = {};
+    if (passphrase) h['X-ShipRight-Passphrase'] = passphrase;
+    return h;
+  };
+  const withHeaders = <T,>(path: string, h: Record<string, string>) =>
+    Object.keys(h).length ? api.upload<T>(path, file!, h) : api.upload<T>(path, file!);
 
   const choose = async (chosen: File | undefined) => {
     if (!chosen) return;
     setFile(chosen); setInspection(null); setError(''); setBusy(true);
     try {
-      setInspection(await api.upload<IBundleInspection>('/api/projects/import/inspect', chosen));
+      const h = inspectHeaders();
+      setInspection(Object.keys(h).length
+        ? await api.upload<IBundleInspection>('/api/projects/import/inspect', chosen, h)
+        : await api.upload<IBundleInspection>('/api/projects/import/inspect', chosen));
     } catch (e) {
       setError(errorMessage(e, 'Could not read that file.'));
     } finally { setBusy(false); }
@@ -58,13 +82,15 @@ export default function ImportProjectDialog({ onClose, onImported }: Props) {
     if (!file) return;
     setBusy(true); setError('');
     try {
-      const result = await api.upload<IImportOutcome>('/api/projects/import', file);
+      const result = await withHeaders<IImportOutcome>('/api/projects/import', headers());
       setOutcome(result);
       onImported(result);
     } catch (e) {
       setError(errorMessage(e, 'Import failed.'));
     } finally { setBusy(false); }
   };
+
+  const needsRoot = Boolean(inspection?.requiredInputs?.length || inspection?.relocatedPaths?.length);
 
   return (
     <div style={overlay} role="dialog" aria-label="Import project">
@@ -84,10 +110,15 @@ export default function ImportProjectDialog({ onClose, onImported }: Props) {
           <>
             <label style={{ display: 'block', marginBottom: 12 }}>
               <span style={{ ...muted, display: 'block', marginBottom: 4 }}>
-                Choose a ShipRight project export (.zip). Nothing is changed until you confirm.
+                Choose a ShipRight export (.zip) or protected export (.shrsec). Nothing is changed until you confirm.
               </span>
-              <input type="file" accept=".zip,application/zip" aria-label="Export file"
+              <input type="file" accept=".zip,.shrsec,application/zip,application/octet-stream" aria-label="Export file"
                 onChange={e => choose(e.target.files?.[0])} disabled={busy} />
+            </label>
+            <label style={label}>
+              Bundle passphrase (for protected exports)
+              <input aria-label="Bundle passphrase" type="password" style={field} value={passphrase}
+                onChange={e => setPassphrase(e.target.value)} disabled={busy} autoComplete="off" />
             </label>
 
             {busy && !inspection && <p style={muted}>Reading…</p>}
@@ -96,11 +127,25 @@ export default function ImportProjectDialog({ onClose, onImported }: Props) {
             {inspection && (
               <>
                 <h3 style={{ marginBottom: 4 }}>{inspection.projectName}</h3>
+                {inspection.secretsIncluded && (
+                  <p style={{ color: '#C9A84C' }}>
+                    This bundle contains live secrets, saved keys and the managed SSH key. Keep the file and its passphrase safe.
+                  </p>
+                )}
                 {Object.entries(inspection.counts).length > 0 && (
                   <p style={muted}>
                     Contains {Object.entries(inspection.counts).filter(([, n]) => n > 0)
                       .map(([k, n]) => `${n} ${COUNT_LABELS[k] ?? k}`).join(', ')}.
                   </p>
+                )}
+                {needsRoot && (
+                  <label style={label}>
+                    Destination project root
+                    <input aria-label="Destination project root" style={field} value={targetRoot}
+                      onChange={e => setTargetRoot(e.target.value)} disabled={busy}
+                      placeholder="e.g. /opt/app or C:\apps\myapp" />
+                    <span>The export uses portable path tokens. Enter the folder this project lives in on this machine.</span>
+                  </label>
                 )}
                 {inspection.errors.map((m, i) => <p key={i} style={{ color: '#E5604D' }}>{m}</p>)}
                 <p style={{ ...muted, marginBottom: 0 }}>Things to check after importing:</p>

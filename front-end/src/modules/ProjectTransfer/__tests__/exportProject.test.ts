@@ -37,6 +37,35 @@ describe('exportProject', () => {
     expect(name).toBe('app-shipright-export.zip');
   });
 
+  it('sends the acknowledgement and passphrase when secrets are requested', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true, status: 200, headers: { get: () => null }, blob: async () => new Blob(['secret']),
+    }) as any;
+    let name = '';
+    jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { name = this.download; });
+
+    await exportProject('app', { includeSecrets: true, passphrase: 'correct horse' });
+
+    const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(url).toBe('/api/projects/app/export?includeSecrets=true');
+    expect(init.headers).toEqual(expect.objectContaining({
+      'X-ShipRight-Secrets-Acknowledged': 'true',
+      'X-ShipRight-Passphrase': 'correct horse',
+    }));
+    expect(name).toBe('app-shipright-secret-export.shrsec');
+  });
+
+  it('never sends the acknowledgement or passphrase on a standard export', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true, status: 200, headers: { get: () => null }, blob: async () => new Blob(['zip']),
+    }) as any;
+
+    await exportProject('app');
+
+    const init = (global.fetch as jest.Mock).mock.calls[0][1];
+    expect(init.headers).toEqual({});
+  });
+
   it('throws the server message when the export fails', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: false, status: 404, json: async () => ({ message: "Project 'x' not found." }),

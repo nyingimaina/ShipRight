@@ -42,6 +42,14 @@ describe('AuthGuard', () => {
     expect(meMock).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps a deep link such as /servers/ instead of redirecting to /projects', async () => {
+    meMock.mockResolvedValue({ user: sessionUser });
+    renderGuard('/servers/');
+
+    expect(await screen.findByTestId('child')).toBeInTheDocument();
+    expect(mockRouter.replace).not.toHaveBeenCalled();
+  });
+
   it('checks the session once the server mode resolves from null to cloud', async () => {
     mockMode = null;
     meMock.mockResolvedValue({ user: sessionUser });

@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google';
 import { Toaster } from 'react-hot-toast';
 import { ThemeProvider } from '@/shared/theme/ThemeContext';
 import AuthGuard from '@/shared/auth/AuthGuard';
+import RootLayout from '@/shared/layout/RootLayout';
 import '@/styles/globals.css';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
@@ -12,7 +13,9 @@ export default function App({ Component, pageProps }: AppProps) {
     <ThemeProvider>
       <div className={inter.className}>
         <AuthGuard>
-          <Component {...pageProps} />
+          <RootLayout>
+            <Component {...pageProps} />
+          </RootLayout>
         </AuthGuard>
         <Toaster position="bottom-right" />
       </div>

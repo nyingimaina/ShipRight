@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json;
+using ShipRight.Modules.JitDeploy;
 using ShipRight.Modules.Projects;
 using ShipRight.Modules.Resources.Models;
 
@@ -16,7 +17,7 @@ public static class ProjectBundleReader
     private const long MaxUncompressedBytes = 50L * 1024 * 1024;
 
     private static readonly Regex ResourceEntry =
-        new(@"^resources/(registries|aws-profiles|credentials|scripts|pipelines)/[0-9a-fA-F\-]{36}\.json$", RegexOptions.Compiled);
+        new(@"^resources/(registries|aws-profiles|credentials|scripts|pipelines|key-files)/[0-9a-fA-F\-]{36}\.json$", RegexOptions.Compiled);
 
     public static BundleManifest ReadManifest(byte[] bytes)
     {
@@ -42,6 +43,10 @@ public static class ProjectBundleReader
             Manifest = manifest,
             Project = project,
             Server = manifest.Files.Contains("server.json") ? Load<ServerConfig>(zip, "server.json") : null,
+            ManagedKey = manifest.Files.Contains("ssh/managed-key.json")
+                ? Load<ManagedKeyBundle>(zip, "ssh/managed-key.json")
+                : null,
+            Jit = manifest.Files.Contains("jit.json") ? Load<JitDeployConfig>(zip, "jit.json") : null,
         };
         foreach (var name in manifest.Files.Where(f => ResourceEntry.IsMatch(f)))
         {
@@ -52,6 +57,7 @@ public static class ProjectBundleReader
                 case "credentials": bundle.Credentials.Add(Load<CredentialResource>(zip, name)!); break;
                 case "scripts": bundle.Scripts.Add(Load<ScriptResource>(zip, name)!); break;
                 case "pipelines": bundle.Pipelines.Add(Load<PipelineResource>(zip, name)!); break;
+                case "key-files": bundle.KeyFiles.Add(Load<KeyFileResource>(zip, name)!); break;
             }
         }
         return bundle;

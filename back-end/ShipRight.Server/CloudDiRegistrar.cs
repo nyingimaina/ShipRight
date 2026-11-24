@@ -16,6 +16,7 @@ using ShipRight.Modules.Database.Providers;
 using ShipRight.Modules.Projects;
 using ShipRight.Modules.RemoteHost;
 using ShipRight.Modules.Resources;
+using ShipRight.Modules.System;
 using ShipRight.Modules.System.WslDisk;
 using ShipRight.Modules.Resources.Stores;
 using ShipRight.Modules.Scheduler;
@@ -116,6 +117,7 @@ public static class CloudDiRegistrar
         services.AddSingleton<DatabaseOrchestrator>();
         services.AddSingleton<IRemoteHostProvider, LinuxSshProvider>();
         services.AddSingleton<IMonitoringProvider, LinuxSshMonitoringProvider>();
+        services.AddSingleton<IHostStatsProvider, HostStatsService>();
         services.AddSingleton<SshKeyStore>(_ => new SshKeyStore(DataDirectory.Resolve()));
         services.AddSingleton<IAwsCredentialsReader>(sp => new AwsCredentialsReader(
             sp.GetService<IProcessRunner>()));

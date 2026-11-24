@@ -10,6 +10,7 @@ import ProjectPane from '@/modules/ProjectConfig/QuickSetup/ProjectPane';
 import AdoptLauncher from '@/modules/AdoptSetup/AdoptLauncher';
 import ProjectDetailPanel from '@/modules/ProjectDetail/ProjectDetailPanel';
 import ImportProjectDialog from '@/modules/ProjectTransfer/ImportProjectDialog';
+import ExportProjectDialog from '@/modules/ProjectTransfer/ExportProjectDialog';
 import { exportProject } from '@/modules/ProjectTransfer/exportProject';
 import { api } from '@/shared/ApiService';
 import { IProject } from '@/shared/types/IProject';
@@ -33,6 +34,7 @@ export default function ProjectList() {
   const [loading, setLoading] = useState(true);
   const [wizardTarget, setWizardTarget] = useState<WizardTarget>(undefined);
   const [importOpen, setImportOpen] = useState(false);
+  const [secretExport, setSecretExport] = useState<IProject | null>(null);
 
   const detailId = router.query.detail as string | undefined;
 
@@ -149,6 +151,7 @@ export default function ProjectList() {
                     <OverflowMenu items={[
                       { content: 'Edit', onClick: () => setWizardTarget(p) },
                       { content: 'Export', onClick: () => handleExport(p.id, p.name) },
+                      { content: 'Export with secrets…', onClick: () => setSecretExport(p) },
                       { content: 'Delete', onClick: () => handleDelete(p.id, p.name) },
                     ]} />
                   </div>
@@ -180,6 +183,14 @@ export default function ProjectList() {
           <ImportProjectDialog
             onClose={() => setImportOpen(false)}
             onImported={() => load()}
+          />
+        )}
+        {secretExport && (
+          <ExportProjectDialog
+            projectId={secretExport.id!}
+            projectName={secretExport.name}
+            onClose={() => setSecretExport(null)}
+            onExported={() => toast.success(`'${secretExport.name}' exported with secrets. Keep the file and passphrase safe.`)}
           />
         )}
       </AppShell>

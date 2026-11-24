@@ -74,6 +74,42 @@ describe('ImportProjectDialog', () => {
     expect(screen.getByText(/build context is 'D:\work\api'/)).toBeInTheDocument();
   });
 
+  it('uses the passphrase for both inspection and import of a protected bundle', async () => {
+    upload.mockResolvedValueOnce(inspection({
+      secretsIncluded: true,
+      warnings: [{ severity: 'warning', code: 'secrets-included', location: 'bundle', message: 'Contains live secrets.' }],
+    }));
+    upload.mockResolvedValueOnce({ projectId: 'app-2', projectName: 'App 2', warnings: [] });
+    render(<ImportProjectDialog onClose={jest.fn()} onImported={jest.fn()} />);
+
+    fireEvent.change(screen.getByLabelText('Bundle passphrase'), { target: { value: 's3cret' } });
+    choose();
+
+    await waitFor(() => expect(screen.getByText('Contains live secrets.')).toBeInTheDocument());
+    expect(upload).toHaveBeenCalledWith('/api/projects/import/inspect', file, { 'X-ShipRight-Passphrase': 's3cret' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Import project' }));
+    await waitFor(() => expect(upload).toHaveBeenLastCalledWith('/api/projects/import', file, { 'X-ShipRight-Passphrase': 's3cret' }));
+  });
+
+  it('asks for a destination root when the export had machine-specific paths', async () => {
+    upload.mockResolvedValueOnce(inspection({
+      requiredInputs: ['project.services[0].buildContextPath'],
+      relocatedPaths: ['{ProjectRoot}/api'],
+    }));
+    upload.mockResolvedValueOnce({ projectId: 'app-3', projectName: 'App 3', warnings: [] });
+    render(<ImportProjectDialog onClose={jest.fn()} onImported={jest.fn()} />);
+
+    choose();
+    const root = await screen.findByLabelText('Destination project root');
+    fireEvent.change(root, { target: { value: '/opt/app' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Import project' }));
+
+    await waitFor(() => expect(upload).toHaveBeenLastCalledWith('/api/projects/import', file, {
+      'X-ShipRight-Target-Root': '/opt/app',
+    }));
+  });
+
   it('closes from the Cancel button', () => {
     const onClose = jest.fn();
     render(<ImportProjectDialog onClose={onClose} onImported={jest.fn()} />);

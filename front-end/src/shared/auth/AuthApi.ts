@@ -5,6 +5,7 @@ export interface SessionUser {
   email: string;
   name: string;
   companyId: string;
+  companyName?: string;
   role: Role;
   mustChangePassword: boolean;
 }

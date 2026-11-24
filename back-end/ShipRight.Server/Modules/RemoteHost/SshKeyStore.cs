@@ -31,6 +31,17 @@ public class SshKeyStore
         return (await File.ReadAllTextAsync(path)).Trim();
     }
 
+    /// <summary>Writes an imported managed key pair into this machine's key store.</summary>
+    public async Task SaveKeyPairAsync(string projectId, string privateKey, string? publicKey)
+    {
+        Directory.CreateDirectory(SshDir);
+        var keyPath = GetPrivateKeyPath(projectId);
+        await File.WriteAllTextAsync(keyPath, privateKey);
+        RestrictKeyPermissions(keyPath);
+        if (!string.IsNullOrEmpty(publicKey))
+            await File.WriteAllTextAsync(PublicKeyPath(projectId), publicKey.Trim());
+    }
+
     public async Task GenerateAsync(string projectId)
     {
         Directory.CreateDirectory(SshDir);

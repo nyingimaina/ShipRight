@@ -12,7 +12,7 @@ namespace ShipRight.Modules.Transfer;
 /// manifest instead lists each one omitted and every machine-specific path, so the person importing
 /// knows what to re-enter or fix.
 /// </summary>
-public class ProjectBundleExporter(TransferStores stores, string shipRightVersion)
+public class ProjectBundleExporter(TransferStores stores, string shipRightVersion, bool includeSecrets = false)
 {
     public async Task<byte[]?> ExportAsync(string projectId)
     {
@@ -59,12 +59,12 @@ public class ProjectBundleExporter(TransferStores stores, string shipRightVersio
                 else awsProfiles[awsId] = aws;
             }
         }
-        foreach (var repo in project.GitRepos.Where(g => g.CredentialResourceId is not null))
+        for (var i = 0; i < project.GitRepos.Count; i++)
         {
-            var id = repo.CredentialResourceId!.Value;
-            if (credentials.ContainsKey(id)) continue;
+            var repo = project.GitRepos[i];
+            if (repo.CredentialResourceId is not { } id || credentials.ContainsKey(id)) continue;
             var cred = await stores.Credentials.GetByIdAsync(id);
-            if (cred is null) warnings.Add(Dangling("credential", id, $"git repo '{repo.RepoPath}'"));
+            if (cred is null) warnings.Add(Dangling("credential", id, $"git repo {i + 1}"));
             else credentials[id] = cred;
         }
         if (server is not null)
@@ -76,6 +76,22 @@ public class ProjectBundleExporter(TransferStores stores, string shipRightVersio
         foreach (var p in await stores.Pipelines.GetByProjectAsync(project.Id)) await AddPipelineAsync(p.Id, "project");
         foreach (var s in await stores.Scripts.GetByProjectAsync(project.Id)) scripts[s.Id] = s;
 
+        List<KeyFileResource> keyFiles = [];
+        ManagedKeyBundle? managedKey = null;
+        if (includeSecrets)
+        {
+            keyFiles = (await stores.KeyFiles.GetPageAsync(1, int.MaxValue)).Items;
+            if (server is { ManagedSshKey: true } && !string.IsNullOrEmpty(server.SshKeyPath) && File.Exists(server.SshKeyPath))
+            {
+                var privateKey = await File.ReadAllTextAsync(server.SshKeyPath);
+                var publicKeyPath = Path.ChangeExtension(server.SshKeyPath, ".pub");
+                var publicKey = publicKeyPath is not null && File.Exists(publicKeyPath)
+                    ? await File.ReadAllTextAsync(publicKeyPath)
+                    : null;
+                managedKey = new ManagedKeyBundle(privateKey, publicKey);
+            }
+        }
+
         warnings.AddRange(BundleWarnings.ForProject(project));
         if (server is not null) warnings.AddRange(BundleWarnings.ForServer(server));
         foreach (var r in registries.Values) warnings.AddRange(BundleWarnings.ForRegistry(r));
@@ -84,13 +100,48 @@ public class ProjectBundleExporter(TransferStores stores, string shipRightVersio
         foreach (var s in scripts.Values) warnings.AddRange(BundleWarnings.ForScript(s));
         foreach (var p in pipelines.Values) warnings.AddRange(BundleWarnings.ForPipeline(p));
 
-        files["project.json"] = BundleSecrets.Strip(project);
-        if (server is not null) files["server.json"] = BundleSecrets.Strip(server);
-        foreach (var r in registries.Values) files[$"resources/registries/{r.Id}.json"] = BundleSecrets.Strip(r);
-        foreach (var a in awsProfiles.Values) files[$"resources/aws-profiles/{a.Id}.json"] = BundleSecrets.Strip(a);
-        foreach (var c in credentials.Values) files[$"resources/credentials/{c.Id}.json"] = BundleSecrets.Strip(c);
-        foreach (var s in scripts.Values) files[$"resources/scripts/{s.Id}.json"] = s;
-        foreach (var p in pipelines.Values) files[$"resources/pipelines/{p.Id}.json"] = p;
+        var jit = await stores.Jit.GetAsync(project.Id);
+        if (jit is { EnvText.Length: > 0 })
+            warnings.Add(new BundleWarning
+            {
+                Code = "secret-omitted", Location = "build-on-server settings",
+                Message = "The build-on-server environment text is never exported. Enter it again after importing.",
+            });
+
+        var portability = new BundlePortability();
+        var root = BundlePathRelocator.DetectRoot(project);
+        var portableProject = BundlePathRelocator.Relocate(project, root, portability, stripUrlCredentials: !includeSecrets);
+        var portableServer = server is null ? null : BundlePathRelocator.Relocate(server, root, portability, stripUrlCredentials: !includeSecrets);
+        var portableScripts = scripts.Values.Select(s => BundlePathRelocator.Relocate(s, root, portability)).ToList();
+        var portablePipelines = pipelines.Values.Select(p => BundlePathRelocator.Relocate(p, root, portability)).ToList();
+
+        if (includeSecrets)
+        {
+            warnings.RemoveAll(w => w.Code == "secret-omitted");
+            if (managedKey is not null) warnings.RemoveAll(w => w.Code == "ssh-key-not-transferred");
+            warnings.Add(new BundleWarning
+            {
+                Severity = "warning", Code = "secrets-included", Location = "bundle",
+                Message = "This export contains live secrets, saved key files and the managed SSH key. Keep the passphrase and the file safe.",
+            });
+        }
+
+        files["project.json"] = includeSecrets ? portableProject : BundleSecrets.Strip(portableProject);
+        if (portableServer is not null) files["server.json"] = includeSecrets ? portableServer : BundleSecrets.Strip(portableServer);
+        foreach (var r in registries.Values)
+            files[$"resources/registries/{r.Id}.json"] = includeSecrets ? r : BundleSecrets.Strip(r);
+        foreach (var a in awsProfiles.Values)
+            files[$"resources/aws-profiles/{a.Id}.json"] = includeSecrets ? a : BundleSecrets.Strip(a);
+        foreach (var c in credentials.Values)
+            files[$"resources/credentials/{c.Id}.json"] = includeSecrets ? c : BundleSecrets.Strip(c);
+        foreach (var s in portableScripts) files[$"resources/scripts/{s.Id}.json"] = includeSecrets ? s : BundleSecrets.Strip(s);
+        foreach (var p in portablePipelines) files[$"resources/pipelines/{p.Id}.json"] = includeSecrets ? p : BundleSecrets.Strip(p);
+        if (jit is not null) files["jit.json"] = includeSecrets ? jit : BundleSecrets.Strip(jit);
+        if (includeSecrets)
+        {
+            foreach (var k in keyFiles) files[$"resources/key-files/{k.Id}.json"] = k;
+            if (managedKey is not null) files["ssh/managed-key.json"] = managedKey;
+        }
 
         var manifest = new BundleManifest
         {
@@ -100,6 +151,8 @@ public class ProjectBundleExporter(TransferStores stores, string shipRightVersio
             ProjectName = project.Name,
             Files = files.Keys.OrderBy(k => k, StringComparer.Ordinal).ToList(),
             Warnings = warnings,
+            SecretsIncluded = includeSecrets,
+            Portability = portability,
         };
 
         using var ms = new MemoryStream();
