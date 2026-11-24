@@ -80,6 +80,8 @@ export default function ServersPage() {
       <AppShell>
         <ZestResponsiveLayout
           sidePaneWidth="480px"
+          mobileBreakpointPx={720}
+          enableBounceAnimation
           closeOnDesktopOverlayClick
           sidePane={{
             visible: paneOpen,
@@ -90,16 +92,16 @@ export default function ServersPage() {
             ) : undefined,
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+          <header className={styles.header}>
             <h1 className={styles.heading}>Servers</h1>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div className={styles.actions}>
               <ServerWizardLauncher onFinished={load} />
               <ZestButton onClick={openNew}
                 zest={{ visualOptions: { variant: 'standard' }, semanticType: 'add' }}>
                 New Server
               </ZestButton>
             </div>
-          </div>
+          </header>
 
           <div className={styles.grid}>
             {loading && [0, 1, 2].map(i => (

@@ -1,8 +1,10 @@
 import Head from 'next/head';
-import { useEffect, useState, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import ZestButton from 'jattac.libs.web.zest-button';
 import AppShell from '@/modules/AppShell/AppShell';
+import BackupScheduleDialog from '@/modules/Backups/BackupScheduleDialog';
 import { api } from '@/shared/ApiService';
+import { IProject } from '@/shared/types/IProject';
 import styles from './Styles/Backups.module.css';
 
 interface ScheduleJob {
@@ -67,29 +69,38 @@ export default function BackupsPage() {
   const [summary, setSummary] = useState<BackupSummary | null>(null);
   const [inflight, setInflight] = useState<InflightResponse['inflight']>(null);
   const [overflow, setOverflow] = useState<OverflowRecord[]>([]);
+  const [projects, setProjects] = useState<IProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
+  const [scheduleOpen, setScheduleOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [s, h, sm, i, o] = await Promise.all([
+      const [s, h, sm, i, o, p] = await Promise.all([
         api.get<SchedulesResponse>('/api/scheduler/schedules').catch(() => ({ jobs: [], count: 0, capturedAt: '' })),
         api.get<HistoryResponse>('/api/scheduler/history?limit=50').catch(() => ({ records: [], count: 0 })),
         api.get<BackupSummary>('/api/scheduler/history/summary').catch(() => null),
         api.get<InflightResponse>('/api/scheduler/inflight').catch(() => ({ inflight: null })),
         api.get<OverflowResponse>('/api/scheduler/overflow').catch(() => ({ items: [], count: 0 })),
+        api.get<IProject[]>('/api/projects').catch(() => []),
       ]);
       setSchedules(s.jobs);
       setHistory(h.records);
       setSummary(sm);
       setInflight(i.inflight);
       setOverflow(o.items);
+      setProjects(p);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const databaseProjects = useMemo(
+    () => projects.filter((p) => p.database?.databaseName),
+    [projects],
+  );
 
   const deleteSchedule = async (scheduleId: string) => {
     await api.delete(`/api/scheduler/schedules/${scheduleId}`);
@@ -109,14 +120,28 @@ export default function BackupsPage() {
     <>
       <Head><title>ShipRight — Backups</title></Head>
       <AppShell>
-        <h1 className={styles.heading}>Automated Backups</h1>
-        <p className={styles.sub}>Scheduled database backups, history, and overflow recovery.</p>
+        <header className={styles.header}>
+          <div>
+            <h1 className={styles.heading}>Automated Backups</h1>
+            <p className={styles.sub}>Scheduled database backups, history, and overflow recovery.</p>
+          </div>
+          <div className={styles.actions}>
+            <ZestButton onClick={load} zest={{ buttonStyle: 'outline', semanticType: 'refresh' }}>
+              {loading ? 'Loading…' : 'Refresh'}
+            </ZestButton>
+            <ZestButton
+              onClick={() => setScheduleOpen(true)}
+              disabled={databaseProjects.length === 0}
+              zest={{ semanticType: 'add', visualOptions: { variant: 'standard' } }}
+            >
+              Schedule backup
+            </ZestButton>
+          </div>
+        </header>
 
-        <div className={styles.refreshRow}>
-          <ZestButton onClick={load} zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}>
-            {loading ? 'Loading…' : 'Refresh'}
-          </ZestButton>
-        </div>
+        {!loading && databaseProjects.length === 0 && (
+          <p className={styles.hint}>Add a database to a project before scheduling backups.</p>
+        )}
 
         {inflight && (
           <div className={styles.inflightBanner}>
@@ -156,41 +181,54 @@ export default function BackupsPage() {
         <div className={styles.section}>
           <div className={styles.sectionTitle}>Schedules</div>
           {schedules.length === 0 ? (
-            <div className={styles.empty}>No backup schedules configured.</div>
+            <div className={styles.emptyState}>
+              <div className={styles.emptyTitle}>No backup schedules configured.</div>
+              <p className={styles.emptyText}>Pick a project with a database and choose how often ShipRight should back it up.</p>
+              {databaseProjects.length > 0 && (
+                <ZestButton
+                  onClick={() => setScheduleOpen(true)}
+                  zest={{ semanticType: 'add', visualOptions: { variant: 'standard' } }}
+                >
+                  Schedule your first backup
+                </ZestButton>
+              )}
+            </div>
           ) : (
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th>Project</th>
-                  <th>Schedule</th>
-                  <th>Last Fired</th>
-                  <th>Next Fire</th>
-                  <th>Fired</th>
-                  <th>Missed</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {schedules.map(s => (
-                  <tr key={s.scheduleId}>
-                    <td>{s.jobName.replace('Backup-', '')}</td>
-                    <td style={{ color: '#A8B8CC', fontSize: 12 }}>{s.scheduleDescription}</td>
-                    <td style={{ color: '#637389', fontSize: 12 }}>{s.lastFiredAt ? ago(s.lastFiredAt) : '—'}</td>
-                    <td style={{ fontSize: 12 }}>{s.nextFireAt ? new Date(s.nextFireAt).toLocaleString() : '—'}</td>
-                    <td style={{ color: '#A8B8CC' }}>{s.totalFired}</td>
-                    <td style={{ color: s.totalMissed > 0 ? '#F44336' : '#637389' }}>{s.totalMissed}</td>
-                    <td>
-                      <div className={styles.scheduleActions}>
-                        <ZestButton onClick={() => deleteSchedule(s.scheduleId)}
-                          zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}>
-                          Remove
-                        </ZestButton>
-                      </div>
-                    </td>
+            <div className={styles.tableWrap}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Project</th>
+                    <th>Schedule</th>
+                    <th>Last Fired</th>
+                    <th>Next Fire</th>
+                    <th>Fired</th>
+                    <th>Missed</th>
+                    <th />
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {schedules.map(s => (
+                    <tr key={s.scheduleId}>
+                      <td>{s.jobName.replace('Backup-', '')}</td>
+                      <td style={{ color: '#A8B8CC', fontSize: 12 }}>{s.scheduleDescription}</td>
+                      <td style={{ color: '#637389', fontSize: 12 }}>{s.lastFiredAt ? ago(s.lastFiredAt) : '-'}</td>
+                      <td style={{ fontSize: 12 }}>{s.nextFireAt ? new Date(s.nextFireAt).toLocaleString() : '-'}</td>
+                      <td style={{ color: '#A8B8CC' }}>{s.totalFired}</td>
+                      <td style={{ color: s.totalMissed > 0 ? '#F44336' : '#637389' }}>{s.totalMissed}</td>
+                      <td>
+                        <div className={styles.scheduleActions}>
+                          <ZestButton onClick={() => deleteSchedule(s.scheduleId)}
+                            zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}>
+                            Remove
+                          </ZestButton>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
 
@@ -202,24 +240,26 @@ export default function BackupsPage() {
                 Replay All
               </ZestButton>
             </div>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th>Project</th>
-                  <th>Failed At</th>
-                  <th>Error</th>
-                </tr>
-              </thead>
-              <tbody>
-                {overflow.map((r, i) => (
-                  <tr key={i}>
-                    <td>{r.projectName}</td>
-                    <td style={{ color: '#637389', fontSize: 12 }}>{ago(r.failedAt)}</td>
-                    <td style={{ color: '#F44336', fontSize: 12, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.errorMessage}</td>
+            <div className={styles.tableWrap}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Project</th>
+                    <th>Failed At</th>
+                    <th>Error</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {overflow.map((r, i) => (
+                    <tr key={i}>
+                      <td>{r.projectName}</td>
+                      <td style={{ color: '#637389', fontSize: 12 }}>{ago(r.failedAt)}</td>
+                      <td style={{ color: '#F44336', fontSize: 12, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.errorMessage}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
@@ -238,39 +278,49 @@ export default function BackupsPage() {
           {filteredHistory.length === 0 ? (
             <div className={styles.empty}>No backup history yet.</div>
           ) : (
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th>Project</th>
-                  <th>Database</th>
-                  <th>Status</th>
-                  <th>Started</th>
-                  <th>Duration</th>
-                  <th>Size</th>
-                  <th>Error</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredHistory.map(r => (
-                  <tr key={r.id}>
-                    <td>{r.projectName}</td>
-                    <td style={{ color: '#A8B8CC', fontSize: 12 }}>{r.databaseName}</td>
-                    <td>
-                      <span className={styles.statusDot + ' ' + (r.status === 'completed' ? styles.statusOk : styles.statusFail)} />
-                      {r.status}
-                    </td>
-                    <td style={{ color: '#637389', fontSize: 12 }}>{ago(r.startedAt)}</td>
-                    <td style={{ fontSize: 12 }}>{r.durationMs > 0 ? fmtMs(r.durationMs) : '—'}</td>
-                    <td style={{ color: '#A8B8CC', fontSize: 12 }}>{fmtBytes(r.backupSizeBytes)}</td>
-                    <td style={{ color: '#F44336', fontSize: 12, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {r.errorMessage || '—'}
-                    </td>
+            <div className={styles.tableWrap}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Project</th>
+                    <th>Database</th>
+                    <th>Status</th>
+                    <th>Started</th>
+                    <th>Duration</th>
+                    <th>Size</th>
+                    <th>Error</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {filteredHistory.map(r => (
+                    <tr key={r.id}>
+                      <td>{r.projectName}</td>
+                      <td style={{ color: '#A8B8CC', fontSize: 12 }}>{r.databaseName}</td>
+                      <td>
+                        <span className={styles.statusDot + ' ' + (r.status === 'completed' ? styles.statusOk : styles.statusFail)} />
+                        {r.status}
+                      </td>
+                      <td style={{ color: '#637389', fontSize: 12 }}>{ago(r.startedAt)}</td>
+                      <td style={{ fontSize: 12 }}>{r.durationMs > 0 ? fmtMs(r.durationMs) : '-'}</td>
+                      <td style={{ color: '#A8B8CC', fontSize: 12 }}>{fmtBytes(r.backupSizeBytes)}</td>
+                      <td style={{ color: '#F44336', fontSize: 12, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {r.errorMessage || '-'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
+
+        {scheduleOpen && (
+          <BackupScheduleDialog
+            projects={databaseProjects}
+            onClose={() => setScheduleOpen(false)}
+            onScheduled={load}
+          />
+        )}
       </AppShell>
     </>
   );

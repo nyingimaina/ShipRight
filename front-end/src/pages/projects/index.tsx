@@ -85,6 +85,8 @@ export default function ProjectList() {
       <AppShell>
         <ZestResponsiveLayout
           sidePaneWidth="540px"
+          mobileBreakpointPx={720}
+          enableBounceAnimation
           closeOnDesktopOverlayClick
           sidePane={{
             visible: paneOpen,

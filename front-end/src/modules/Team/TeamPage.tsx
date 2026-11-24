@@ -7,6 +7,7 @@ import ResponsiveTable, { type ColumnDefinition } from 'jattac.libs.web.responsi
 import { api } from '@/shared/ApiService';
 import { useAuthStore, type Role } from '@/shared/auth';
 import type { ApiError } from '@/shared/auth';
+import { useTheme } from '@/shared/theme/ThemeContext';
 import styles from './TeamPage.module.css';
 
 export interface TeamMember {
@@ -33,6 +34,7 @@ function changeRoleLabel(role: Role): string {
 }
 
 export default function TeamPage() {
+  const { theme } = useTheme();
   const user = useAuthStore((s) => s.user);
   const isAdmin = user !== null && user.role === 'Admin';
 
@@ -283,7 +285,7 @@ export default function TeamPage() {
 
         {!loading && !loadError && total > 0 && (
           <>
-            <ResponsiveTable data={items} columnDefinitions={columns} />
+            <ResponsiveTable data={items} columnDefinitions={columns} theme={theme} />
             <div className={styles.paging}>
               <span>{total === 0 ? '0 people' : `${pageStart}–${pageEnd} of ${total} people`}</span>
               <div className={styles.pagingButtons}>

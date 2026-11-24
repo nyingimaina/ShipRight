@@ -6,6 +6,7 @@ import ResponsiveTable from 'jattac.libs.web.responsive-table';
 import FilePicker from '@/modules/FilePicker/FilePicker';
 import { api, sseUrl } from '@/shared/ApiService';
 import { useElapsedTimer, fmtElapsed } from '@/shared/hooks/useElapsedTimer';
+import { useTheme } from '@/shared/theme/ThemeContext';
 import { formatBytes } from './formatBytes';
 import styles from './Styles/SqlQueryPanel.module.css';
 
@@ -25,6 +26,7 @@ function tryParseTable(lines: string[]): TableData | null {
 }
 
 export default function SqlQueryPanel({ apiBase }: Props) {
+  const { theme } = useTheme();
   const [inputMode, setInputMode] = useState<InputMode>('text');
   const [phase, setPhase] = useState<Phase>('pick');
   const [sqlPath, setSqlPath] = useState('');
@@ -344,6 +346,7 @@ export default function SqlQueryPanel({ apiBase }: Props) {
                 <ResponsiveTable
                   columnDefinitions={tableCols}
                   data={tableData.rows}
+                  theme={theme}
                   animationProps={{ animateOnLoad: true }}
                 />
               </div>

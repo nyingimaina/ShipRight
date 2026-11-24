@@ -1,6 +1,6 @@
 {
   "name": "front-end",
-  "version": "4.10.31",
+  "version": "4.10.32",
   "private": true,
   "overrides": {
     "postcss": "8.5.26"
@@ -23,13 +23,13 @@
     "framer-motion": "^12.40.0",
     "jattac-web-poller": "^1.0.0",
     "jattac.libs.web.overflow-menu": "^0.0.35",
-    "jattac.libs.web.responsive-table": "^0.16.0",
+    "jattac.libs.web.responsive-table": "^0.23.0",
     "jattac.libs.web.zest-button": "^1.8.0",
     "jattac.libs.web.zest-file-upload": "^0.3.1",
-    "jattac.libs.web.zest-responsive-layout": "^2.6.0",
-    "jattac.libs.web.zest-sidekick-menu": "^1.5.5",
-    "jattac.libs.web.zest-tabs": "^0.2.0",
-    "jattac.libs.web.zest-textbox": "^0.5.5",
+    "jattac.libs.web.zest-responsive-layout": "^2.8.0",
+    "jattac.libs.web.zest-sidekick-menu": "^2.1.0",
+    "jattac.libs.web.zest-tabs": "^0.5.0",
+    "jattac.libs.web.zest-textbox": "^0.5.6",
     "lodash": "^4.18.1",
     "module-state-manager": "^0.2.1",
     "next": "15.5.24",

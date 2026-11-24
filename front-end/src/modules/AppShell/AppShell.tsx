@@ -16,6 +16,7 @@ import {
   RiLogoutCircleLine,
 } from "react-icons/ri";
 import ThemeToggle from "@/shared/theme/ThemeToggle";
+import { useTheme } from "@/shared/theme/ThemeContext";
 import { authApi, useAuthStore } from "@/shared/auth";
 import styles from "./Styles/AppShell.module.css";
 import { useServerVersion } from "@/shared/serverInfo";
@@ -31,6 +32,7 @@ export default function AppShell({ children }: Props) {
   const role = useAuthStore((s) => s.user?.role);
   const isAdmin = role === 'Admin';
   const version = useServerVersion();
+  const { theme } = useTheme();
   const inRootShell = useInRootShell();
 
   // Pages still wrap themselves in AppShell; under the root layout that would draw a second sidebar.
@@ -53,6 +55,7 @@ export default function AppShell({ children }: Props) {
       label: "Projects",
       icon: <RiStackLine size={18} />,
       searchTerms: "projects",
+      description: "Your apps and their environments",
       onClick: () => router.push("/projects"),
     },
     {
@@ -67,6 +70,7 @@ export default function AppShell({ children }: Props) {
       label: "Servers",
       icon: <RiServerLine size={18} />,
       searchTerms: "servers hosts ssh",
+      description: "Hosts ShipRight can deploy to",
       onClick: () => router.push("/servers"),
     },
     {
@@ -74,6 +78,7 @@ export default function AppShell({ children }: Props) {
       label: "Resources",
       icon: <RiBox3Line size={18} />,
       searchTerms: "resources shared reusable registry script",
+      description: "Shared keys, registries and scripts",
       onClick: () => router.push("/resources"),
     },
     {
@@ -81,6 +86,7 @@ export default function AppShell({ children }: Props) {
       label: "Pipelines",
       icon: <RiListCheck size={18} />,
       searchTerms: "pipelines build deploy scripts",
+      description: "Reusable build and deploy flows",
       onClick: () => router.push("/pipelines"),
     },
     {
@@ -109,6 +115,7 @@ export default function AppShell({ children }: Props) {
       label: "Backups",
       icon: <RiCalendarCheckLine size={18} />,
       searchTerms: "backups scheduler",
+      description: "Scheduled database backups",
       onClick: () => router.push("/backups"),
     },
     {
@@ -138,10 +145,20 @@ export default function AppShell({ children }: Props) {
     <>
       <SidekickMenu
         items={isAdmin ? menuItems : menuItems.filter((item) => item.id !== "team")}
-        searchEnabled={false}
+        searchEnabled
+        searchPlaceholder="Jump to…"
         favouritesEnabled
-        favouritesOptions={{ maxItems: 8, minToShowTab: 3, windowDays: 30 }} // all optional
+        favouritesOptions={{ maxItems: 8, minToShowTab: 3, windowDays: 30 }}
         side="left"
+        swipeEnabled
+        railCollapsible
+        onboardingHint="auto"
+        menuLabel="Open ShipRight menu"
+        zest={{
+          theme,
+          visualOptions: { size: "md", radius: "lg", surface: "translucent" },
+          motionOptions: { intensity: "playful", reducedMotion: "auto" },
+        }}
         headerContent={
           <div className={styles.header}>
             <div className={styles.headerTitle}>ShipRight{version && <span className={styles.headerVersion}>v{version}</span>}</div>
@@ -161,7 +178,9 @@ export default function AppShell({ children }: Props) {
           </div>
         }
       />
-      <main className={styles.content}>{children}</main>
+      <main className={styles.content}>
+        <div className={styles.page}>{children}</div>
+      </main>
     </>
   );
 }

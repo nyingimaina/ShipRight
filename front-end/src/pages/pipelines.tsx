@@ -206,6 +206,8 @@ export default function PipelinesPage() {
       <AppShell>
         <ZestResponsiveLayout
           sidePaneWidth="800px"
+          mobileBreakpointPx={720}
+          enableBounceAnimation
           closeOnDesktopOverlayClick={false}
           sidePane={{
             visible: paneOpen,
@@ -297,7 +299,7 @@ export default function PipelinesPage() {
                   ? 'No pipelines for the selected project.'
                   : <>No pipelines configured.{' '}
                     <button onClick={openNew}
-                      style={{ background: 'none', border: 'none', color: '#C9A84C', cursor: 'pointer' }}>
+                      style={{ background: 'none', border: 'none', color: '#C9A84C', cursor: 'pointer', minHeight: 44, padding: '0 8px' }}>
                       Create one
                     </button>.</>
                 }

@@ -8,8 +8,16 @@ import { resetServerVersionCache } from '@/shared/serverInfo';
 jest.mock('next/router', () => ({ useRouter: () => ({ push: jest.fn(), pathname: '/' }) }));
 jest.mock('jattac.libs.web.zest-sidekick-menu', () => ({
   __esModule: true,
-  default: ({ headerContent, footerContent }: { headerContent: React.ReactNode; footerContent: React.ReactNode }) => (
-    <nav><header>{headerContent}</header><footer>{footerContent}</footer></nav>
+  default: ({ headerContent, footerContent, ...props }: any) => (
+    <nav
+      data-search={String(props.searchEnabled)}
+      data-swipe={String(props.swipeEnabled)}
+      data-surface={props.zest?.visualOptions?.surface}
+      data-motion={props.zest?.motionOptions?.intensity}
+    >
+      <header>{headerContent}</header>
+      <footer>{footerContent}</footer>
+    </nav>
   ),
 }));
 jest.mock('@/shared/theme/ThemeToggle', () => ({ __esModule: true, default: () => <span>theme</span> }));
@@ -60,14 +68,27 @@ describe('AppShell version', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
-  it('leaves room below the fixed full-width header for page content', () => {
+  it('uses mobile-first page padding and a readable desktop width', () => {
     health({ serverVersion: '4.10.4' });
     const css = readFileSync(path.join(__dirname, '..', 'Styles', 'AppShell.module.css'), 'utf8');
     const content = css.match(/\.content\s*\{([^}]*)\}/)?.[1] ?? '';
 
-    expect(content).toMatch(/padding:\s*88px 40px 32px/);
+    expect(content).toMatch(/padding:\s*calc\(72px \+ env\(safe-area-inset-top, 0px\)\)/);
+    expect(content).toMatch(/max-width:\s*1320px/);
 
     const { container } = render(<AppShell><p>page</p></AppShell>);
     expect(container.querySelector('main')).toHaveClass(styles.content);
+    expect(container.querySelector('main > div')).toHaveClass(styles.page);
+  });
+
+  it('uses the new Sidekick surface, playful motion and mobile swipe gesture', async () => {
+    health({ serverVersion: '4.10.4' });
+    render(<AppShell><p>page</p></AppShell>);
+
+    const nav = await screen.findByRole('navigation');
+    expect(nav).toHaveAttribute('data-search', 'true');
+    expect(nav).toHaveAttribute('data-swipe', 'true');
+    expect(nav).toHaveAttribute('data-surface', 'translucent');
+    expect(nav).toHaveAttribute('data-motion', 'playful');
   });
 });

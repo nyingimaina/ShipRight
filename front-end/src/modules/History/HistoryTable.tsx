@@ -4,6 +4,7 @@ import ReactSelect from 'react-select';
 import { IBuildRecord, BuildStatus } from '@/shared/types/IBuildRecord';
 import ResponsiveTable from 'jattac.libs.web.responsive-table';
 import LogViewer, { LogEntry } from '@/modules/BuildWizard/LogViewer';
+import { useTheme } from '@/shared/theme/ThemeContext';
 import styles from './Styles/HistoryTable.module.css';
 
 interface Props {
@@ -44,6 +45,7 @@ function duration(record: IBuildRecord): string {
 }
 
 export default function HistoryTable({ records, loading }: Props) {
+  const { theme } = useTheme();
   const [logBuild, setLogBuild] = useState<IBuildRecord | null>(null);
 
   const logLines: LogEntry[] = (logBuild?.logOutput ?? '')
@@ -105,6 +107,7 @@ export default function HistoryTable({ records, loading }: Props) {
       <ResponsiveTable
         columnDefinitions={cols}
         data={records}
+        theme={theme}
         animationProps={{ isLoading: loading, animateOnLoad: true }}
         sortProps={{ initialSortColumn: 'started', initialSortDirection: 'desc' }}
         noDataComponent={<p style={{ color: '#637389', padding: 24 }}>No builds found.</p>}

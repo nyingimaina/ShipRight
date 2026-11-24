@@ -22,10 +22,10 @@ export default function AppHeader() {
       </div>
       <span className={styles.metric}>Disk {stats ? `${Math.round(stats.diskUsedPercent)}%` : '—'}</span>
       <span className={styles.metric}>RAM {stats ? `${Math.round(stats.ramUsedPercent)}%` : '—'}</span>
-      <span className={styles.metric}>Process {stats ? `${Math.round(stats.processCpuPercent)}%` : '—'}</span>
-      <span className={styles.metric}>{stats ? `${stats.processCount} processes` : '—'}</span>
+      <span className={`${styles.metric} ${styles.processMetric}`}>Process {stats ? `${Math.round(stats.processCpuPercent)}%` : '—'}</span>
+      <span className={`${styles.metric} ${styles.processCount}`}>{stats ? `${stats.processCount} processes` : '—'}</span>
       <HostSwapMetric swap={swap} canCreate={user?.role === 'Admin'} onChanged={refreshSwap} />
-      {nearCapacity && <span role="status" className={styles.warn}>Near capacity</span>}
+      {nearCapacity && <span role="status" aria-label="Near capacity" title="Near capacity" className={styles.warn}>Near capacity</span>}
     </header>
   );
 }

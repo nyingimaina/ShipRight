@@ -362,6 +362,8 @@ export default function ResourcesPage() {
       <AppShell>
         <ZestResponsiveLayout
           sidePaneWidth="480px"
+          mobileBreakpointPx={720}
+          enableBounceAnimation
           closeOnDesktopOverlayClick
           sidePane={{
             visible: paneOpen,
