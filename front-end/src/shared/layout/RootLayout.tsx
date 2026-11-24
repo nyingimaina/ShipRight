@@ -12,12 +12,13 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   if (PUBLIC_PATHS.includes(router.pathname)) return <>{children}</>;
 
   return (
-    <ShellContext.Provider value>
-      <AppShell>
+    <AppShell>
+      {/* The root shell must see itself as standalone; only the pages inside it are nested shells. */}
+      <ShellContext.Provider value>
         <AppHeader />
         {children}
         <AppFooter />
-      </AppShell>
-    </ShellContext.Provider>
+      </ShellContext.Provider>
+    </AppShell>
   );
 }

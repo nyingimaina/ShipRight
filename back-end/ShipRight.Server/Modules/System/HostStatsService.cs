@@ -25,7 +25,7 @@ public sealed class HostStatsService : IHostStatsProvider
         Func<TimeSpan>? processCpu = null,
         Func<DateTime>? clock = null)
     {
-        _disk = disk ?? ReadDisk;
+        _disk = disk ?? (() => ReadDisk());
         _memory = memory ?? ReadMemory;
         _processCount = processCount ?? ReadProcessCount;
         _processCpu = processCpu ?? (() => Process.GetCurrentProcess().TotalProcessorTime);
@@ -35,17 +35,28 @@ public sealed class HostStatsService : IHostStatsProvider
     public Task<SystemStatsSnapshot> GetAsync(CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        var (diskUsed, diskTotal) = _disk();
-        var diskPercent = Percent(diskUsed, diskTotal);
-        var mount = Path.GetPathRoot(Environment.SystemDirectory) ?? "system";
-
-        var (ramUsed, ramTotal, available, error) = ReadMemorySafely();
-        var cpuPercent = ReadCpuPercent();
+        var (diskUsed, diskTotal, diskAvailable, diskError) = ReadDiskSafely();
+        var (ramUsed, ramTotal, memoryAvailable, memoryError) = ReadMemorySafely();
+        var errors = new[] { diskError, memoryError }.Where(e => e is not null).ToArray();
         var snapshot = new SystemStatsSnapshot(
-            mount, diskPercent, diskUsed, diskTotal,
+            ResolveDiskMount(), Percent(diskUsed, diskTotal), diskUsed, diskTotal,
             Percent(ramUsed, ramTotal), ramUsed, ramTotal,
-            cpuPercent, _processCount(), available, DateTimeOffset.UtcNow, error);
+            ReadCpuPercent(), _processCount(), diskAvailable && memoryAvailable,
+            DateTimeOffset.UtcNow, errors.Length == 0 ? null : string.Join(" ", errors));
         return Task.FromResult(snapshot);
+    }
+
+    private (long Used, long Total, bool Available, string? Error) ReadDiskSafely()
+    {
+        try
+        {
+            var (used, total) = _disk();
+            return (used, total, true, null);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return (0, 0, false, $"Disk usage is unavailable on this host ({ex.GetType().Name}).");
+        }
     }
 
     private (long Used, long Total, bool Available, string? Error) ReadMemorySafely()
@@ -81,9 +92,27 @@ public sealed class HostStatsService : IHostStatsProvider
 
     private static double Clamp(double value) => Math.Min(100, Math.Max(0, value));
 
-    private static (long Used, long Total) ReadDisk()
+    /// <summary>
+    /// Environment.SystemDirectory is empty on Linux, and feeding that empty string to DriveInfo throws. The
+    /// container's whole filesystem lives on "/", so that is the only mount the header needs to report.
+    /// </summary>
+    internal static string ResolveDiskMount()
     {
-        var root = Path.GetPathRoot(Environment.SystemDirectory) ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(Environment.SystemDirectory))
+        {
+            var root = Path.GetPathRoot(Environment.SystemDirectory);
+            if (!string.IsNullOrWhiteSpace(root)) return root;
+        }
+
+        if (OperatingSystem.IsLinux()) return "/";
+
+        return DriveInfo.GetDrives().FirstOrDefault(d => d.IsReady && d.DriveType == DriveType.Fixed)?.Name
+            ?? string.Empty;
+    }
+
+    internal static (long Used, long Total) ReadDisk(string? mount = null)
+    {
+        var root = string.IsNullOrWhiteSpace(mount) ? ResolveDiskMount() : mount;
         var drive = new DriveInfo(root);
         if (!drive.IsReady)
             drive = DriveInfo.GetDrives().First(d => d.IsReady && d.DriveType == DriveType.Fixed);

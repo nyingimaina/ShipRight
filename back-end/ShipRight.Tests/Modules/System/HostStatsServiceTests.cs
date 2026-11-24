@@ -76,4 +76,31 @@ public class HostStatsServiceTests
         StringAssert.Contains(stats.Error, "Memory");
         Assert.AreEqual(50, stats.DiskUsedPercent, "the metrics that worked are still returned");
     }
+
+    [TestMethod]
+    public async Task Snapshot_FailingDisk_IsReportedWithoutThrowing()
+    {
+        var service = new HostStatsService(
+            disk: () => throw new ArgumentException("empty drive name"),
+            memory: () => (80, 200),
+            processCount: () => 3,
+            processCpu: () => TimeSpan.Zero,
+            clock: () => new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+
+        var stats = await service.GetAsync();
+
+        Assert.IsFalse(stats.Available);
+        StringAssert.Contains(stats.Error, "Disk");
+        Assert.AreEqual(40, stats.RamUsedPercent, "the metrics that worked are still returned");
+    }
+
+    [TestMethod]
+    public void DiskMount_IsNeverEmpty_SoLinuxDoesNotConstructAnInvalidDriveInfo()
+    {
+        // Environment.SystemDirectory is empty on Linux; the old code fed that empty string to DriveInfo and the
+        // whole stats endpoint returned 500, which showed as dashes in the header.
+        var mount = HostStatsService.ResolveDiskMount();
+
+        Assert.IsFalse(string.IsNullOrWhiteSpace(mount));
+    }
 }

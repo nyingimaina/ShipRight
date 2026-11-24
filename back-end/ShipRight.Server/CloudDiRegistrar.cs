@@ -12,6 +12,7 @@ using ShipRight.Modules.Builds;
 using ShipRight.Modules.ComposeRepo;
 using ShipRight.Modules.Database;
 using ShipRight.Modules.Identity;
+using ShipRight.Modules.JitDeploy;
 using ShipRight.Modules.Database.Providers;
 using ShipRight.Modules.Projects;
 using ShipRight.Modules.RemoteHost;
@@ -119,6 +120,9 @@ public static class CloudDiRegistrar
         services.AddSingleton<IMonitoringProvider, LinuxSshMonitoringProvider>();
         services.AddSingleton<IHostStatsProvider, HostStatsService>();
         services.AddSingleton<SshKeyStore>(_ => new SshKeyStore(DataDirectory.Resolve()));
+        // JIT deploy routes stay desktop-only, but project bundles carry jit.json, so import/export needs the
+        // config store to resolve here too. Registering it does not expose any JIT endpoint in cloud mode.
+        services.AddSingleton<IJitConfigStore>(_ => new JsonJitConfigStore(DataDirectory.Resolve()));
         services.AddSingleton<IAwsCredentialsReader>(sp => new AwsCredentialsReader(
             sp.GetService<IProcessRunner>()));
         services.AddSingleton<AwsProfileValidator>();

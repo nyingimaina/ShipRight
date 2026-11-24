@@ -1,10 +1,13 @@
-import { loadServerMode, resetServerModeCache } from '../serverInfo';
+import {
+  loadServerMode, loadServerVersion, resetServerModeCache, resetServerVersionCache,
+} from '../serverInfo';
 
 const jsonMock = jest.fn();
 const fetchMock = jest.fn();
 
 beforeEach(() => {
   resetServerModeCache();
+  resetServerVersionCache();
   jest.clearAllMocks();
   Object.defineProperty(global, 'fetch', { value: fetchMock, writable: true });
 });
@@ -54,5 +57,27 @@ describe('serverInfo', () => {
     await loadServerMode();
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  describe('loadServerVersion', () => {
+    it('reports the web version the server is actually serving, not its assembly version', async () => {
+      jsonMock.mockResolvedValue({ serverVersion: '1.0.0', webVersion: '4.10.24', mode: 'Cloud' });
+      fetchMock.mockResolvedValue({ ok: true, json: jsonMock });
+
+      await expect(loadServerVersion()).resolves.toBe('4.10.24');
+    });
+
+    it('falls back to the assembly version for older servers that only report serverVersion', async () => {
+      jsonMock.mockResolvedValue({ serverVersion: '4.9.0' });
+      fetchMock.mockResolvedValue({ ok: true, json: jsonMock });
+
+      await expect(loadServerVersion()).resolves.toBe('4.9.0');
+    });
+
+    it('returns null when the health request fails', async () => {
+      fetchMock.mockRejectedValue(new Error('network down'));
+
+      await expect(loadServerVersion()).resolves.toBeNull();
+    });
   });
 });

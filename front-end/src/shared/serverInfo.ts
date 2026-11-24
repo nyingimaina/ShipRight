@@ -27,9 +27,13 @@ export function loadServerVersion(): Promise<string | null> {
     cachedVersion = fetch('/api/health')
       .then((res) => {
         if (!res.ok) throw new Error('Health check failed');
-        return res.json() as Promise<{ serverVersion?: string }>;
+        return res.json() as Promise<{ webVersion?: string; serverVersion?: string }>;
       })
-      .then((data) => (typeof data?.serverVersion === 'string' && data.serverVersion ? data.serverVersion : null))
+      // serverVersion is the assembly version (1.0.0); webVersion is the release people actually installed.
+      .then((data) => {
+        const version = data?.webVersion ?? data?.serverVersion;
+        return typeof version === 'string' && version ? version : null;
+      })
       .catch(() => null);
   }
   return cachedVersion;

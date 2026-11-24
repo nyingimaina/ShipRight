@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using ShipRight.Modules.Projects;
 using ShipRight.Modules.RemoteHost;
+using ShipRight.Modules.Transfer;
 using ShipRight.Modules.WatchBranch;
 
 namespace ShipRight.Tests.Database;
@@ -24,6 +25,15 @@ public class CloudDiRegistrarTests
     {
         using var provider = BuildCloudProvider();
         Assert.IsNotNull(provider.GetRequiredService<SshKeyStore>());
+    }
+
+    [TestMethod]
+    public void CloudDiProvider_ResolvesTransferStoresForBundleImport()
+    {
+        // The bundle inspector/importer resolves TransferStores on every request. JIT deploy routes stay desktop-only,
+        // but their config store is part of a bundle, so cloud must still be able to construct the store set.
+        using var provider = BuildCloudProvider();
+        Assert.IsNotNull(provider.GetRequiredService<TransferStores>());
     }
 
     [TestMethod]
