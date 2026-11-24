@@ -60,6 +60,19 @@ public class LocalComposeTests
         StringAssert.Contains(Block("app"), "5200:5200");
     }
 
+    [TestMethod]
+    public void AppCanReachTheHostMetalForSwap_WithoutAPrivilegedContainer()
+    {
+        var app = Block("app");
+        StringAssert.Contains(app, "host.docker.internal:host-gateway");
+        StringAssert.Contains(app, "SHIPRIGHT__HOST_SWAP__HOST");
+        StringAssert.Contains(app, "SHIPRIGHT__HOST_SWAP__USERNAME");
+        StringAssert.Contains(app, "SHIPRIGHT__HOST_SWAP__SSH_KEY_PATH");
+        StringAssert.Contains(app, "SHIPRIGHT__HOST_SWAP__SIZE_GB");
+        Assert.IsFalse(app.Contains("privileged: true", StringComparison.Ordinal),
+            "host swap must use the configured SSH target, not a privileged container");
+    }
+
     // ── Intended behaviour ────────────────────────────────────────────────────
 
     [TestMethod]

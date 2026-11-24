@@ -4,14 +4,17 @@ import { render, screen } from '@testing-library/react';
 import AppHeader from '../AppHeader';
 import styles from '../AppHeader.module.css';
 import { useSystemStats } from '../useSystemStats';
+import { useHostSwap } from '../useHostSwap';
 
 let user: any = { name: 'Ada Lovelace', companyName: 'Analytical Engines', role: 'Operator' };
 jest.mock('@/shared/auth', () => ({
   useAuthStore: (selector: (s: any) => unknown) => selector({ user }),
 }));
 jest.mock('../useSystemStats', () => ({ useSystemStats: jest.fn() }));
+jest.mock('../useHostSwap', () => ({ useHostSwap: jest.fn() }));
 
 const statsMock = useSystemStats as jest.Mock;
+const swapMock = useHostSwap as jest.Mock;
 const stats = (over: object = {}) => ({
   diskUsedPercent: 62, ramUsedPercent: 41, processCpuPercent: 7, processCount: 9,
   available: true, capturedAtUtc: '2026-01-01T00:00:00Z', ...over,
@@ -21,6 +24,7 @@ describe('AppHeader', () => {
   beforeEach(() => {
     user = { name: 'Ada Lovelace', companyName: 'Analytical Engines', role: 'Operator' };
     statsMock.mockReturnValue({ stats: stats() });
+    swapMock.mockReturnValue({ swap: { swapUsedBytes: 512, swapTotalBytes: 2048, swapUsedPercent: 25, available: true, configured: true }, refresh: jest.fn() });
   });
 
   it('shows who is signed in, their company and their role, with live host percentages', () => {
@@ -34,6 +38,7 @@ describe('AppHeader', () => {
     expect(header).toHaveTextContent('RAM 41%');
     expect(header).toHaveTextContent('Process 7%');
     expect(header).toHaveTextContent('9 processes');
+    expect(header).toHaveTextContent('Swap 25%');
   });
 
   it('warns when any capacity measure is close to its limit', () => {

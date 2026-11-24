@@ -21,6 +21,10 @@ public static class CloudConfiguration
         "SHIPRIGHT__SMTP_FROM",
         "SHIPRIGHT__GOOGLE_CLIENT_ID",
         "SHIPRIGHT__GOOGLE_CLIENT_SECRET",
+        "SHIPRIGHT__HOST_SWAP__HOST",
+        "SHIPRIGHT__HOST_SWAP__USERNAME",
+        "SHIPRIGHT__HOST_SWAP__SSH_KEY_PATH",
+        "SHIPRIGHT__HOST_SWAP__SIZE_GB",
     ];
 
     public static string[] ResolveAllowedOrigins(IConfiguration configuration, string? environmentValue)

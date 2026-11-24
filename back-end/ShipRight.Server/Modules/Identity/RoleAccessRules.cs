@@ -21,6 +21,8 @@ public static class RoleAccessRules
         R(null, @"/api/system/check(/.*)?", AppRoles.Admin),
         R(null, @"/api/system/disk-job(/.*)?", AppRoles.Admin),
         R("GET", @"/api/system/stats", AppRoles.Viewer),
+        R("GET", @"/api/system/host-swap", AppRoles.Viewer),
+        R("POST", @"/api/system/host-swap", AppRoles.Admin),
         R("POST", @"/api/builds/[^/]+/force-abort", AppRoles.Admin),
         R(null, @"/api/fs(/.*)?", AppRoles.Admin),
         R(null, @"/api/setup(/.*)?", AppRoles.Admin),

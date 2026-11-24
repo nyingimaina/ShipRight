@@ -59,6 +59,38 @@
   white-space: nowrap;
 }
 
+.swapAction {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  text-decoration: underline dotted;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.swapAction:hover,
+.swapAction:focus-visible {
+  color: var(--text-primary);
+}
+
+.swapPrompt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--warning);
+  white-space: nowrap;
+}
+
+.swapError {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #E08A8A;
+  white-space: nowrap;
+}
+
 @media (max-width: 700px) {
   .bar {
     gap: 8px;

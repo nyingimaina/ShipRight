@@ -55,10 +55,18 @@ services:
       SHIPRIGHT__SMTP_FROM: ${SHIPRIGHT__SMTP_FROM:?Set SHIPRIGHT__SMTP_FROM}
       SHIPRIGHT__GOOGLE_CLIENT_ID: ${SHIPRIGHT__GOOGLE_CLIENT_ID:-}
       SHIPRIGHT__GOOGLE_CLIENT_SECRET: ${SHIPRIGHT__GOOGLE_CLIENT_SECRET:-}
+      # Host swap: the key lives in the app volume; the status stays "not configured" until it exists.
+      SHIPRIGHT__HOST_SWAP__HOST: ${SHIPRIGHT__HOST_SWAP__HOST:-host.docker.internal}
+      SHIPRIGHT__HOST_SWAP__USERNAME: ${SHIPRIGHT__HOST_SWAP__USERNAME:-ubuntu}
+      SHIPRIGHT__HOST_SWAP__SSH_KEY_PATH: ${SHIPRIGHT__HOST_SWAP__SSH_KEY_PATH:-/root/.shipright/ssh/host-swap.pem}
+      SHIPRIGHT__HOST_SWAP__SIZE_GB: ${SHIPRIGHT__HOST_SWAP__SIZE_GB:-2}
     # Bound to the server itself: Caddy reaches the app over the compose network, and the deploy health check
     # curls localhost:5200. Plain-HTTP 5200 is not exposed to the internet.
     ports:
       - "127.0.0.1:5200:5200"
+    # Host swap is created over SSH against the metal, never by running swapon in this container.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - shipright-app-data:/root/.shipright
 

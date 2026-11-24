@@ -40,6 +40,19 @@ public class ServerComposeTemplateTests
     }
 
     [TestMethod]
+    public void AppCanReachTheHostMetalForSwap_WithoutAPrivilegedContainer()
+    {
+        var text = File.ReadAllText(TemplatePath());
+        StringAssert.Contains(text, "host.docker.internal:host-gateway");
+        StringAssert.Contains(text, "SHIPRIGHT__HOST_SWAP__HOST");
+        StringAssert.Contains(text, "SHIPRIGHT__HOST_SWAP__USERNAME");
+        StringAssert.Contains(text, "SHIPRIGHT__HOST_SWAP__SSH_KEY_PATH");
+        StringAssert.Contains(text, "SHIPRIGHT__HOST_SWAP__SIZE_GB");
+        Assert.IsFalse(text.Contains("privileged: true", StringComparison.Ordinal),
+            "host swap must use the configured SSH target, not a privileged container");
+    }
+
+    [TestMethod]
     public void DoesNotMountFilesFromTheSourceTree()
     {
         var text = File.ReadAllText(TemplatePath());

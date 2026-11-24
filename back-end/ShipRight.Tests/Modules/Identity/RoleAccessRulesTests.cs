@@ -35,6 +35,8 @@ public class RoleAccessRulesTests
     [DataRow("GET", "/api/resources/scripts", AppRoles.Viewer)]
     [DataRow("GET", "/api/auth/me", AppRoles.Viewer)]
     [DataRow("GET", "/api/system/stats", AppRoles.Viewer)]
+    [DataRow("GET", "/api/system/host-swap", AppRoles.Viewer)]
+    [DataRow("POST", "/api/system/host-swap", AppRoles.Admin)]
     // Operator: build and deploy
     [DataRow("POST", "/api/builds/start", AppRoles.Operator)]
     [DataRow("POST", "/api/builds/abc/deploy", AppRoles.Operator)]
@@ -140,6 +142,7 @@ public class RoleAccessRulesTests
         app.MapIdentityAuthRoutes();
         app.MapTeamRoutes();
         app.MapSystemRoutes();
+        app.MapHostSwapRoutes();
         app.MapWslDiskRoutes();
         app.MapFsRoutes();
         app.MapProjectRoutes();

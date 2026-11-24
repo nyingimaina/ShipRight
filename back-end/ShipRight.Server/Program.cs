@@ -141,6 +141,9 @@ try
         RegisterDesktopServices(builder.Services, dataDir);
     }
     builder.Services.AddSingleton<IHostStatsProvider, HostStatsService>();
+    builder.Services.AddSingleton<IHostSwapTargetProvider, HostSwapTargetProvider>();
+    builder.Services.AddSingleton<IHostSwapStatsProvider, HostSwapStatsProvider>();
+    builder.Services.AddSingleton<HostSwapService>();
 
     var app = builder.Build();
 
@@ -202,6 +205,7 @@ try
 
     app.MapHealthRoutes(profile, cloudMode ? AppMode.Cloud : AppMode.Desktop);
     app.MapSystemRoutes();
+    app.MapHostSwapRoutes();
     app.MapWslDiskRoutes();
     app.MapDockerCleanupRoutes();
     app.MapSystemCheckRoutes();
