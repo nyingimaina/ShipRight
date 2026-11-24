@@ -14,6 +14,7 @@ default: a server with no tailnet assigned behaves exactly as before.
   - `Modules/ServerNetwork/NetworkAwareSshRunner.cs` — decorator around `ISshRunner`, so every existing caller is routed
   - `Modules/ServerNetwork/RoutedSftp.cs` + `RoutedSftpRemoteFileClient` — Files tab, database transfers, file picker
   - `Modules/ServerNetwork/RoutedTcpProbe.cs` — the "can ShipRight reach it" check, through the proxy
+  - `Modules/ServerNetwork/RoutedHostKeyScanner.cs` — the wizard's fingerprint check, through the proxy
   - `Modules/Tailscale/TailnetManager.cs` — `tailscaled` lifecycle, SOCKS port, OAuth key minting
   - `Modules/Tailscale/TailnetStore.cs` — encrypted, company-scoped tailnet records
   - `Modules/Tailscale/TailnetRouter.cs` — `/api/tailnets`
@@ -67,6 +68,8 @@ Tailscale; ShipRight only ever holds a Tailscale credential.
 
 - `ShipRight.Tests/Modules/ServerNetwork/ServerNetworkProviderTests.cs` — and the network-aware SSH decorator
 - `ShipRight.Tests/Modules/ServerNetwork/RoutedTcpProbeTests.cs` — direct vs SOCKS5 probing, proxy refusal, offline tailnet
+- `ShipRight.Tests/Modules/ServerNetwork/RoutedHostKeyScannerTests.cs` — fingerprint reads stay on the route
 - `ShipRight.Tests/Modules/Tailscale/JsonTailnetStoreTests.cs` — encryption at rest and company scoping
+- `ShipRight.Tests/Modules/Tailscale/TailnetManagerCleanupTests.cs` — removing a network deletes only its state
 - `ShipRight.Tests/Modules/Tailscale/TailscaleOAuthKeyMinterTests.cs` — token exchange and key request shape
 - `front-end/src/modules/Tailscale/__tests__/TailnetsPage.test.tsx` — no secret rendered, save flow

@@ -115,6 +115,27 @@ public sealed class TailnetManager : ITailnetManager, IDisposable
         }
     }
 
+    /// <summary>Stops the node and deletes the state ShipRight kept for it, so a removed network leaves nothing behind.</summary>
+    public async Task RemoveAsync(string tailnetId, CancellationToken ct = default)
+    {
+        await StopAsync(tailnetId, ct);
+
+        try
+        {
+            var companies = Path.Combine(_dataDir ?? DataDirectory.Resolve(), "tailscale");
+            if (!Directory.Exists(companies)) return;
+            foreach (var dir in Directory.GetDirectories(companies, tailnetId, SearchOption.AllDirectories))
+            {
+                Directory.Delete(dir, recursive: true);
+                Log.Information("Removed Tailscale state for {TailnetId}", tailnetId);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Could not remove Tailscale state for {TailnetId}", tailnetId);
+        }
+    }
+
     private Session SessionFor(TailnetConnection connection)
     {
         lock (_gate)

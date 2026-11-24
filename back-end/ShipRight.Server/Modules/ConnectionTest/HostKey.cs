@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using Renci.SshNet;
 using Serilog;
+using ShipRight.Modules.ServerNetwork;
 using ShipRight.Modules.Servers;
 using ShipRight.Shared.SshRunner;
 
@@ -78,12 +79,12 @@ public static class HostKeyRoutes
     public static void MapHostKeyRoutes(this WebApplication app)
     {
         app.MapGet("/api/servers/{serverId}/host-key",
-            (string serverId, IServerStore store, KnownHostsStore known, CancellationToken ct) =>
-                HandleScanAsync(serverId, store, new SshHostKeyScanner(), new KnownHostsAdapter(known), ct));
+            (string serverId, IServerStore store, KnownHostsStore known, IServerNetworkResolver networks, CancellationToken ct) =>
+                HandleScanAsync(serverId, store, new RoutedHostKeyScanner(new SshHostKeyScanner(), networks), new KnownHostsAdapter(known), ct));
 
         app.MapPost("/api/servers/{serverId}/host-key/trust",
-            (string serverId, TrustHostKeyRequest req, IServerStore store, KnownHostsStore known, CancellationToken ct) =>
-                HandleTrustAsync(serverId, req, store, new SshHostKeyScanner(), new KnownHostsAdapter(known), ct));
+            (string serverId, TrustHostKeyRequest req, IServerStore store, KnownHostsStore known, IServerNetworkResolver networks, CancellationToken ct) =>
+                HandleTrustAsync(serverId, req, store, new RoutedHostKeyScanner(new SshHostKeyScanner(), networks), new KnownHostsAdapter(known), ct));
     }
 
     private const int SshPort = 22;

@@ -75,7 +75,7 @@ public static class TailnetRouter
 
         app.MapDelete("/api/tailnets/{id}", async (string id, ITailnetStore store, ITailnetManager manager) =>
         {
-            await manager.StopAsync(id);
+            await manager.RemoveAsync(id);
             await store.DeleteAsync(id);
             return Results.Ok(new { message = "Tailscale network removed." });
         });
