@@ -49,6 +49,27 @@ describe('serverInfo', () => {
     await expect(loadServerMode()).resolves.toBe('desktop');
   });
 
+  it('asks the configured API origin, so a local Next dev server can reach the desktop API', async () => {
+    process.env.NEXT_PUBLIC_API_URL = 'http://localhost:5200';
+    jsonMock.mockResolvedValue({ mode: 'desktop' });
+    fetchMock.mockResolvedValue({ ok: true, json: jsonMock });
+
+    await loadServerMode();
+
+    expect(fetchMock).toHaveBeenCalledWith('http://localhost:5200/api/health');
+    delete process.env.NEXT_PUBLIC_API_URL;
+  });
+
+  it('keeps the same-origin health URL when no API origin is configured', async () => {
+    delete process.env.NEXT_PUBLIC_API_URL;
+    jsonMock.mockResolvedValue({ mode: 'desktop' });
+    fetchMock.mockResolvedValue({ ok: true, json: jsonMock });
+
+    await loadServerMode();
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/health');
+  });
+
   it('caches the result so subsequent calls reuse the same response', async () => {
     jsonMock.mockResolvedValue({ mode: 'cloud' });
     fetchMock.mockResolvedValue({ ok: true, json: jsonMock });
@@ -78,6 +99,16 @@ describe('serverInfo', () => {
       fetchMock.mockRejectedValue(new Error('network down'));
 
       await expect(loadServerVersion()).resolves.toBeNull();
+    });
+
+    it('reads the version from the configured API origin too', async () => {
+      process.env.NEXT_PUBLIC_API_URL = 'http://localhost:5200';
+      jsonMock.mockResolvedValue({ webVersion: '4.10.32' });
+      fetchMock.mockResolvedValue({ ok: true, json: jsonMock });
+
+      await expect(loadServerVersion()).resolves.toBe('4.10.32');
+      expect(fetchMock).toHaveBeenCalledWith('http://localhost:5200/api/health');
+      delete process.env.NEXT_PUBLIC_API_URL;
     });
   });
 });

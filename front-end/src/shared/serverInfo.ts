@@ -4,9 +4,14 @@ export type ServerMode = 'desktop' | 'cloud';
 
 let cached: Promise<ServerMode> | null = null;
 
+// A local Next dev server runs on a different origin from the desktop API, so health must follow the
+// same configured API origin as the rest of the app. The value is read per call so tests and dev
+// environments can change it without re-importing this module.
+const healthUrl = () => `${(process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/$/, '')}/api/health`;
+
 export function loadServerMode(): Promise<ServerMode> {
   if (!cached) {
-    cached = fetch('/api/health')
+    cached = fetch(healthUrl())
       .then((res) => {
         if (!res.ok) throw new Error('Health check failed');
         return res.json() as Promise<{ mode?: string }>;
@@ -24,7 +29,7 @@ let cachedVersion: Promise<string | null> | null = null;
 /** The version of the running ShipRight, as the server itself reports it; null when it cannot say. */
 export function loadServerVersion(): Promise<string | null> {
   if (!cachedVersion) {
-    cachedVersion = fetch('/api/health')
+    cachedVersion = fetch(healthUrl())
       .then((res) => {
         if (!res.ok) throw new Error('Health check failed');
         return res.json() as Promise<{ webVersion?: string; serverVersion?: string }>;
