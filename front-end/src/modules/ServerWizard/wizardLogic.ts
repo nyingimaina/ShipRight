@@ -52,6 +52,8 @@ export interface WhereForm {
   host: string;
   username: string;
   remoteWorkingDir: string;
+  /** Optional tailnet id; empty means the direct network path. */
+  tailnetId?: string;
 }
 
 export function validateWhere(f: WhereForm): Partial<Record<keyof WhereForm, string>> {

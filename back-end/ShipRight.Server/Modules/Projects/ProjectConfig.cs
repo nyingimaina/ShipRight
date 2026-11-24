@@ -120,6 +120,8 @@ public record ServerConfig
     public string Host { get; init; } = string.Empty;
     public string Username { get; init; } = string.Empty;
     public string SshKeyPath { get; init; } = string.Empty;
+    /// <summary>Optional tailnet connection. Empty means the normal direct network path.</summary>
+    public string TailnetId { get; init; } = string.Empty;
     public string RemoteWorkingDir { get; init; } = string.Empty;
     public string RebuildScript { get; init; } = "rebuild.sh";
     public DeployMode DeployMode { get; init; } = DeployMode.GitScript;

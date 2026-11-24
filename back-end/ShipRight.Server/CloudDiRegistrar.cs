@@ -22,6 +22,7 @@ using ShipRight.Modules.System.WslDisk;
 using ShipRight.Modules.Resources.Stores;
 using ShipRight.Modules.Scheduler;
 using ShipRight.Modules.Servers;
+using ShipRight.Modules.Tailscale;
 using ShipRight.Modules.Transfer;
 using ShipRight.Modules.Services;
 using ShipRight.Modules.Ssh;
@@ -117,6 +118,7 @@ public static class CloudDiRegistrar
             sp.GetRequiredService<SqlServerProvider>()));
         services.AddSingleton<DatabaseOrchestrator>();
         services.AddSingleton<DatabaseBackupService>();
+        services.AddTailscaleNetworking(DataDirectory.Resolve());
         services.AddSingleton<IRemoteHostProvider, LinuxSshProvider>();
         services.AddSingleton<IMonitoringProvider, LinuxSshMonitoringProvider>();
         services.AddSingleton<IHostStatsProvider, HostStatsService>();

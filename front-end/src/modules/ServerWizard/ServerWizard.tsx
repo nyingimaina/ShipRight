@@ -49,7 +49,8 @@ const messageOf = (e: unknown, fallback: string) =>
 export default function ServerWizard({ existingServerId, onClose, onFinished }: Props) {
   const [step, setStep] = useState<StepId>(existingServerId ? 'identity' : 'route');
   const [route, setRoute] = useState<LoginRoute | null>(existingServerId ? 'manual' : null);
-  const [form, setForm] = useState<WhereForm>({ name: '', host: '', username: 'ubuntu', remoteWorkingDir: '' });
+  const [form, setForm] = useState<WhereForm>({ name: '', host: '', username: 'ubuntu', remoteWorkingDir: '', tailnetId: '' });
+  const [tailnets, setTailnets] = useState<{ id: string; name: string; online: boolean }[]>([]);
   const [errors, setErrors] = useState<Partial<Record<keyof WhereForm, string>>>({});
   const [serverId, setServerId] = useState<string | null>(existingServerId ?? null);
   const [busy, setBusy] = useState(false);
@@ -85,10 +86,18 @@ export default function ServerWizard({ existingServerId, onClose, onFinished }: 
   // An existing server: fill the form from what is saved.
   useEffect(() => {
     if (!existingServerId) return;
-    api.get<ServerRecord & { name?: string; remoteWorkingDir?: string }>(`/api/servers/${existingServerId}`)
-      .then(s => setForm({ name: s.name ?? '', host: s.host, username: s.username, remoteWorkingDir: s.remoteWorkingDir ?? '' }))
+    api.get<ServerRecord & { name?: string; remoteWorkingDir?: string; tailnetId?: string }>(`/api/servers/${existingServerId}`)
+      .then(s => setForm({ name: s.name ?? '', host: s.host, username: s.username, remoteWorkingDir: s.remoteWorkingDir ?? '', tailnetId: s.tailnetId ?? '' }))
       .catch(() => setNotice('Could not load this server.'));
   }, [existingServerId]);
+
+  // Optional tenant networks are only offered when the tenant has configured one.
+  useEffect(() => {
+    if (step !== 'where') return;
+    api.get<{ id: string; name: string; online: boolean }[]>('/api/tailnets')
+      .then(setTailnets)
+      .catch(() => setTailnets([]));
+  }, [step]);
 
   // Step 3: ask the server who it is.
   useEffect(() => {
@@ -158,6 +167,7 @@ export default function ServerWizard({ existingServerId, onClose, onFinished }: 
     setBusy(true); setNotice(null);
     const body = {
       name: form.name.trim(), host: form.host.trim(), username: form.username.trim(),
+      tailnetId: form.tailnetId || '',
       remoteWorkingDir: form.remoteWorkingDir.trim() || defaultFolder(form.username),
     };
     try {
@@ -245,6 +255,17 @@ export default function ServerWizard({ existingServerId, onClose, onFinished }: 
       {field('host', 'Address', 'Where this computer finds the server.\nA cloud server: its public IP address (the cloud console shows it).\nTailscale: its Tailscale name or 100.x address (run "tailscale status").\nLeave out ssh:// and the port.', route === 'tailscale' ? 'myserver.tailnet-name.ts.net or 100.x.x.x' : '203.0.113.10')}
       {route === 'tailscale' && !looksLikeTailnet(form.host) && form.host.trim() !== '' && (
         <p style={muted}>That does not look like a Tailscale address. That is fine if it works, but Tailscale names end in .ts.net and addresses start with 100.</p>
+      )}
+      {tailnets.length > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <label htmlFor="wiz-tailnet" style={{ ...label, marginBottom: 4 }}>Network</label>
+          <select id="wiz-tailnet" style={input} value={form.tailnetId ?? ''}
+            onChange={e => set('tailnetId', e.target.value)}>
+            <option value="">Direct network</option>
+            {tailnets.map(t => <option key={t.id} value={t.id}>{t.name}{t.online ? '' : ' (offline)'}</option>)}
+          </select>
+          <p style={muted}>Choose a tenant Tailscale network when this server is only reachable through it.</p>
+        </div>
       )}
       {field('username', 'Username', 'The name you log in to the server with. Ubuntu servers usually use "ubuntu", Amazon Linux uses "ec2-user", and Debian uses "admin" or "debian".', 'ubuntu')}
       {field('remoteWorkingDir', 'Folder for your projects (optional)', 'The folder on the server where ShipRight keeps your project. Leave it empty and ShipRight suggests a folder in the user\'s home directory.', defaultFolder(form.username) || '/home/ubuntu/apps')}

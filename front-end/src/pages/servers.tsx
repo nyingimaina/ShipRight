@@ -18,7 +18,7 @@ import styles from './Styles/Servers.module.css';
 
 export type ServerInput = Omit<IServerConfig, 'id'> & { id?: string };
 const emptyServer = (): ServerInput => ({
-  name: '', host: '', username: 'ubuntu', sshKeyPath: '',
+  name: '', host: '', username: 'ubuntu', sshKeyPath: '', tailnetId: '',
   remoteWorkingDir: '', rebuildScript: 'rebuild.sh', deployMode: 'GitScript' as DeployMode,
 });
 
@@ -175,6 +175,13 @@ export function ServerForm({ initial, onSave, onCancel, hideDeployActions }: {
 }) {
   const [form, setForm] = useState<ServerInput>(initial);
   const [saving, setSaving] = useState(false);
+  const [tailnets, setTailnets] = useState<{ id: string; name: string; online: boolean }[]>([]);
+
+  useEffect(() => {
+    api.get<{ id: string; name: string; online: boolean }[]>('/api/tailnets')
+      .then(setTailnets)
+      .catch(() => setTailnets([]));
+  }, []);
 
   const set = (field: keyof ServerInput, value: string) =>
     setForm(prev => ({ ...prev, [field]: value }));
@@ -200,6 +207,19 @@ export function ServerForm({ initial, onSave, onCancel, hideDeployActions }: {
         <ZestTextbox value={form.host} onChange={e => set('host', e.target.value)}
           placeholder="3.130.65.46" zest={{ stretch: true }} />
       </div>
+      {tailnets.length > 0 && (
+        <div className={styles.formRow}>
+          <label className={styles.label}>Network</label>
+          <select
+            value={form.tailnetId ?? ''}
+            onChange={e => set('tailnetId', e.target.value)}
+            style={{ width: '100%', minHeight: 44, padding: '8px 10px', borderRadius: 10, border: '1px solid var(--border-medium)', background: 'var(--bg-input)', color: 'var(--text-primary)' }}
+          >
+            <option value="">Direct network</option>
+            {tailnets.map(t => <option key={t.id} value={t.id}>{t.name}{t.online ? '' : ' (offline)'}</option>)}
+          </select>
+        </div>
+      )}
       <div className={styles.formRow}>
         <label className={styles.label}>Username</label>
         <ZestTextbox value={form.username} onChange={e => set('username', e.target.value)}

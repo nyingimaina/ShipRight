@@ -55,6 +55,8 @@ export interface IServerConfig {
   host: string;
   username: string;
   sshKeyPath: string;
+  /** Optional tenant Tailscale network. Empty means direct networking. */
+  tailnetId?: string;
   remoteWorkingDir: string;
   rebuildScript: string;
   deployMode: DeployMode;

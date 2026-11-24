@@ -13,6 +13,7 @@ import {
   RiListCheck,
   RiTeamLine,
   RiHardDriveLine,
+  RiLinksLine,
   RiLogoutCircleLine,
 } from "react-icons/ri";
 import ThemeToggle from "@/shared/theme/ThemeToggle";
@@ -72,6 +73,14 @@ export default function AppShell({ children }: Props) {
       searchTerms: "servers hosts ssh",
       description: "Hosts ShipRight can deploy to",
       onClick: () => router.push("/servers"),
+    },
+    {
+      id: "tailnets",
+      label: "Tailscale",
+      icon: <RiLinksLine size={18} />,
+      searchTerms: "tailscale tailnet vpn private network",
+      description: "Optional private networks",
+      onClick: () => router.push("/tailnets"),
     },
     {
       id: "resources",
@@ -144,7 +153,7 @@ export default function AppShell({ children }: Props) {
   return (
     <>
       <SidekickMenu
-        items={isAdmin ? menuItems : menuItems.filter((item) => item.id !== "team")}
+        items={isAdmin ? menuItems : menuItems.filter((item) => item.id !== "team" && item.id !== "tailnets")}
         searchEnabled={false}
         favouritesEnabled
         favouritesOptions={{ maxItems: 8, minToShowTab: 3, windowDays: 30 }}

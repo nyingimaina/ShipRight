@@ -32,7 +32,9 @@ using ShipRight.Modules.Resources;
 using ShipRight.Modules.Resources.Models;
 using ShipRight.Modules.Resources.Stores;
 using ShipRight.Modules.Scheduler;
+using ShipRight.Modules.ServerNetwork;
 using ShipRight.Modules.Setup;
+using ShipRight.Modules.Tailscale;
 using ShipRight.Modules.WatchBranch;
 using ShipRight.Modules.Services;
 using ShipRight.Modules.Servers;
@@ -206,6 +208,7 @@ try
     app.MapHealthRoutes(profile, cloudMode ? AppMode.Cloud : AppMode.Desktop);
     app.MapSystemRoutes();
     app.MapHostSwapRoutes();
+    app.MapTailnetRoutes();
     app.MapWslDiskRoutes();
     app.MapDockerCleanupRoutes();
     app.MapSystemCheckRoutes();
@@ -373,6 +376,7 @@ static void RegisterDesktopServices(IServiceCollection services, string dataDir)
     services.AddSingleton<DatabaseOrchestrator>();
     services.AddSingleton<DatabaseBackupService>();
     services.AddSingleton<IServerStore>(_ => new SqliteServerStore(dataDir));
+    services.AddTailscaleNetworking(dataDir);
     services.AddSingleton<SshKeyStore>(_ => new SshKeyStore(dataDir));
     services.AddSingleton<IRemoteHostProvider, LinuxSshProvider>();
     services.AddSingleton<IMonitoringProvider, LinuxSshMonitoringProvider>();

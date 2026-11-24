@@ -26,6 +26,8 @@ public static class RoleAccessRules
         R("POST", @"/api/builds/[^/]+/force-abort", AppRoles.Admin),
         R(null, @"/api/fs(/.*)?", AppRoles.Admin),
         R(null, @"/api/setup(/.*)?", AppRoles.Admin),
+        R("GET", @"/api/tailnets(/.*)?", AppRoles.Viewer),
+        R(null, @"/api/tailnets(/.*)?", AppRoles.Admin),
 
         // Sign-in plumbing for an already signed-in person.
         R(null, @"/api/auth/(me|logout|change-password)", AppRoles.Viewer),
