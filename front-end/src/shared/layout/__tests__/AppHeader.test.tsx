@@ -1,5 +1,8 @@
+import { readFileSync } from 'fs';
+import path from 'path';
 import { render, screen } from '@testing-library/react';
 import AppHeader from '../AppHeader';
+import styles from '../AppHeader.module.css';
 import { useSystemStats } from '../useSystemStats';
 
 let user: any = { name: 'Ada Lovelace', companyName: 'Analytical Engines', role: 'Operator' };
@@ -47,5 +50,19 @@ describe('AppHeader', () => {
     rerender(<AppHeader />);
     expect(screen.queryByRole('status')).toBeNull();
     expect(screen.getByRole('banner')).toHaveTextContent('—');
+  });
+
+  it('is a fixed full-width bar layered below the sidekick hamburger', () => {
+    const css = readFileSync(path.join(__dirname, '..', 'AppHeader.module.css'), 'utf8');
+    const bar = css.match(/\.bar\s*\{([^}]*)\}/)?.[1] ?? '';
+
+    expect(bar).toMatch(/position:\s*fixed/);
+    expect(bar).toMatch(/left:\s*0/);
+    expect(bar).toMatch(/right:\s*0/);
+    expect(bar).toMatch(/z-index:\s*900/);
+    expect(bar).toMatch(/padding-left:\s*76px/);
+
+    render(<AppHeader />);
+    expect(screen.getByRole('banner')).toHaveClass(styles.bar);
   });
 });

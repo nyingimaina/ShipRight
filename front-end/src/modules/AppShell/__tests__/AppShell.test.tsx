@@ -1,5 +1,8 @@
+import { readFileSync } from 'fs';
+import path from 'path';
 import { render, screen, waitFor } from '@testing-library/react';
 import AppShell from '../AppShell';
+import styles from '../Styles/AppShell.module.css';
 import { resetServerVersionCache } from '@/shared/serverInfo';
 
 jest.mock('next/router', () => ({ useRouter: () => ({ push: jest.fn(), pathname: '/' }) }));
@@ -55,5 +58,16 @@ describe('AppShell version', () => {
     render(<AppShell><p>b</p></AppShell>);
     await screen.findByText('v4.10.4');
     expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves room below the fixed full-width header for page content', () => {
+    health({ serverVersion: '4.10.4' });
+    const css = readFileSync(path.join(__dirname, '..', 'Styles', 'AppShell.module.css'), 'utf8');
+    const content = css.match(/\.content\s*\{([^}]*)\}/)?.[1] ?? '';
+
+    expect(content).toMatch(/padding:\s*88px 40px 32px/);
+
+    const { container } = render(<AppShell><p>page</p></AppShell>);
+    expect(container.querySelector('main')).toHaveClass(styles.content);
   });
 });

@@ -1,0 +1,74 @@
+/* Fixed full-width top bar; z-index stays below the Sidekick overlay container (1000),
+   while its left padding keeps the library's fixed hamburger clear of the metrics. */
+.bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  min-height: 64px;
+  box-sizing: border-box;
+  padding: 10px 20px;
+  padding-left: 76px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.identity {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.35;
+  min-width: 0;
+}
+
+.name {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.sub {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.metric {
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.warn {
+  color: var(--warning);
+  border: 1px solid var(--warning);
+  border-radius: 6px;
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+
+@media (max-width: 700px) {
+  .bar {
+    gap: 8px;
+    padding: 8px 10px;
+    padding-left: 68px;
+    font-size: 11px;
+  }
+
+  .name,
+  .sub {
+    max-width: 110px;
+  }
+}
