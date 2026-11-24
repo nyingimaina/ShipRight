@@ -231,18 +231,14 @@ export default function PipelinesPage() {
             ) : undefined,
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+          <header className={styles.pageHeader}>
             <h1 className={styles.heading}>Pipelines</h1>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div className={styles.actions}>
               {allProjects.length > 0 && (
                 <select
+                  className={styles.projectFilter}
                   value={filterProjectId}
                   onChange={e => setFilterProjectId(e.target.value)}
-                  style={{
-                    background: '#131D30', color: '#C9D6E3',
-                    border: '1px solid rgba(255,255,255,0.12)',
-                    borderRadius: 6, padding: '7px 10px', fontSize: 13,
-                  }}
                 >
                   <option value="">All projects</option>
                   {allProjects.map(p => (
@@ -255,7 +251,7 @@ export default function PipelinesPage() {
                 New Pipeline
               </ZestButton>
             </div>
-          </div>
+          </header>
 
           <div className={styles.grid}>
             {loading && [0, 1, 2].map(i => (

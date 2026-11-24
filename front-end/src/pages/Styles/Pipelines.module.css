@@ -1,26 +1,58 @@
+.pageHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
 .heading {
-  font-size: 24px;
-  font-weight: 600;
-  color: #F0F2F5;
+  font-size: clamp(1.55rem, 6vw, 2rem);
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.035em;
+  color: var(--text-primary);
   margin: 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.actions > * {
+  flex: 1 1 150px;
+}
+
+.projectFilter {
+  min-height: var(--touch-target);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border-medium);
+  border-radius: 12px;
+  padding: 7px 10px;
+  font-size: 14px;
 }
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
+  gap: 12px;
 }
 
 .card {
-  background: #1A2540;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
+  background: linear-gradient(160deg, var(--bg-card), var(--bg-elevated));
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
   padding: 16px;
-  transition: border-color 0.15s;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.10);
+  transition: border-color 0.15s, transform 0.18s var(--ease-spring);
 }
 
 .card:hover {
-  border-color: rgba(201, 168, 76, 0.3);
+  border-color: var(--accent-border);
+  transform: translateY(-1px);
 }
 
 .cardTop {
@@ -37,7 +69,7 @@
 .cardTitle {
   font-size: 16px;
   font-weight: 600;
-  color: #F0F2F5;
+  color: var(--text-primary);
   margin: 0 0 4px 0;
   white-space: nowrap;
   overflow: hidden;
@@ -46,7 +78,7 @@
 
 .cardScope {
   font-size: 12px;
-  color: #8B95A5;
+  color: var(--text-muted);
   margin: 0 0 8px 0;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -65,7 +97,7 @@
 
 .cardDetail {
   font-size: 13px;
-  color: #637389;
+  color: var(--text-muted);
   margin: 0;
 }
 
@@ -78,10 +110,23 @@
   height: 20px;
 }
 
+@media (min-width: 640px) {
+  .pageHeader {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+  }
+
+  .actions > * {
+    flex: 0 0 auto;
+  }
+}
+
 .empty {
   grid-column: 1 / -1;
   text-align: center;
-  color: #637389;
+  color: var(--text-muted);
   font-size: 14px;
   padding: 32px;
 }
@@ -104,8 +149,8 @@
 }
 
 .pickerCard {
-  background: #1A2540;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-medium);
   border-radius: 10px;
   padding: 20px;
   width: 360px;
@@ -118,7 +163,7 @@
 .pickerTitle {
   font-size: 16px;
   font-weight: 600;
-  color: #F0F2F5;
+  color: var(--text-primary);
   margin: 0;
 }
 
@@ -132,7 +177,7 @@
 
 .pickerItem {
   background: none;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-subtle);
   border-radius: 6px;
   padding: 10px 12px;
   color: #C9D6E3;
@@ -166,7 +211,7 @@
 
 .pickerEmpty {
   padding: 16px;
-  color: #637389;
+  color: var(--text-muted);
   text-align: center;
   font-size: 13px;
 }

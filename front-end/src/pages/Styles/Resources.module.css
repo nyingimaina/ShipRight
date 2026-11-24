@@ -1,4 +1,26 @@
-.heading { font-size: 24px; margin-bottom: 24px; color: var(--text-primary); }
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.heading {
+  font-size: clamp(1.55rem, 6vw, 2rem);
+  line-height: 1.05;
+  letter-spacing: -0.035em;
+  color: var(--text-primary);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.actions > * {
+  flex: 1 1 150px;
+}
 
 .tabs {
   display: flex;
@@ -6,16 +28,24 @@
   margin-bottom: 20px;
   border-bottom: 1px solid var(--border-subtle);
   padding-bottom: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
 }
 
+.tabs::-webkit-scrollbar { display: none; }
+
 .tab {
+  flex: 0 0 auto;
+  min-height: var(--touch-target);
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
-  padding: 8px 16px;
-  font-size: 14px;
+  padding: 8px 14px;
+  font-size: 13px;
   color: var(--text-muted);
   cursor: pointer;
+  white-space: nowrap;
   transition: color 0.15s, border-color 0.15s;
 }
 .tab:hover { color: var(--text-primary); }
@@ -23,20 +53,21 @@
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(360px,100%), 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(min(320px,100%), 1fr));
+  gap: 12px;
 }
 
 @media (max-width: 480px) { .grid { grid-template-columns: 1fr; } }
 
 .card {
-  background: var(--bg-elevated);
+  background: linear-gradient(160deg, var(--bg-card), var(--bg-elevated));
   border: 1px solid var(--border-subtle);
-  border-radius: 10px;
+  border-radius: 16px;
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.10);
 }
 
 .cardTop    { display: flex; justify-content: space-between; align-items: flex-start; }
@@ -65,3 +96,16 @@
 
 .skeletonCard  { height: 120px; }
 .skeletonTitle { width: 60%; height: 16px; margin-bottom: 8px; }
+
+@media (min-width: 640px) {
+  .header {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+  }
+
+  .actions > * {
+    flex: 0 0 auto;
+  }
+}

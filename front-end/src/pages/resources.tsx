@@ -372,30 +372,32 @@ export default function ResourcesPage() {
             content: paneContent,
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+          <header className={styles.header}>
             <h1 className={styles.heading}>Resources</h1>
-            {tab === 'registries' ? (
-              <ZestButton onClick={openNewRegistry}
-                zest={{ visualOptions: { variant: 'standard' }, semanticType: 'add' }}>
-                New Registry
-              </ZestButton>
-            ) : tab === 'scripts' ? (
-              <ZestButton onClick={openNewScript}
-                zest={{ visualOptions: { variant: 'standard' }, semanticType: 'add' }}>
-                New Script
-              </ZestButton>
-            ) : tab === 'credentials' ? (
-              <ZestButton onClick={openNewCredential}
-                zest={{ visualOptions: { variant: 'standard' }, semanticType: 'add' }}>
-                New Credential
-              </ZestButton>
-            ) : tab === 'aws-profiles' ? (
-              <ZestButton onClick={openNewAwsProfile}
-                zest={{ visualOptions: { variant: 'standard' }, semanticType: 'add' }}>
-                New AWS Profile
-              </ZestButton>
-            ) : null}
-          </div>
+            <div className={styles.actions}>
+              {tab === 'registries' ? (
+                <ZestButton onClick={openNewRegistry}
+                  zest={{ visualOptions: { variant: 'standard' }, semanticType: 'add' }}>
+                  New Registry
+                </ZestButton>
+              ) : tab === 'scripts' ? (
+                <ZestButton onClick={openNewScript}
+                  zest={{ visualOptions: { variant: 'standard' }, semanticType: 'add' }}>
+                  New Script
+                </ZestButton>
+              ) : tab === 'credentials' ? (
+                <ZestButton onClick={openNewCredential}
+                  zest={{ visualOptions: { variant: 'standard' }, semanticType: 'add' }}>
+                  New Credential
+                </ZestButton>
+              ) : tab === 'aws-profiles' ? (
+                <ZestButton onClick={openNewAwsProfile}
+                  zest={{ visualOptions: { variant: 'standard' }, semanticType: 'add' }}>
+                  New AWS Profile
+                </ZestButton>
+              ) : null}
+            </div>
+          </header>
 
           <div className={styles.tabs}>
             <button
