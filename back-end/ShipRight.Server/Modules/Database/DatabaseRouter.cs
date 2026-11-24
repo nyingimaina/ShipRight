@@ -143,7 +143,7 @@ public static class DatabaseRouter
         // ── Backup ────────────────────────────────────────────────────────────
 
         app.MapPost("/api/projects/{id}/db/backup", async (
-            string id, IProjectStore store, DatabaseOrchestrator orchestrator, BuildEventBus bus) =>
+            string id, IProjectStore store, DatabaseBackupService backups, BuildEventBus bus) =>
         {
             var project = await store.GetByIdAsync(id);
             if (project is null)
@@ -155,7 +155,7 @@ public static class DatabaseRouter
 
             var opId = Guid.NewGuid().ToString("N");
             bus.Register(opId);
-            _ = Task.Run(() => orchestrator.BackupAsync(project, opId, CancellationToken.None));
+            _ = Task.Run(() => backups.BackupAsync(project, opId, CancellationToken.None));
             return Results.Accepted($"/api/projects/{id}/db/ops/{opId}/stream",
                 new { opId, message = "Backup started." });
         });

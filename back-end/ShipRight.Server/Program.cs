@@ -371,6 +371,7 @@ static void RegisterDesktopServices(IServiceCollection services, string dataDir)
         sp.GetRequiredService<MariaDbProvider>(),
         sp.GetRequiredService<SqlServerProvider>()));
     services.AddSingleton<DatabaseOrchestrator>();
+    services.AddSingleton<DatabaseBackupService>();
     services.AddSingleton<IServerStore>(_ => new SqliteServerStore(dataDir));
     services.AddSingleton<SshKeyStore>(_ => new SshKeyStore(dataDir));
     services.AddSingleton<IRemoteHostProvider, LinuxSshProvider>();

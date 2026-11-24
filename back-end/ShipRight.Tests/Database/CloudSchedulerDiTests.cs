@@ -50,6 +50,7 @@ public class CloudSchedulerDiTests
         services.AddSingleton<IProjectStore>(new StubProjectStore());
         services.AddSingleton<DatabaseOrchestrator>(_ => new DatabaseOrchestrator(
             new StubDbProviderResolver(), new StubSshRunner(), new KnownHostsStore(), new BuildEventBus()));
+        services.AddSingleton<DatabaseBackupService>();
         services.AddSingleton(_ => new MariaDbBackupHistoryStore(null!));
         CloudSchedulerRegistrar.Register(services);
 

@@ -86,7 +86,7 @@ describe('AppShell version', () => {
     render(<AppShell><p>page</p></AppShell>);
 
     const nav = await screen.findByRole('navigation');
-    expect(nav).toHaveAttribute('data-search', 'true');
+    expect(nav).toHaveAttribute('data-search', 'false');
     expect(nav).toHaveAttribute('data-swipe', 'true');
     expect(nav).toHaveAttribute('data-surface', 'translucent');
     expect(nav).toHaveAttribute('data-motion', 'playful');

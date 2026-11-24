@@ -2,6 +2,7 @@ using Jattac.Libs.Tempo;
 using Jattac.Libs.Tempo.Scheduling;
 using Microsoft.Extensions.Logging;
 using Serilog;
+using ShipRight.Modules.Database;
 using ShipRight.Modules.Projects;
 using ShipRight.Shared.Store;
 using ILogger = Serilog.ILogger;
@@ -23,7 +24,8 @@ public static class SchedulerModule
             var projectStore = sp.GetRequiredService<IProjectStore>();
             var orchestrator = sp.GetRequiredService<Database.DatabaseOrchestrator>();
 
-            var processor = new BackupJobProcessor(projectStore, orchestrator);
+            var processor = new BackupJobProcessor(
+                projectStore, orchestrator, sp.GetRequiredService<DatabaseBackupService>());
             var queueSettings = new TempoQueueSettings
             {
                 MessagesPerSecond = 3,

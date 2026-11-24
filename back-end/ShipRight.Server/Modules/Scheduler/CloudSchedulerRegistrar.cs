@@ -23,7 +23,8 @@ public static class CloudSchedulerRegistrar
             using var systemScope = sp.GetService<ICompanyContext>()?.BeginSystemScope();
             var processor = new BackupJobProcessor(
                 sp.GetRequiredService<IProjectStore>(),
-                sp.GetRequiredService<DatabaseOrchestrator>());
+                sp.GetRequiredService<DatabaseOrchestrator>(),
+                sp.GetRequiredService<DatabaseBackupService>());
             var queue = new TempoQueue<TempoScheduledWork<BackupJob>>(processor,
                 new TempoQueueSettings
                 {

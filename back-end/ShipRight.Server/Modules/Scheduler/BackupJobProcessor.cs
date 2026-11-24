@@ -10,11 +10,16 @@ public class BackupJobProcessor : ITempoProcessor<TempoScheduledWork<BackupJob>>
 {
     private readonly IProjectStore _projectStore;
     private readonly DatabaseOrchestrator _orchestrator;
+    private readonly DatabaseBackupService? _backups;
 
-    public BackupJobProcessor(IProjectStore projectStore, DatabaseOrchestrator orchestrator)
+    public BackupJobProcessor(
+        IProjectStore projectStore,
+        DatabaseOrchestrator orchestrator,
+        DatabaseBackupService? backups = null)
     {
         _projectStore = projectStore;
         _orchestrator = orchestrator;
+        _backups = backups;
     }
 
     public async Task<bool> ProcessAsync(TempoScheduledWork<BackupJob> work, CancellationToken ct)
@@ -38,9 +43,14 @@ public class BackupJobProcessor : ITempoProcessor<TempoScheduledWork<BackupJob>>
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(work.MaxDuration.Value);
-            return await _orchestrator.ScheduledBackupAsync(project, cts.Token);
+            return await RunBackupAsync(project, cts.Token);
         }
 
-        return await _orchestrator.ScheduledBackupAsync(project, ct);
+        return await RunBackupAsync(project, ct);
     }
+
+    private Task<bool> RunBackupAsync(ProjectConfig project, CancellationToken ct) =>
+        _backups is not null
+            ? _backups.ScheduledBackupAsync(project, ct)
+            : _orchestrator.ScheduledBackupAsync(project, ct);
 }

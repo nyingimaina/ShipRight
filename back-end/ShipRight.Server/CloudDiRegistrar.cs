@@ -116,6 +116,7 @@ public static class CloudDiRegistrar
             sp.GetRequiredService<MariaDbProvider>(),
             sp.GetRequiredService<SqlServerProvider>()));
         services.AddSingleton<DatabaseOrchestrator>();
+        services.AddSingleton<DatabaseBackupService>();
         services.AddSingleton<IRemoteHostProvider, LinuxSshProvider>();
         services.AddSingleton<IMonitoringProvider, LinuxSshMonitoringProvider>();
         services.AddSingleton<IHostStatsProvider, HostStatsService>();

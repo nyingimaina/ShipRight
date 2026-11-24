@@ -145,8 +145,7 @@ export default function AppShell({ children }: Props) {
     <>
       <SidekickMenu
         items={isAdmin ? menuItems : menuItems.filter((item) => item.id !== "team")}
-        searchEnabled
-        searchPlaceholder="Jump to…"
+        searchEnabled={false}
         favouritesEnabled
         favouritesOptions={{ maxItems: 8, minToShowTab: 3, windowDays: 30 }}
         side="left"
