@@ -196,11 +196,25 @@ public sealed class TailnetManager : ITailnetManager, IDisposable
         var needsKey = string.IsNullOrEmpty(backend) ||
                        backend.Equals("NeedsLogin", StringComparison.OrdinalIgnoreCase);
         var key = string.Empty;
+        string? keyApiFailure = null;
         if (needsKey)
         {
             key = session.Connection.AuthKey;
             if (string.IsNullOrWhiteSpace(key))
-                key = await _oauth.CreateAuthKeyAsync(session.Connection, ct);
+            {
+                try
+                {
+                    key = await _oauth.CreateAuthKeyAsync(session.Connection, ct);
+                }
+                catch (NetworkUnavailableException ex) when (HasOAuthClient(session.Connection))
+                {
+                    // Tailscale documents using the trust credential's secret directly in `tailscale up` when the
+                    // key API is unavailable or not permitted. Tags are supplied with --advertise-tags below.
+                    keyApiFailure = ex.Message;
+                    key = $"{session.Connection.OAuthClientSecret.Trim()}?ephemeral=true&preauthorized=true";
+                    Log.Warning("Tailscale key API failed; trying the trust credential secret directly: {Reason}", ex.Message);
+                }
+            }
         }
 
         var hostname = $"shipright-{session.Id[..Math.Min(8, session.Id.Length)]}";
@@ -212,8 +226,17 @@ public sealed class TailnetManager : ITailnetManager, IDisposable
 
         var result = await RunTailscaleAsync(session, args, ct);
         if (result.ExitCode != 0)
-            throw new NetworkUnavailableException($"Tailscale could not join '{session.Connection.Name}': {result.Error}");
+        {
+            var message = $"Tailscale could not join '{session.Connection.Name}': {result.Error.Trim()}";
+            if (keyApiFailure is not null)
+                message += $" (The key API also failed: {keyApiFailure})";
+            throw new NetworkUnavailableException(message);
+        }
     }
+
+    private static bool HasOAuthClient(TailnetConnection connection) =>
+        !string.IsNullOrWhiteSpace(connection.OAuthClientId) &&
+        !string.IsNullOrWhiteSpace(connection.OAuthClientSecret);
 
     private async Task<bool> IsOnlineAsync(Session session, CancellationToken ct) =>
         (await ReadStatusAsync(session, ct)).Online;

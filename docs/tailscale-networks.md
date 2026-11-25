@@ -54,10 +54,20 @@ is usually the right tailnet for that credential.
 
 | Message | Meaning and fix |
 |---|---|
-| `could not find the tailnet '…'` (404) | Wrong tailnet name, or the credential has no `auth_keys` scope. Set Tailnet to `-`, or use the name from Settings → General; give the trust credential **Auth keys** write access. |
+| `could not find the tailnet '…'` (404) | Tailscale returns 404 when the credential cannot see the tailnet. Leave Tailnet as `-`; in **Trust credentials** select **Auth keys (Write)** *and at least one tag* (`tag:shipright`) — the tag is mandatory for this scope. OAuth clients must be owned by the tailnet, not by an individual user. |
 | `Tailscale rejected the trust credential` (401/403) | The credential is revoked, or its scope is not **Auth keys**. Create a new trust credential with that scope. |
 | `invalid key` | The auth key is expired or already used. Generate a reusable key, or switch to a trust credential. |
 | `requested tags … are not permitted` | Add the tag to `tagOwners`, or use a key that already carries it. |
+
+When the key API fails, ShipRight retries `tailscale up` with the trust credential's **secret directly** (the documented
+OAuth fallback) and passes the tags with `--advertise-tags`. If that also fails, the error includes both reasons.
+The simplest escape hatch is a tagged auth key; it does not use the key API at all.
+
+### Editing a network
+
+Every card has **Edit**. It loads the name, tailnet and tags; secret fields stay blank and keep the stored values.
+Tick **Remove stored auth key / OAuth client** to delete one, or paste a replacement. Switching from a stored auth
+key to an OAuth client requires removing the auth key, because the auth key is preferred when both exist.
 
 The node's identity lives in the app's persistent volume (`/root/.shipright/tailscale/<company>/<tailnet>`), so a restart
 reuses the saved login instead of spending another key.

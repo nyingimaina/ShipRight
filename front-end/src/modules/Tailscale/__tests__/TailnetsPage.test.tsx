@@ -59,6 +59,28 @@ describe('TailnetsPage', () => {
     expect(screen.getByText(/Google sign-in itself is handled by Tailscale/i)).toBeInTheDocument();
   });
 
+  it('edits an existing network without exposing its stored secrets', async () => {
+    render(<TailnetsPage />);
+    await screen.findByText('Acme');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+
+    expect(screen.getByDisplayValue('Acme')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('example.com')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('tskey-auth-…')).toHaveValue('');
+
+    fireEvent.change(screen.getByDisplayValue('Acme'), { target: { value: 'Acme production' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/api/tailnets', expect.objectContaining({
+      id: 't1',
+      name: 'Acme production',
+      authKey: '',
+      clearAuthKey: false,
+    })));
+    expect(toast.success).toHaveBeenCalledWith('Tailscale network updated.');
+  });
+
   it('gives copy-pastable ACL snippets instead of sending people to search', async () => {
     Object.assign(navigator, { clipboard: { writeText: jest.fn().mockResolvedValue(undefined) } });
 

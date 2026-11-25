@@ -76,7 +76,17 @@ interface Tailnet {
   modifiedAt: string;
 }
 
-const emptyForm = { name: '', tailnet: '-', authKey: '', oauthClientId: '', oauthClientSecret: '', tags: 'tag:shipright' };
+const emptyForm = {
+  id: '',
+  name: '',
+  tailnet: '-',
+  authKey: '',
+  oauthClientId: '',
+  oauthClientSecret: '',
+  tags: 'tag:shipright',
+  clearAuthKey: false,
+  clearOAuthClient: false,
+};
 
 export default function TailnetsPage() {
   const [items, setItems] = useState<Tailnet[]>([]);
@@ -90,14 +100,33 @@ export default function TailnetsPage() {
 
   useEffect(() => { load(); }, []);
 
-  const set = (key: keyof typeof form, value: string) => setForm(prev => ({ ...prev, [key]: value }));
+  const editing = form.id ? items.find(item => item.id === form.id) : undefined;
+
+  const set = (key: keyof typeof form, value: string | boolean) => setForm(prev => ({ ...prev, [key]: value }));
+
+  const startEdit = (item: Tailnet) => {
+    setError('');
+    setForm({
+      ...emptyForm,
+      id: item.id,
+      name: item.name,
+      tailnet: item.tailnet,
+      tags: item.tags,
+    });
+  };
+
+  const cancelEdit = () => {
+    setError('');
+    setForm(emptyForm);
+  };
 
   const save = async () => {
     setBusy(true); setError('');
     try {
       await api.post('/api/tailnets', form);
+      const edited = !!form.id;
       setForm(emptyForm);
-      toast.success('Tailscale network saved.');
+      toast.success(edited ? 'Tailscale network updated.' : 'Tailscale network saved.');
       await load();
     } catch (e) {
       setError((e as Error).message || 'Could not save the Tailscale network.');
@@ -164,6 +193,7 @@ export default function TailnetsPage() {
               <div className={styles.actions}>
                 <ZestButton onClick={() => start(item)} zest={{ semanticType: 'next', visualOptions: { size: 'sm' } }}>Start</ZestButton>
                 <ZestButton onClick={() => test(item)} zest={{ buttonStyle: 'outline', semanticType: 'refresh', visualOptions: { size: 'sm' } }}>Test</ZestButton>
+                <ZestButton onClick={() => startEdit(item)} zest={{ buttonStyle: 'outline', semanticType: 'edit', visualOptions: { size: 'sm' } }}>Edit</ZestButton>
                 <ZestButton onClick={() => stop(item)} zest={{ buttonStyle: 'text', semanticType: 'close', visualOptions: { size: 'sm' } }}>Stop</ZestButton>
                 <ZestButton onClick={() => remove(item)} zest={{ buttonStyle: 'text', semanticType: 'delete', visualOptions: { size: 'sm', variant: 'danger' } }}>Remove</ZestButton>
               </div>
@@ -172,17 +202,23 @@ export default function TailnetsPage() {
         </div>
 
         <section className={styles.formCard}>
-          <h2>Connect a tailnet</h2>
+          <h2>{form.id ? `Edit ${form.name || 'tailnet'}` : 'Connect a tailnet'}</h2>
           <p className={styles.note}>
             Use an auth key, or a Tailscale OAuth client with device-creation access. If your tailnet signs in with Google,
             authorize the OAuth client in Tailscale Admin; Google sign-in itself is handled by Tailscale.
           </p>
+          {form.id && (
+            <p className={styles.editingNote}>
+              Editing an existing network. Leave the secret fields blank to keep the stored values.
+            </p>
+          )}
 
           <InfoTip title="New to Tailscale? Start here" id="tailscale-setup">
             <ol className={styles.steps}>
               <li>
-                Sign in at <DeepLink href={ADMIN}>console.tailscale.com</DeepLink>. This creates your tailnet
-                (its name is usually your email domain plus <code>.ts.net</code>).
+                Sign in at <DeepLink href={ADMIN}>console.tailscale.com</DeepLink>. The tailnet name is shown at the
+                top of the admin console (for a solo plan it is the email you signed up with). You can leave the
+                Tailnet field as <code>-</code>.
               </li>
               <li>
                 Open <DeepLink href={LINKS.keys}>Settings → Keys</DeepLink> and choose <strong>Generate auth key</strong>.
@@ -242,7 +278,8 @@ export default function TailnetsPage() {
               <label>OAuth client ID<ZestTextbox value={form.oauthClientId} onChange={e => set('oauthClientId', e.target.value)} placeholder="Optional" zest={{ stretch: true }} /></label>
               <p className={styles.fieldHelp}>
                 <DeepLink href={LINKS.oauth}>Open Settings → Trust credentials</DeepLink> → <strong>Generate trust credential</strong>,
-                scope <strong>Auth keys</strong> (read &amp; write). Leave blank if you pasted an auth key.
+                scope <strong>Auth keys</strong> (read &amp; write), and select at least one tag
+                (<code>tag:shipright</code>) — Tailscale requires it. Leave blank if you pasted an auth key.
               </p>
             </div>
 
@@ -251,6 +288,12 @@ export default function TailnetsPage() {
               <p className={styles.fieldHelp}>
                 Shown once, next to the client ID. It is stored encrypted and never shown again.
               </p>
+              <InfoTip title="OAuth still says “not found”?" id="oauth-not-found">
+                Tailscale returns 404 when the credential cannot see the tailnet. In Trust credentials, select
+                <strong> Auth keys</strong> (Write) <em>and at least one tag</em> (<code>tag:shipright</code>) — the tag
+                is mandatory for this scope. OAuth clients must be owned by the tailnet, not by an individual user.
+                If it still fails, switch to a tagged auth key: it takes a few seconds and avoids this API entirely.
+              </InfoTip>
             </div>
 
             <div className={styles.fieldGroup}>
@@ -267,10 +310,49 @@ export default function TailnetsPage() {
             </div>
           </div>
 
+          {editing && (
+            <div className={styles.storedCredentials}>
+              <span>
+                Stored: {editing.hasAuthKey ? 'auth key' : 'no auth key'}
+                {' · '}
+                {editing.hasOAuthClient ? 'OAuth client' : 'no OAuth client'}
+              </span>
+              <div className={styles.clearRow}>
+                {editing.hasAuthKey && (
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={form.clearAuthKey}
+                      onChange={e => set('clearAuthKey', e.target.checked)}
+                    />
+                    Remove stored auth key
+                  </label>
+                )}
+                {editing.hasOAuthClient && (
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={form.clearOAuthClient}
+                      onChange={e => set('clearOAuthClient', e.target.checked)}
+                    />
+                    Remove stored OAuth client
+                  </label>
+                )}
+              </div>
+            </div>
+          )}
+
           {error && <p role="alert" className={styles.error}>{error}</p>}
-          <ZestButton onClick={save} disabled={busy} zest={{ semanticType: 'save', visualOptions: { variant: 'standard' } }}>
-            {busy ? 'Saving.' : 'Save network'}
-          </ZestButton>
+          <div className={styles.formActions}>
+            <ZestButton onClick={save} disabled={busy} zest={{ semanticType: 'save', visualOptions: { variant: 'standard' } }}>
+              {busy ? 'Saving.' : form.id ? 'Save changes' : 'Save network'}
+            </ZestButton>
+            {form.id && (
+              <ZestButton onClick={cancelEdit} zest={{ buttonStyle: 'outline', semanticType: 'cancel' }}>
+                Cancel
+              </ZestButton>
+            )}
+          </div>
         </section>
 
         <section className={styles.snippetCard}>
