@@ -214,6 +214,11 @@ export default function TailnetsPage() {
                 The tag the node joins with. It must be listed under
                 {' '}<DeepLink href={LINKS.acls}>Access controls → tagOwners</DeepLink>.
               </p>
+              <InfoTip title="Why does the tag matter?" id="tailscale-tags">
+                Tailscale uses tags to decide what a machine may reach. Add <code>tag:shipright</code> to
+                <strong> tagOwners</strong>, then grant that tag access to your servers (port 22) in the same file.
+                If the tag is missing, the node joins but every connection is refused.
+              </InfoTip>
             </div>
           </div>
 

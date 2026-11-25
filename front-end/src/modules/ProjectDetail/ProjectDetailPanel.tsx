@@ -621,6 +621,7 @@ export default function ProjectDetailPanel({ projectId, onBack }: Props) {
 
                 <DbOperationsPanel
                   apiBase={`/api/projects/${projectId}/db`}
+                  projectId={projectId}
                   dbConfig={project.database}
                 />
               </>
