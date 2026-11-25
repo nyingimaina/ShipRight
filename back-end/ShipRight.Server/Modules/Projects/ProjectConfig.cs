@@ -11,6 +11,12 @@ public record DatabaseConfig
     public string DatabaseName        { get; init; } = string.Empty;
     public string RootUser            { get; init; } = "root";
     public int    BackupRetainCount   { get; init; } = 10;
+    /// <summary>Delete backups older than this many days even when the count is not reached. 0 = no age cap.</summary>
+    public int    BackupRetainDays    { get; init; } = 0;
+    /// <summary>zstd level for stored backups: 0 stores raw, 1–19 compress. Default 12.</summary>
+    public int    BackupCompressionLevel { get; init; } = 12;
+    /// <summary>Encrypt backups at rest with the server-managed backup key.</summary>
+    public bool   BackupEncrypt       { get; init; } = true;
     /// <summary>
     /// Optional explicit password. When set, overrides the container's env-var
     /// (MYSQL_ROOT_PASSWORD / SA_PASSWORD). Stored encrypted at rest.

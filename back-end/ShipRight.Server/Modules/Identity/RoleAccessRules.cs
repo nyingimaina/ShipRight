@@ -28,6 +28,9 @@ public static class RoleAccessRules
         R(null, @"/api/setup(/.*)?", AppRoles.Admin),
         R("GET", @"/api/tailnets(/.*)?", AppRoles.Viewer),
         R(null, @"/api/tailnets(/.*)?", AppRoles.Admin),
+        R("GET", @"/api/backups/recovery-key/export", AppRoles.Admin),
+        R("GET", @"/api/backups(/.*)?", AppRoles.Viewer),
+        R(null, @"/api/backups(/.*)?", AppRoles.Admin),
 
         // Sign-in plumbing for an already signed-in person.
         R(null, @"/api/auth/(me|logout|change-password)", AppRoles.Viewer),
@@ -56,6 +59,7 @@ public static class RoleAccessRules
         R("POST", @"/api/projects/[^/]+/(repos/[^/]+/(purge-history|delete-files)|compose-repo/clone-url|ssh-key/(generate|authorize))", AppRoles.Admin),
         R("POST", @"/api/projects/[^/]+/build-source", AppRoles.Admin),
         R("POST", @"/api/projects/[^/]+/local-cleanup", AppRoles.Admin),
+        R("PUT", @"/api/projects/[^/]+/db/backup-policy", AppRoles.Admin),
         R("POST", @"/api/projects/[^/]+/(space/clean|local-cleanup-policy)", AppRoles.Admin),
         R("POST", @"/api/projects", AppRoles.Admin),
         R("POST", @"/api/projects/detect", AppRoles.Admin),
@@ -65,7 +69,7 @@ public static class RoleAccessRules
         // Operations that stream output of work somebody started: not for read-only people.
         R("GET", @"/api/projects/[^/]+/(ssh/ops|db/ops)/.+/stream", AppRoles.Operator),
         R("GET", @"/api/projects/[^/]+/container-logs/stream", AppRoles.Operator),
-        R("GET", @"/api/projects/[^/]+/db/backups/(download|open-folder)", AppRoles.Operator),
+        R("GET", @"/api/projects/[^/]+/db/backups/(download)", AppRoles.Operator),
         R("GET", @"/api/repos/ops/[^/]+/stream", AppRoles.Operator),
 
         // Scheduling changes are settings.

@@ -28,6 +28,14 @@ public static class TailscaleRegistration
             inner,
             sp.GetRequiredService<IServerNetworkResolver>(),
             sp.GetRequiredService<IServerRoutedSshRunner>()));
+        services.AddSingleton<RawSshRunner>();
+        services.AddSingleton<IRawSshRunner>(sp => sp.GetRequiredService<RawSshRunner>());
+        services.AddSingleton<Socks5RawSshRunner>();
+        services.AddSingleton<IServerRoutedRawSshRunner>(sp => sp.GetRequiredService<Socks5RawSshRunner>());
+        services.DecorateSingleton<IRawSshRunner>((sp, inner) => new NetworkAwareRawSshRunner(
+            inner,
+            sp.GetRequiredService<IServerNetworkResolver>(),
+            sp.GetRequiredService<IServerRoutedRawSshRunner>()));
         return services;
     }
 }

@@ -81,6 +81,9 @@ export interface IDatabaseConfig {
   databaseName: string;
   rootUser: string;
   backupRetainCount: number;
+  backupRetainDays?: number;
+  backupCompressionLevel?: number;
+  backupEncrypt?: boolean;
   rootPassword?: string;
 }
 

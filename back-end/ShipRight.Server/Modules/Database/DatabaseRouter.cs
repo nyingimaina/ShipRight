@@ -171,14 +171,16 @@ public static class DatabaseRouter
                 return Results.NotFound(new { isError = true, message = $"Project '{id}' not found." });
             if (project.Database is null)
                 return Results.BadRequest(new { isError = true, message = "No database configuration for this project." });
-            if (string.IsNullOrWhiteSpace(request.BackupFile))
-                return Results.BadRequest(new { isError = true, message = "backupFile is required." });
-            if (!File.Exists(request.BackupFile))
-                return Results.BadRequest(new { isError = true, message = $"Backup file not found: {request.BackupFile}" });
+            if (string.IsNullOrWhiteSpace(request.FileName))
+                return Results.BadRequest(new { isError = true, message = "fileName is required." });
+
+            var known = orchestrator.ListBackups(id).Any(a => a.FileName == request.FileName);
+            if (!known)
+                return Results.BadRequest(new { isError = true, message = $"Backup not found: {request.FileName}" });
 
             var opId = Guid.NewGuid().ToString("N");
             bus.Register(opId);
-            _ = Task.Run(() => orchestrator.RestoreAsync(project, opId, request.BackupFile, CancellationToken.None));
+            _ = Task.Run(() => orchestrator.RestoreAsync(project, opId, request.FileName!, CancellationToken.None));
             return Results.Accepted($"/api/projects/{id}/db/ops/{opId}/stream",
                 new { opId, message = "Restore started." });
         });
@@ -227,6 +229,44 @@ public static class DatabaseRouter
                 new { opId, message = "Query started." });
         });
 
+        // ── Backup policy ─────────────────────────────────────────────────────
+
+        app.MapPut("/api/projects/{id}/db/backup-policy", async (
+            string id, BackupPolicyRequest request, IProjectStore store) =>
+        {
+            var project = await store.GetByIdAsync(id);
+            if (project is null)
+                return Results.NotFound(new { isError = true, message = $"Project '{id}' not found." });
+            if (project.Database is null)
+                return Results.BadRequest(new { isError = true, message = "No database configuration for this project." });
+            if (request.KeepCount is < 1 or > 3650)
+                return Results.BadRequest(new { isError = true, message = "Keep at least one backup and at most 3650." });
+            if (request.KeepDays is < 0 or > 3650)
+                return Results.BadRequest(new { isError = true, message = "The age limit must be between 0 and 3650 days." });
+            if (!BackupCompression.IsValid(request.CompressionLevel))
+                return Results.BadRequest(new { isError = true, message = "The compression level must be between 0 and 19." });
+
+            var updated = project with
+            {
+                Database = project.Database with
+                {
+                    BackupRetainCount = request.KeepCount,
+                    BackupRetainDays = request.KeepDays,
+                    BackupCompressionLevel = request.CompressionLevel,
+                    BackupEncrypt = request.Encrypt,
+                },
+            };
+            await store.SaveAsync(updated);
+
+            return Results.Ok(new
+            {
+                keepCount = updated.Database.BackupRetainCount,
+                keepDays = updated.Database.BackupRetainDays,
+                compressionLevel = updated.Database.BackupCompressionLevel,
+                encrypt = updated.Database.BackupEncrypt,
+            });
+        });
+
         // ── List backups ──────────────────────────────────────────────────────
 
         app.MapGet("/api/projects/{id}/db/backups", async (
@@ -236,43 +276,48 @@ public static class DatabaseRouter
             if (project is null)
                 return Results.NotFound(new { isError = true, message = $"Project '{id}' not found." });
 
-            var backups = orchestrator.ListBackups(id);
-            return Results.Ok(backups);
-        });
-
-        // ── Open backup folder in Explorer ────────────────────────────────────
-
-        app.MapGet("/api/projects/{id}/db/backups/open-folder", async (
-            string id, string file, IProjectStore store, DatabaseOrchestrator orchestrator) =>
-        {
-            var project = await store.GetByIdAsync(id);
-            if (project is null)
-                return Results.NotFound(new { isError = true, message = $"Project '{id}' not found." });
-
-            var filePath = orchestrator.ResolveBackupFile(id, file);
-            if (filePath is null)
-                return Results.NotFound(new { isError = true, message = "Backup file not found." });
-
-            global::System.Diagnostics.Process.Start(new global::System.Diagnostics.ProcessStartInfo(
-                "explorer.exe", $"/select,\"{filePath}\"") { UseShellExecute = true });
-
-            return Results.Ok(new { message = "Opened." });
+            var artifacts = orchestrator.ListBackups(id);
+            return Results.Ok(BackupViews.Build(
+                artifacts,
+                project.Database?.BackupRetainCount ?? 10,
+                project.Database?.BackupRetainDays ?? 0));
         });
 
         // ── Download backup ───────────────────────────────────────────────────
 
         app.MapGet("/api/projects/{id}/db/backups/download", async (
-            string id, string file, IProjectStore store, DatabaseOrchestrator orchestrator) =>
+            string id, string file, string? format,
+            IProjectStore store, DatabaseOrchestrator orchestrator, BackupKeyring keyring, CancellationToken ct) =>
         {
             var project = await store.GetByIdAsync(id);
             if (project is null)
                 return Results.NotFound(new { isError = true, message = $"Project '{id}' not found." });
 
-            var filePath = orchestrator.ResolveBackupFile(id, file);
-            if (filePath is null)
+            var known = orchestrator.ListBackups(id).FirstOrDefault(a => a.FileName == file);
+            if (known is null)
                 return Results.NotFound(new { isError = true, message = "Backup file not found." });
 
-            return Results.File(filePath, "application/octet-stream", file);
+            var mode = (format ?? "plain").Trim().ToLowerInvariant();
+            if (mode is not ("plain" or "zstd"))
+                return Results.BadRequest(new { isError = true, message = "format must be plain or zstd." });
+
+            try
+            {
+                var readMode = mode == "zstd" ? BackupReadMode.Compressed : BackupReadMode.Plain;
+                var (stream, meta) = await orchestrator.OpenBackupAsync(id, file, readMode, ct);
+                var name = BackupMetadata.OriginalFileName(meta);
+                if (mode == "zstd") name += ".zst";
+
+                return Results.Stream(stream, mode == "zstd" ? "application/zstd" : "application/octet-stream", name);
+            }
+            catch (FileNotFoundException)
+            {
+                return Results.NotFound(new { isError = true, message = "Backup file not found." });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(new { isError = true, message = ex.Message });
+            }
         });
 
         // ── Delete backup ─────────────────────────────────────────────────────
@@ -291,6 +336,56 @@ public static class DatabaseRouter
             {
                 orchestrator.DeleteBackup(id, file);
                 return Results.Ok(new { message = "Backup deleted." });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(new { isError = true, message = ex.Message });
+            }
+        });
+
+        // ── Storage and recovery keys ─────────────────────────────────────────
+
+        app.MapGet("/api/backups/storage", (DatabaseOrchestrator orchestrator) =>
+            Results.Ok(orchestrator.StorageInfo()));
+
+        app.MapGet("/api/backups/recovery-key", async (BackupKeyring keyring, CancellationToken ct) =>
+            Results.Ok(new { keys = await keyring.ListAsync(ct) }));
+
+        app.MapGet("/api/backups/recovery-key/export", async (BackupKeyring keyring, CancellationToken ct) =>
+        {
+            var json = await keyring.ExportJsonAsync(ct);
+            return Results.File(global::System.Text.Encoding.UTF8.GetBytes(json), "application/json",
+                $"shipright-backup-keys-{DateTime.UtcNow:yyyyMMdd}.json");
+        });
+
+        app.MapPost("/api/backups/recovery-key/rotate", async (BackupKeyring keyring, CancellationToken ct) =>
+        {
+            var key = await keyring.RotateAsync(ct);
+            Log.Information("Backup key rotated; new active key {KeyId}", key.Id);
+            return Results.Ok(new
+            {
+                activeKeyId = key.Id,
+                message = "A new key is active. Download the recovery file again: it contains every key, including this one.",
+                recovery = await keyring.ExportAsync(ct),
+            });
+        });
+
+        app.MapPost("/api/backups/recovery-key/retire", async (
+            RetireKeyRequest request, BackupKeyring keyring, BackupStorage storage, CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.KeyId))
+                return Results.BadRequest(new { isError = true, message = "keyId is required." });
+            if (BackupArchive.ReferencedKeyIds(storage).Contains(request.KeyId))
+                return Results.BadRequest(new
+                {
+                    isError = true,
+                    message = "Existing backups still use this key, so it cannot be retired yet.",
+                });
+
+            try
+            {
+                await keyring.RetireAsync(request.KeyId, ct);
+                return Results.Ok(new { message = "Key retired." });
             }
             catch (InvalidOperationException ex)
             {
@@ -357,7 +452,9 @@ public static class DatabaseRouter
     private record InlineServerRequest(string Host, string Username, string SshKeyPath);
     private record DatabasesInlineRequest(string Host, string Username, string SshKeyPath, string Container, string Provider, string RootUser = "root", string RootPassword = "");
     private record DatabasesProjectRequest(string Container, string Provider, string RootUser = "root", string RootPassword = "");
-    private record RestoreRequest(string BackupFile);
+    private record RestoreRequest(string? FileName);
+    private record RetireKeyRequest(string? KeyId);
+    private record BackupPolicyRequest(int KeepCount, int KeepDays, int CompressionLevel, bool Encrypt = true);
     private record QueryRequest(string LocalSqlPath);
     private record QueryRawRequest(string Sql);
 }

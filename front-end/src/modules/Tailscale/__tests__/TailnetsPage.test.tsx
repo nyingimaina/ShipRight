@@ -40,7 +40,7 @@ describe('TailnetsPage', () => {
     expect(await screen.findByText('Acme')).toBeInTheDocument();
     expect(screen.getByText(/SOCKS5 127.0.0.1:43123/)).toBeInTheDocument();
     expect(screen.getAllByText(/Auth key/).length).toBeGreaterThan(0);
-    expect(screen.queryByText(/tskey-/)).toBeNull();
+    expect(screen.queryByText(/tskey-auth-secret/)).toBeNull();
   });
 
   it('saves a new network and explains the Google limitation', async () => {
@@ -57,5 +57,30 @@ describe('TailnetsPage', () => {
     })));
     expect(toast.success).toHaveBeenCalledWith('Tailscale network saved.');
     expect(screen.getByText(/Google sign-in itself is handled by Tailscale/i)).toBeInTheDocument();
+  });
+
+  it('explains where each value comes from and links straight into the Tailscale admin console', async () => {
+    render(<TailnetsPage />);
+    await screen.findByText('Acme');
+
+    fireEvent.click(screen.getByRole('button', { name: /Help: New to Tailscale/i }));
+
+    expect(screen.getAllByText(/Generate auth key/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/tagOwners/i).length).toBeGreaterThan(0);
+
+    const links = screen.getAllByRole('link').map(link => ({
+      href: link.getAttribute('href'),
+      target: link.getAttribute('target'),
+    }));
+
+    for (const href of [
+      'https://console.tailscale.com/admin/settings/keys',
+      'https://console.tailscale.com/admin/settings/oauth',
+      'https://console.tailscale.com/admin/acls',
+    ]) {
+      const match = links.find(link => link.href === href);
+      expect(match).toBeDefined();
+      expect(match?.target).toBe('_blank');
+    }
   });
 });

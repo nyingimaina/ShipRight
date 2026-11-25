@@ -79,3 +79,8 @@ export const api = {
 export function sseUrl(path: string): string {
   return `${BASE}${path}`;
 }
+
+/** Resolve an API path to a fully-qualified URL for links and downloads. */
+export function apiUrl(path: string): string {
+  return `${BASE}${path}`;
+}

@@ -1,8 +1,12 @@
 import Head from 'next/head';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import toast from 'react-hot-toast';
 import ZestButton from 'jattac.libs.web.zest-button';
 import AppShell from '@/modules/AppShell/AppShell';
 import BackupScheduleDialog from '@/modules/Backups/BackupScheduleDialog';
+import BackupFiles from '@/modules/Backups/BackupFiles';
+import RecoveryKeyPanel from '@/modules/Backups/RecoveryKeyPanel';
+import { BackupStorageInfo, fmtBytes } from '@/modules/Backups/backupTypes';
 import { api } from '@/shared/ApiService';
 import { IProject } from '@/shared/types/IProject';
 import styles from './Styles/Backups.module.css';
@@ -20,6 +24,7 @@ interface HistoryRecord {
   id: string; projectId: string; projectName: string; databaseName: string;
   status: string; startedAt: string; completedAt: string | null;
   durationMs: number; errorMessage: string | null; backupSizeBytes: number;
+  backupFileName: string | null;
   scheduleId: string; correlationId: string;
 }
 
@@ -51,16 +56,93 @@ function ago(dateStr: string): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-function fmtBytes(bytes: number): string {
-  if (bytes === 0) return '-';
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1048576).toFixed(1)} MB`;
-}
-
 function fmtMs(ms: number): string {
+  if (ms <= 0) return '—';
   if (ms < 1000) return `${ms}ms`;
   return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function projectSchedule(schedules: ScheduleJob[], project: IProject): ScheduleJob | undefined {
+  const suffix = project.name.replace(/\s+/g, '');
+  return schedules.find(s => s.jobName.replace(/^Backup-/, '').replace(/\s+/g, '') === suffix);
+}
+
+function RetentionEditor({ project, onSaved }: { project: IProject; onSaved: () => void }) {
+  const cfg = project.database;
+  const [keepCount, setKeepCount] = useState(cfg?.backupRetainCount ?? 10);
+  const [keepDays, setKeepDays] = useState(cfg?.backupRetainDays ?? 0);
+  const [compression, setCompression] = useState(cfg?.backupCompressionLevel ?? 12);
+  const [encrypt, setEncrypt] = useState(cfg?.backupEncrypt ?? true);
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.put(`/api/projects/${project.id}/db/backup-policy`, {
+        keepCount,
+        keepDays,
+        compressionLevel: compression,
+        encrypt,
+      });
+      toast.success('Backup policy saved.');
+      onSaved();
+    } catch (error) {
+      toast.error((error as { message?: string })?.message ?? 'Could not save the backup policy.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className={styles.policy}>
+      <label className={styles.policyField}>
+        <span>Keep last</span>
+        <input
+          type="number"
+          min={1}
+          max={3650}
+          value={keepCount}
+          onChange={e => setKeepCount(Math.max(1, Math.min(3650, Number(e.target.value) || 1)))}
+          aria-label={`Backups to keep for ${project.name}`}
+        />
+      </label>
+      <label className={styles.policyField}>
+        <span>Delete older than (days)</span>
+        <input
+          type="number"
+          min={0}
+          max={3650}
+          value={keepDays}
+          onChange={e => setKeepDays(Math.max(0, Math.min(3650, Number(e.target.value) || 0)))}
+          aria-label={`Age limit in days for ${project.name}`}
+        />
+      </label>
+      <label className={styles.policyField}>
+        <span>Compression</span>
+        <select
+          value={compression}
+          onChange={e => setCompression(Number(e.target.value))}
+          aria-label={`Compression level for ${project.name}`}
+        >
+          <option value={0}>None (fastest)</option>
+          <option value={3}>zstd 3 (fast)</option>
+          <option value={12}>zstd 12 (balanced)</option>
+          <option value={19}>zstd 19 (smallest)</option>
+        </select>
+      </label>
+      <label className={styles.policyCheck}>
+        <input type="checkbox" checked={encrypt} onChange={e => setEncrypt(e.target.checked)} />
+        <span>Encrypt at rest</span>
+      </label>
+      <ZestButton
+        onClick={save}
+        disabled={saving}
+        zest={{ semanticType: 'save', visualOptions: { size: 'sm', variant: 'standard' } }}
+      >
+        {saving ? 'Saving.' : 'Save policy'}
+      </ZestButton>
+    </div>
+  );
 }
 
 export default function BackupsPage() {
@@ -70,19 +152,23 @@ export default function BackupsPage() {
   const [inflight, setInflight] = useState<InflightResponse['inflight']>(null);
   const [overflow, setOverflow] = useState<OverflowRecord[]>([]);
   const [projects, setProjects] = useState<IProject[]>([]);
+  const [storage, setStorage] = useState<BackupStorageInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [revision, setRevision] = useState(0);
 
   const load = useCallback(async () => {
     try {
-      const [s, h, sm, i, o, p] = await Promise.all([
+      const [s, h, sm, i, o, p, st] = await Promise.all([
         api.get<SchedulesResponse>('/api/scheduler/schedules').catch(() => ({ jobs: [], count: 0, capturedAt: '' })),
         api.get<HistoryResponse>('/api/scheduler/history?limit=50').catch(() => ({ records: [], count: 0 })),
         api.get<BackupSummary>('/api/scheduler/history/summary').catch(() => null),
         api.get<InflightResponse>('/api/scheduler/inflight').catch(() => ({ inflight: null })),
         api.get<OverflowResponse>('/api/scheduler/overflow').catch(() => ({ items: [], count: 0 })),
         api.get<IProject[]>('/api/projects').catch(() => []),
+        api.get<BackupStorageInfo>('/api/backups/storage').catch(() => null),
       ]);
       setSchedules(s.jobs);
       setHistory(h.records);
@@ -90,6 +176,7 @@ export default function BackupsPage() {
       setInflight(i.inflight);
       setOverflow(o.items);
       setProjects(p);
+      setStorage(st);
     } finally {
       setLoading(false);
     }
@@ -112,13 +199,24 @@ export default function BackupsPage() {
     load();
   };
 
+  const backupNow = async (project: IProject) => {
+    try {
+      await api.post(`/api/projects/${project.id}/db/backup`, {});
+      toast.success(`Backup started for ${project.name}.`);
+      setRevision(r => r + 1);
+      setExpanded(prev => ({ ...prev, [project.id]: true }));
+    } catch (error) {
+      toast.error((error as { message?: string })?.message ?? 'Could not start the backup.');
+    }
+  };
+
   const filteredHistory = statusFilter
     ? history.filter(r => r.status === statusFilter)
     : history;
 
   return (
     <>
-      <Head><title>ShipRight — Backups</title></Head>
+      <Head><title>ShipRight - Backups</title></Head>
       <AppShell>
         <header className={styles.header}>
           <div>
@@ -127,7 +225,7 @@ export default function BackupsPage() {
           </div>
           <div className={styles.actions}>
             <ZestButton onClick={load} zest={{ buttonStyle: 'outline', semanticType: 'refresh' }}>
-              {loading ? 'Loading…' : 'Refresh'}
+              {loading ? 'Loading.' : 'Refresh'}
             </ZestButton>
             <ZestButton
               onClick={() => setScheduleOpen(true)}
@@ -143,13 +241,20 @@ export default function BackupsPage() {
           <p className={styles.hint}>Add a database to a project before scheduling backups.</p>
         )}
 
+        {storage?.insideDataDirectory && (
+          <p className={styles.hint}>
+            Backups are stored inside the app data directory ({storage.root}). A data reset or
+            <code> docker compose down -v</code> would delete them. Set <code>SHIPRIGHT__BACKUP_DIR</code> to a mounted host folder.
+          </p>
+        )}
+
         {inflight && (
           <div className={styles.inflightBanner}>
             <span className={styles.statusDot + ' ' + styles.statusPending} />
             <div>
               <div className={styles.inflightLabel}>Backup In Progress</div>
               <div className={styles.inflightInfo}>
-                {inflight.projectName} — {inflight.databaseName} ({fmtMs(inflight.elapsedMs)})
+                {inflight.projectName} - {inflight.databaseName} ({fmtMs(inflight.elapsedMs)})
               </div>
             </div>
           </div>
@@ -176,11 +281,82 @@ export default function BackupsPage() {
             <div className={styles.cardValue}>{overflow.length}</div>
             <div className={styles.cardSub}>items awaiting replay</div>
           </div>
+          <div className={styles.card}>
+            <div className={styles.cardLabel}>Storage</div>
+            <div className={styles.cardValue}>{storage ? fmtBytes(storage.usedBytes) : '—'}</div>
+            <div className={styles.cardSub}>
+              {storage
+                ? `${storage.count} files · ${fmtBytes(storage.availableBytes)} free`
+                : 'not available'}
+            </div>
+          </div>
         </div>
 
         <div className={styles.section}>
-          <div className={styles.sectionTitle}>Schedules</div>
-          {schedules.length === 0 ? (
+          <div className={styles.sectionTitle}>Projects</div>
+          {databaseProjects.length === 0 ? (
+            <div className={styles.empty}>No projects with a database yet.</div>
+          ) : (
+            <div className={styles.coverageList}>
+              {databaseProjects.map(project => {
+                const schedule = projectSchedule(schedules, project);
+                const open = expanded[project.id] ?? false;
+                return (
+                  <div key={project.id} className={styles.coverageRow}>
+                    <div className={styles.coverageMain}>
+                      <button
+                        type="button"
+                        className={styles.chevron}
+                        aria-expanded={open}
+                        aria-controls={`backups-${project.id}`}
+                        aria-label={`${open ? 'Collapse' : 'Expand'} backups for ${project.name}`}
+                        onClick={() => setExpanded(prev => ({ ...prev, [project.id]: !open }))}
+                      >
+                        {open ? '▾' : '▸'}
+                      </button>
+                      <div className={styles.coverageNames}>
+                        <span className={styles.coverageName}>{project.name}</span>
+                        <span className={styles.coverageDb}>{project.database?.databaseName}</span>
+                      </div>
+                      <span className={styles.coverageMeta}>
+                        {schedule ? schedule.scheduleDescription : 'No schedule'}
+                      </span>
+                      <span className={styles.coverageMeta}>
+                        Keep {project.database?.backupRetainCount ?? 10}
+                        {(project.database?.backupRetainDays ?? 0) > 0
+                          ? ` · ${project.database?.backupRetainDays}d max`
+                          : ''}
+                      </span>
+                      <ZestButton
+                        onClick={() => backupNow(project)}
+                        zest={{ buttonStyle: 'outline', semanticType: 'submit', visualOptions: { size: 'sm' } }}
+                      >
+                        Backup now
+                      </ZestButton>
+                    </div>
+                    {open && (
+                      <div className={styles.expanded} id={`backups-${project.id}`}>
+                        <RetentionEditor project={project} onSaved={load} />
+                        <BackupFiles
+                          key={`${project.id}-${revision}-${project.database?.backupRetainCount}-${project.database?.backupRetainDays}`}
+                          projectId={project.id}
+                          onChanged={() => { setRevision(r => r + 1); load(); }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className={styles.section}>
+          <RecoveryKeyPanel />
+        </div>
+
+        <div className={styles.section}>
+          <div className={styles.sectionTitle}>Schedules</div>          {schedules.length === 0 ? (
             <div className={styles.emptyState}>
               <div className={styles.emptyTitle}>No backup schedules configured.</div>
               <p className={styles.emptyText}>Pick a project with a database and choose how often ShipRight should back it up.</p>
@@ -288,6 +464,7 @@ export default function BackupsPage() {
                     <th>Started</th>
                     <th>Duration</th>
                     <th>Size</th>
+                    <th>File</th>
                     <th>Error</th>
                   </tr>
                 </thead>
@@ -301,8 +478,11 @@ export default function BackupsPage() {
                         {r.status}
                       </td>
                       <td style={{ color: '#637389', fontSize: 12 }}>{ago(r.startedAt)}</td>
-                      <td style={{ fontSize: 12 }}>{r.durationMs > 0 ? fmtMs(r.durationMs) : '-'}</td>
+                      <td style={{ fontSize: 12 }}>{fmtMs(r.durationMs)}</td>
                       <td style={{ color: '#A8B8CC', fontSize: 12 }}>{fmtBytes(r.backupSizeBytes)}</td>
+                      <td style={{ color: '#A8B8CC', fontSize: 12, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {r.backupFileName || '—'}
+                      </td>
                       <td style={{ color: '#F44336', fontSize: 12, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {r.errorMessage || '-'}
                       </td>

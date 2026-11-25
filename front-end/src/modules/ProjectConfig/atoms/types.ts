@@ -46,6 +46,9 @@ export interface ProjectDraft {
     databaseName: string;
     rootUser: string;
     backupRetainCount: number;
+    backupRetainDays: number;
+    backupCompressionLevel: number;
+    backupEncrypt: boolean;
     rootPassword: string;
   };
   watchBranch: string;

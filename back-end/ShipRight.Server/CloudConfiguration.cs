@@ -25,6 +25,7 @@ public static class CloudConfiguration
         "SHIPRIGHT__HOST_SWAP__USERNAME",
         "SHIPRIGHT__HOST_SWAP__SSH_KEY_PATH",
         "SHIPRIGHT__HOST_SWAP__SIZE_GB",
+        "SHIPRIGHT__BACKUP_DIR",
     ];
 
     public static string[] ResolveAllowedOrigins(IConfiguration configuration, string? environmentValue)

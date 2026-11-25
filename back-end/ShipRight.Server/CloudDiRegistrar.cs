@@ -119,6 +119,7 @@ public static class CloudDiRegistrar
         services.AddSingleton<DatabaseOrchestrator>();
         services.AddSingleton<DatabaseBackupService>();
         services.AddTailscaleNetworking(DataDirectory.Resolve());
+        services.AddBackupArchive(DataDirectory.Resolve());
         services.AddSingleton<IRemoteHostProvider, LinuxSshProvider>();
         services.AddSingleton<IMonitoringProvider, LinuxSshMonitoringProvider>();
         services.AddSingleton<IHostStatsProvider, HostStatsService>();

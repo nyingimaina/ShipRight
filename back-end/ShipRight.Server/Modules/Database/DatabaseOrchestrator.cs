@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Text;
+using System.IO.Pipelines;
 using System.Text.RegularExpressions;
 using Serilog;
 using ShipRight.Modules.Database.Providers;
@@ -12,34 +12,42 @@ using ShipRight.Shared.Store;
 
 namespace ShipRight.Modules.Database;
 
-public record BackupFileInfo(string FileName, string FilePath, long SizeBytes, DateTime CreatedAt);
 public record InferResult(DatabaseConfig Config, string[] Detected);
 
 public class DatabaseOrchestrator
 {
-    // mysqldump/mariadb-dump output must stay byte-for-byte importable by SQL clients —
-    // Encoding.UTF8 prepends a BOM that breaks the leading "-- ..." comment (SQL Error 1064).
-    private static readonly Encoding DumpFileEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
-
     private readonly IDbProviderResolver _resolver;
     private readonly ISshRunner _ssh;
     private readonly KnownHostsStore _knownHosts;
     private readonly BuildEventBus _bus;
     private readonly IServerNetworkResolver? _networks;
     private readonly ConcurrentDictionary<string, string> _activeOps = new();
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _projectLocks = new(StringComparer.Ordinal);
+    private readonly BackupStorage _storage;
+    private readonly BackupKeyring _keyring;
+    private readonly IRawSshRunner? _rawSsh;
+    private readonly BackupRunTelemetry? _telemetry;
 
     public DatabaseOrchestrator(
         IDbProviderResolver resolver,
         ISshRunner ssh,
         KnownHostsStore knownHosts,
         BuildEventBus bus,
-        IServerNetworkResolver? networks = null)
+        IServerNetworkResolver? networks = null,
+        IRawSshRunner? rawSsh = null,
+        BackupStorage? storage = null,
+        BackupKeyring? keyring = null,
+        BackupRunTelemetry? telemetry = null)
     {
         _resolver  = resolver;
         _ssh       = ssh;
         _knownHosts = knownHosts;
         _bus       = bus;
         _networks  = networks;
+        _rawSsh    = rawSsh;
+        _storage   = storage ?? BackupStorage.Resolve();
+        _keyring   = keyring ?? new BackupKeyring();
+        _telemetry = telemetry;
     }
 
     // ── Backup ─────────────────────────────────────────────────────────────────
@@ -48,76 +56,25 @@ public class DatabaseOrchestrator
     {
         var cfg      = project.Database!;
         var provider = _resolver.Resolve(cfg.Provider);
-        var server   = project.Server;
-        var backupDir = BackupDirFor(project.Id);
-        Directory.CreateDirectory(backupDir);
 
         _activeOps[project.Id] = opId;
         try
         {
             await EmitLog(opId, $"Starting {provider.ProviderName} backup of {cfg.DatabaseName}…");
-
-            var timestamp  = DateTime.UtcNow.ToString("yyyy-MM-dd_HH-mm-ss");
-            var localFile  = Path.Combine(backupDir, $"{cfg.DatabaseName}_{timestamp}{provider.BackupExtension}");
-
-            if (provider.Transfer == BackupTransfer.StreamStdout)
+            var meta = await RunBackupAsync(project, provider, BackupSource.Manual, opId, ct);
+            await EmitLog(opId, $"Backup saved: {meta.FileName} ({ByteSize.Format(meta.StoredBytes)} stored, {ByteSize.Format(meta.OriginalBytes)} original)");
+            await _bus.EmitAsync(opId, "complete", new
             {
-                var cmd = provider.BackupCommand(cfg);
-                Log.Information("Backup command for {DB}: {Cmd}", cfg.DatabaseName, cmd);
-                await EmitLog(opId, "Running backup command…");
-
-                // Stream stdout directly to disk — avoids holding entire dump in RAM
-                await using var writer = new StreamWriter(localFile, append: false, DumpFileEncoding);
-                long lineCount = 0, lastReported = 0;
-
-                var exit = await _ssh.RunAsync(
-                    server.Host, server.Username, server.SshKeyPath, cmd,
-                    onOutput: async line =>
-                    {
-                        await writer.WriteLineAsync(line);
-                        lineCount++;
-                        if (lineCount - lastReported >= 10_000)
-                        {
-                            lastReported = lineCount;
-                            await EmitLog(opId, $"Streaming… {lineCount:N0} lines received");
-                        }
-                    },
-                    onStderr: async line =>
-                    {
-                        Log.Warning("Backup stderr [{DB}]: {Line}", cfg.DatabaseName, line);
-                        await EmitLog(opId, line);
-                    },
-                    ct: ct);
-
-                await writer.FlushAsync(ct);
-
-                if (exit != 0)
-                    throw new InvalidOperationException($"Backup command exited with code {exit}.");
-            }
-            else // SftpFile
-            {
-                var remoteFile = provider.BackupFilePath(cfg, opId);
-                var cmd = provider.BackupCommand(cfg).Replace("{{opId}}", opId);
-                Log.Information("Backup command for {DB}: {Cmd}", cfg.DatabaseName, cmd);
-                await EmitLog(opId, "Running backup command…");
-
-                var exit = await _ssh.RunAsync(server.Host, server.Username, server.SshKeyPath, cmd,
-                    line => EmitLog(opId, line), ct: ct);
-                if (exit != 0)
-                    throw new InvalidOperationException($"Backup command exited with code {exit}.");
-
-                await EmitLog(opId, $"Downloading {remoteFile}…");
-                await SftpDownloadAsync(server, remoteFile, localFile, ct);
-
-                await EmitLog(opId, "Cleaning up remote temp file…");
-                await _ssh.RunAsync(server.Host, server.Username, server.SshKeyPath,
-                    provider.CleanupCommand(remoteFile), ct: ct);
-            }
-
-            await EmitLog(opId, $"Backup saved: {Path.GetFileName(localFile)}");
-            PruneOldBackups(backupDir, cfg.DatabaseName, provider.BackupExtension, cfg.BackupRetainCount);
-
-            await _bus.EmitAsync(opId, "complete", new { status = "success", fileName = Path.GetFileName(localFile) });
+                status = "success",
+                fileName = meta.FileName,
+                storedBytes = meta.StoredBytes,
+                originalBytes = meta.OriginalBytes,
+            });
+        }
+        catch (NetworkUnavailableException ex)
+        {
+            Log.Warning(ex, "Backup network unavailable for project {ProjectId}", project.Id);
+            await _bus.EmitAsync(opId, "error", new { message = ex.Message });
         }
         catch (Exception ex)
         {
@@ -134,9 +91,175 @@ public class DatabaseOrchestrator
     public string? GetActiveOpId(string projectId) =>
         _activeOps.TryGetValue(projectId, out var id) ? id : null;
 
+    /// <summary>
+    /// One path for manual and scheduled runs: read the dump as raw bytes, hash it, compress it, seal it,
+    /// write the sidecar, then apply retention. The project lock keeps runs and restores from overlapping.
+    /// </summary>
+    private async Task<BackupArtifactMeta> RunBackupAsync(
+        ProjectConfig project, IDbProvider provider, string source, string? opId, CancellationToken ct)
+    {
+        var cfg = project.Database!;
+        using var lease = await AcquireAsync(project.Id, ct);
+
+        var artifacts = BackupArchive.List(_storage, project.Id);
+        var estimate = Math.Max((artifacts.FirstOrDefault()?.OriginalBytes ?? 0) * 2, 128L * 1024 * 1024);
+        var free = _storage.AvailableBytes();
+        if (free >= 0 && free < estimate)
+            throw new InvalidOperationException(
+                $"Not enough space for a backup: {ByteSize.Format(free)} available, about {ByteSize.Format(estimate)} needed.");
+
+        var options = new BackupWriteOptions(
+            project.Id,
+            cfg.DatabaseName,
+            provider.BackupExtension.TrimStart('.'),
+            source,
+            BackupCompression.Clamp(cfg.BackupCompressionLevel),
+            cfg.BackupEncrypt);
+
+        var meta = provider.Transfer == BackupTransfer.StreamStdout
+            ? await WriteFromCommandAsync(project, provider, options, opId, ct)
+            : await WriteFromRemoteFileAsync(project, provider, options, opId, ct);
+
+        PruneExpired(project.Id, cfg, opId);
+        return meta;
+    }
+
+    /// <summary>Streams the dump command's stdout straight into the archive; no text decoding, no line endings touched.</summary>
+    private async Task<BackupArtifactMeta> WriteFromCommandAsync(
+        ProjectConfig project, IDbProvider provider, BackupWriteOptions options, string? opId, CancellationToken ct)
+    {
+        if (_rawSsh is null)
+            throw new InvalidOperationException("Raw SSH streaming is not available, so a byte-exact backup cannot be taken.");
+
+        var cfg = project.Database!;
+        var server = project.Server;
+        var command = provider.BackupCommand(cfg);
+        Log.Information("Backup command for {DB} (raw stream)", cfg.DatabaseName);
+
+        var pipe = new Pipe(new PipeOptions(
+            pauseWriterThreshold: 8L * 1024 * 1024,
+            resumeWriterThreshold: 4L * 1024 * 1024,
+            useSynchronizationContext: false));
+
+        var writer = BackupArchive.WriteAsync(_storage, _keyring, options, pipe.Reader.AsStream(),
+            opId is null ? null : bytes => EmitProgressBytes(opId, bytes), ct);
+
+        int exit;
+        try
+        {
+            exit = await _rawSsh.RunAsync(server.Host, server.Username, server.SshKeyPath, command,
+                pipe.Writer.AsStream(),
+                onStderr: line =>
+                {
+                    Log.Warning("Backup stderr [{DB}]: {Line}", cfg.DatabaseName, line);
+                    return opId is null ? Task.CompletedTask : EmitLog(opId, line);
+                },
+                ct);
+            await pipe.Writer.CompleteAsync();
+        }
+        catch (Exception ex)
+        {
+            await pipe.Writer.CompleteAsync(ex);
+            try { await writer; } catch { /* the original failure is the useful one */ }
+            throw;
+        }
+
+        var meta = await writer;
+        if (exit != 0)
+        {
+            BackupArchive.Delete(_storage, project.Id, meta.FileName);
+            throw new InvalidOperationException($"Backup command exited with code {exit}.");
+        }
+
+        return meta;
+    }
+
+    /// <summary>For providers that write a file on the server (SQL Server): pull it over SFTP into the same archive.</summary>
+    private async Task<BackupArtifactMeta> WriteFromRemoteFileAsync(
+        ProjectConfig project, IDbProvider provider, BackupWriteOptions options, string? opId, CancellationToken ct)
+    {
+        var cfg = project.Database!;
+        var server = project.Server;
+        var token = opId ?? Guid.NewGuid().ToString("N");
+        var remoteFile = provider.BackupFilePath(cfg, token);
+        var command = provider.BackupCommand(cfg).Replace("{{opId}}", token);
+        Log.Information("Backup command for {DB}", cfg.DatabaseName);
+
+        var exit = await _ssh.RunAsync(server.Host, server.Username, server.SshKeyPath, command,
+            line => opId is null ? Task.CompletedTask : EmitLog(opId, line), ct: ct);
+        if (exit != 0)
+            throw new InvalidOperationException($"Backup command exited with code {exit}.");
+
+        try
+        {
+            if (opId is not null) await EmitLog(opId, $"Downloading {remoteFile}…");
+
+            var pipe = new Pipe(new PipeOptions(
+                pauseWriterThreshold: 8L * 1024 * 1024,
+                resumeWriterThreshold: 4L * 1024 * 1024,
+                useSynchronizationContext: false));
+
+            var writer = BackupArchive.WriteAsync(_storage, _keyring, options, pipe.Reader.AsStream(),
+                opId is null ? null : bytes => EmitProgressBytes(opId, bytes), ct);
+
+            try
+            {
+                await SftpDownloadToStreamAsync(server, remoteFile, pipe.Writer.AsStream(), ct);
+                await pipe.Writer.CompleteAsync();
+            }
+            catch (Exception ex)
+            {
+                await pipe.Writer.CompleteAsync(ex);
+                try { await writer; } catch { /* the download failure is the useful one */ }
+                throw;
+            }
+
+            return await writer;
+        }
+        finally
+        {
+            try
+            {
+                await _ssh.RunAsync(server.Host, server.Username, server.SshKeyPath,
+                    provider.CleanupCommand(remoteFile), ct: CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Could not clean up the remote backup file {File}", remoteFile);
+            }
+        }
+    }
+
+    private Task EmitProgressBytes(string opId, long bytes) =>
+        EmitLog(opId, $"Streaming… {ByteSize.Format(bytes)} received");
+
+    private void PruneExpired(string projectId, DatabaseConfig cfg, string? opId)
+    {
+        var policy = RetentionPolicy.From(cfg.BackupRetainCount, cfg.BackupRetainDays);
+        var decision = BackupRetention.Plan(BackupArchive.List(_storage, projectId), DateTimeOffset.UtcNow, policy);
+        foreach (var artifact in decision.Delete)
+        {
+            if (BackupArchive.Delete(_storage, projectId, artifact.FileName))
+                Log.Information("Backup pruned: {File} (keep {Count}, age {Days})", artifact.FileName, policy.KeepCount, policy.KeepDays);
+        }
+    }
+
+    private async Task<IDisposable> AcquireAsync(string projectId, CancellationToken ct)
+    {
+        var gate = _projectLocks.GetOrAdd(projectId, _ => new SemaphoreSlim(1, 1));
+        if (!await gate.WaitAsync(TimeSpan.Zero, ct))
+            throw new InvalidOperationException("A backup or restore is already running for this project.");
+        return new Releaser(gate);
+    }
+
+    private sealed class Releaser(SemaphoreSlim gate) : IDisposable
+    {
+        public void Dispose() => gate.Release();
+    }
+
     // ── Restore ────────────────────────────────────────────────────────────────
 
-    public async Task RestoreAsync(ProjectConfig project, string opId, string localBackupPath, CancellationToken ct)
+    public async Task RestoreAsync(ProjectConfig project, string opId, string fileName, CancellationToken ct)
     {
         var cfg      = project.Database!;
         var provider = _resolver.Resolve(cfg.Provider);
@@ -144,25 +267,43 @@ public class DatabaseOrchestrator
 
         try
         {
-            await EmitLog(opId, $"Restoring {cfg.DatabaseName} from {Path.GetFileName(localBackupPath)}…");
+            using var lease = await AcquireAsync(project.Id, ct);
+            await EmitLog(opId, $"Restoring {cfg.DatabaseName} from {fileName}…");
 
-            var remoteFile = $"/tmp/shipright-restore-{opId}{provider.BackupExtension}";
-            await EmitLog(opId, $"Uploading backup to {server.Host}:{remoteFile}…");
-            await SftpUploadAsync(server, localBackupPath, remoteFile, ct);
+            var (stream, meta) = await BackupArchive.OpenReadAsync(
+                _storage, project.Id, fileName, _keyring, BackupReadMode.Plain, ct);
+            await using (stream)
+            {
+                var remoteFile = $"/tmp/shipright-restore-{opId}{provider.BackupExtension}";
+                await EmitLog(opId, $"Uploading {(meta.OriginalBytes > 0 ? ByteSize.Format(meta.OriginalBytes) : "backup")} to {server.Host}…");
+                await SftpUploadFromStreamAsync(server, stream, remoteFile, ct);
 
-            var cmd = provider.RestoreCommand(cfg, remoteFile);
-            await EmitLog(opId, $"Running restore command…");
-            var exit = await _ssh.RunAsync(server.Host, server.Username, server.SshKeyPath, cmd,
-                line => EmitLog(opId, line), ct: ct);
+                var cmd = provider.RestoreCommand(cfg, remoteFile);
+                await EmitLog(opId, "Running restore command…");
+                var exit = await _ssh.RunAsync(server.Host, server.Username, server.SshKeyPath, cmd,
+                    line => EmitLog(opId, line), ct: ct);
 
-            await _ssh.RunAsync(server.Host, server.Username, server.SshKeyPath,
-                provider.CleanupCommand(remoteFile), ct: ct);
+                try
+                {
+                    await _ssh.RunAsync(server.Host, server.Username, server.SshKeyPath,
+                        provider.CleanupCommand(remoteFile), ct: CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "Could not remove the restore temp file {File}", remoteFile);
+                }
 
-            if (exit != 0)
-                throw new InvalidOperationException($"Restore command exited with code {exit}.");
+                if (exit != 0)
+                    throw new InvalidOperationException($"Restore command exited with code {exit}.");
+            }
 
             await EmitLog(opId, "Restore complete.");
             await _bus.EmitAsync(opId, "complete", new { status = "success" });
+        }
+        catch (NetworkUnavailableException ex)
+        {
+            Log.Warning(ex, "Restore network unavailable for project {ProjectId}", project.Id);
+            await _bus.EmitAsync(opId, "error", new { message = ex.Message });
         }
         catch (Exception ex)
         {
@@ -303,43 +444,24 @@ public class DatabaseOrchestrator
 
     // ── Backup listing ─────────────────────────────────────────────────────────
 
-    public List<BackupFileInfo> ListBackups(string projectId)
-    {
-        var dir = BackupDirFor(projectId);
-        if (!Directory.Exists(dir)) return [];
+    public IReadOnlyList<BackupArtifactMeta> ListBackups(string projectId) =>
+        BackupArchive.List(_storage, projectId);
 
-        return Directory.GetFiles(dir)
-            .Select(f =>
-            {
-                var info = new FileInfo(f);
-                return new BackupFileInfo(info.Name, f, info.Length, info.CreationTimeUtc);
-            })
-            .OrderByDescending(b => b.CreatedAt)
-            .ToList();
+    public bool DeleteBackup(string projectId, string fileName)
+    {
+        if (!BackupArchive.Delete(_storage, projectId, fileName))
+            throw new InvalidOperationException($"Backup file not found: {fileName}");
+        return true;
     }
 
-    public void DeleteBackup(string projectId, string filePath)
-    {
-        var backupDir   = Path.GetFullPath(BackupDirFor(projectId));
-        var resolvedPath = Path.GetFullPath(filePath);
+    public string? ResolveBackupFile(string projectId, string fileName) =>
+        _storage.ResolveArtifact(projectId, fileName);
 
-        if (!resolvedPath.StartsWith(backupDir, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("File is not within the backup directory.");
+    public Task<(Stream Stream, BackupArtifactMeta Meta)> OpenBackupAsync(
+        string projectId, string fileName, BackupReadMode mode, CancellationToken ct = default) =>
+        BackupArchive.OpenReadAsync(_storage, projectId, fileName, _keyring, mode, ct);
 
-        if (!File.Exists(resolvedPath))
-            throw new InvalidOperationException($"Backup file not found: {Path.GetFileName(resolvedPath)}");
-
-        File.Delete(resolvedPath);
-        Log.Information("Backup deleted: {File}", Path.GetFileName(resolvedPath));
-    }
-
-    public string? ResolveBackupFile(string projectId, string fileName)
-    {
-        var backupDir    = Path.GetFullPath(BackupDirFor(projectId));
-        var resolvedPath = Path.GetFullPath(Path.Combine(backupDir, fileName));
-        if (!resolvedPath.StartsWith(backupDir, StringComparison.OrdinalIgnoreCase)) return null;
-        return File.Exists(resolvedPath) ? resolvedPath : null;
-    }
+    public BackupStorageInfo StorageInfo() => BackupArchive.Info(_storage);
 
     // ── Infer from docker-compose ──────────────────────────────────────────────
 
@@ -548,58 +670,15 @@ public class DatabaseOrchestrator
 
     public virtual async Task<bool> ScheduledBackupAsync(ProjectConfig project, CancellationToken ct)
     {
-        var cfg = project.Database!;
-        var provider = _resolver.Resolve(cfg.Provider);
-        var server = project.Server;
-        var backupDir = BackupDirFor(project.Id);
-        Directory.CreateDirectory(backupDir);
-
+        var provider = _resolver.Resolve(project.Database!.Provider);
+        var started = Stopwatch.GetTimestamp();
         try
         {
-            var timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd_HH-mm-ss");
-            var localFile = Path.Combine(backupDir, $"{cfg.DatabaseName}_{timestamp}{provider.BackupExtension}");
-
-            if (provider.Transfer == BackupTransfer.StreamStdout)
-            {
-                var cmd = provider.BackupCommand(cfg);
-                Log.Information("Scheduled backup for {DB}: {Cmd}", cfg.DatabaseName, cmd);
-
-                await using var writer = new StreamWriter(localFile, append: false, DumpFileEncoding);
-                long lineCount = 0;
-
-                var exit = await _ssh.RunAsync(
-                    server.Host, server.Username, server.SshKeyPath, cmd,
-                    onOutput: async line =>
-                    {
-                        await writer.WriteLineAsync(line);
-                        lineCount++;
-                    },
-                    ct: ct);
-
-                await writer.FlushAsync(ct);
-                if (exit != 0)
-                {
-                    Log.Error("Scheduled backup exited with code {Exit} for {DB}", exit, cfg.DatabaseName);
-                    return false;
-                }
-            }
-            else
-            {
-                var opId = Guid.NewGuid().ToString("N");
-                var remoteFile = provider.BackupFilePath(cfg, opId);
-                var cmd = provider.BackupCommand(cfg).Replace("{{opId}}", opId);
-                Log.Information("Scheduled backup for {DB}: {Cmd}", cfg.DatabaseName, cmd);
-
-                var exit = await _ssh.RunAsync(server.Host, server.Username, server.SshKeyPath, cmd, ct: ct);
-                if (exit != 0) return false;
-
-                await SftpDownloadAsync(server, remoteFile, localFile, ct);
-                await _ssh.RunAsync(server.Host, server.Username, server.SshKeyPath,
-                    provider.CleanupCommand(remoteFile), ct: ct);
-            }
-
-            PruneOldBackups(backupDir, cfg.DatabaseName, provider.BackupExtension, cfg.BackupRetainCount);
-            Log.Information("Scheduled backup complete for {DB}: {File}", cfg.DatabaseName, Path.GetFileName(localFile));
+            var meta = await RunBackupAsync(project, provider, BackupSource.Schedule, null, ct);
+            _telemetry?.Record(project.Id, new BackupRunInfo(
+                meta.FileName, meta.OriginalBytes, meta.StoredBytes,
+                (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds));
+            Log.Information("Scheduled backup complete for {DB}: {File}", project.Database.DatabaseName, meta.FileName);
             return true;
         }
         catch (Exception ex)
@@ -624,43 +703,25 @@ public class DatabaseOrchestrator
     private Task EmitOutput(string opId, string line)
         => _bus.EmitAsync(opId, "output", new { line });
 
-    private static string BackupDirFor(string projectId)
-        => Path.Combine(DataDirectory.Resolve(), "backups", projectId);
-
-    private static void PruneOldBackups(string dir, string dbName, string ext, int retain)
-    {
-        var files = Directory.GetFiles(dir, $"{dbName}_*{ext}")
-            .Select(f => new FileInfo(f))
-            .OrderByDescending(f => f.CreationTimeUtc)
-            .Skip(retain)
-            .ToList();
-        foreach (var f in files)
-        {
-            try { f.Delete(); }
-            catch { /* best-effort */ }
-        }
-    }
-
-    private async Task SftpUploadAsync(ServerConfig server, string localPath, string remotePath, CancellationToken ct)
+    /// <summary>Uploads a decompressed backup stream; used by restore so the server never sees a compressed file.</summary>
+    private async Task SftpUploadFromStreamAsync(ServerConfig server, Stream source, string remotePath, CancellationToken ct)
     {
         using var connection = await RoutedSftp.OpenAsync(_networks, server, _knownHosts, ct: ct);
-        using var fs = File.OpenRead(localPath);
-        connection.Client.UploadFile(fs, remotePath);
+        await Task.Run(() => connection.Client.UploadFile(source, remotePath), ct);
     }
 
-    /// <summary>The same upload as <see cref="SftpUploadAsync"/>, reporting how much has gone (the callback runs on the upload's thread).</summary>
+    /// <summary>Pulls a provider-written file (SQL Server .bak) into the archive pipeline.</summary>
+    private async Task SftpDownloadToStreamAsync(ServerConfig server, string remotePath, Stream destination, CancellationToken ct)
+    {
+        using var connection = await RoutedSftp.OpenAsync(_networks, server, _knownHosts, ct: ct);
+        await Task.Run(() => connection.Client.DownloadFile(remotePath, destination), ct);
+    }
+
     private async Task SftpUploadWithProgressAsync(ServerConfig server, string localPath, string remotePath, ProgressReporter progress, CancellationToken ct)
     {
         using var connection = await RoutedSftp.OpenAsync(_networks, server, _knownHosts, ct: ct);
         using var fs = File.OpenRead(localPath);
         connection.Client.UploadFile(fs, remotePath, uploaded => progress.Report((long)uploaded));
         progress.Report(fs.Length);
-    }
-
-    private async Task SftpDownloadAsync(ServerConfig server, string remotePath, string localPath, CancellationToken ct)
-    {
-        using var connection = await RoutedSftp.OpenAsync(_networks, server, _knownHosts, ct: ct);
-        using var fs = File.Create(localPath);
-        connection.Client.DownloadFile(remotePath, fs);
     }
 }

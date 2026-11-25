@@ -14,6 +14,9 @@ public static class CloudSchedulerRegistrar
 {
     public static void Register(IServiceCollection services)
     {
+        services.AddSingleton<IBackupScheduleStore>(sp =>
+            new JsonBackupScheduleStore(DataDirectory.Resolve(), sp.GetService<ICompanyContext>()));
+
         services.AddSingleton<BackupOverflowStore>(sp =>
             new BackupOverflowStore(DataDirectory.Resolve(), sp.GetRequiredService<TempoScheduler<BackupJob>>()));
 
@@ -34,15 +37,18 @@ public static class CloudSchedulerRegistrar
                     ObservabilityReportInterval = TimeSpan.FromSeconds(30),
                 }, sp.GetService<ILoggerFactory>());
             var history = sp.GetRequiredService<MariaDbBackupHistoryStore>();
+            var telemetry = sp.GetService<BackupRunTelemetry>();
 
             queue.OnProcessed += async (correlationId, work) =>
             {
                 var job = work.Job;
+                var run = telemetry?.Take(job.ProjectId);
                 await history.Append(new BackupHistoryRecord
                 {
                     ProjectId = job.ProjectId, ProjectName = job.ProjectName,
                     DatabaseName = job.DatabaseName, Status = "completed",
-                    CompletedAt = DateTime.UtcNow, DurationMs = 0,
+                    CompletedAt = DateTime.UtcNow, DurationMs = run?.DurationMs ?? 0,
+                    BackupFileName = run?.FileName, BackupSizeBytes = run?.StoredBytes ?? 0,
                     CorrelationId = correlationId, ScheduleId = work.ScheduleId,
                 });
             };
@@ -83,25 +89,8 @@ public static class CloudSchedulerRegistrar
                     MaxCatchUpSlots = 50,
                     DefaultTimeZone = timeZone,
                 });
-            var projects = sp.GetRequiredService<IProjectStore>().GetAllAsync().GetAwaiter().GetResult();
-            var count = 0;
-            foreach (var p in projects)
-            {
-                if (p.Database is null || string.IsNullOrWhiteSpace(p.Database.DatabaseName)) continue;
-                try
-                {
-                    scheduler.Register(new BackupJob
-                    {
-                        TenantId = BackupJob.TenantIdFromProject(p.Id), ProjectId = p.Id,
-                        ProjectName = p.Name, DatabaseName = p.Database.DatabaseName,
-                    }, new TempoSchedule.Cron("0 2 * * *",
-                        TempoTimeZoneResolver.Resolve(p.TimeZone)),
-                    MissedRunPolicy.RunOnce, OverlapPolicy.Skip);
-                    count++;
-                }
-                catch (Exception ex) { Log.Error(ex, "Failed to register backup schedule for {Project}", p.Name); }
-            }
-            Log.Information("Scheduler: {Count} backup schedules registered", count);
+            SchedulerRegistration.RegisterPersistedAsync(
+                scheduler, sp.GetRequiredService<IBackupScheduleStore>()).GetAwaiter().GetResult();
             return scheduler;
         });
 

@@ -162,24 +162,23 @@ public static class SchedulerRouter
 
             try
             {
-                var scheduleExpr = new TempoSchedule.Cron(
-                    request.CronExpression,
-                    TempoTimeZoneResolver.Resolve(request.TimeZone ?? project.TimeZone));
+                var definition = new BackupScheduleDefinition
+                {
+                    ProjectId = project.Id,
+                    ProjectName = project.Name,
+                    DatabaseName = project.Database.DatabaseName,
+                    Cron = request.CronExpression,
+                    TimeZone = request.TimeZone ?? project.TimeZone,
+                    MissedRunPolicy = request.MissedRunPolicy.ToString(),
+                    OverlapPolicy = request.OverlapPolicy.ToString(),
+                    MaxDuration = request.MaxDuration?.ToString(),
+                };
 
-                var scheduleId = scheduler.Register(
-                    new BackupJob
-                    {
-                        TenantId = BackupJob.TenantIdFromProject(project.Id),
-                        ProjectId = project.Id,
-                        ProjectName = project.Name,
-                        DatabaseName = project.Database.DatabaseName,
-                    },
-                    scheduleExpr,
-                    request.MissedRunPolicy,
-                    request.OverlapPolicy,
-                    request.MaxDuration);
+                var store = context.RequestServices.GetRequiredService<IBackupScheduleStore>();
+                var scheduleId = SchedulerRegistration.Register(scheduler, definition);
+                await store.SaveAsync(definition with { RuntimeScheduleId = scheduleId });
 
-                Log.Information("Manual schedule registered for project {Project}: cron \"{Cron}\"",
+                Log.Information("Backup schedule saved for project {Project}: cron \"{Cron}\"",
                     project.Name, request.CronExpression);
 
                 return Results.Ok(new { scheduleId, message = "Schedule registered." });
@@ -198,7 +197,9 @@ public static class SchedulerRouter
             var scheduler = context.RequestServices
                 .GetRequiredService<TempoScheduler<BackupJob>>();
             scheduler.Unregister(scheduleId);
-            Log.Information("Schedule {ScheduleId} unregistered", scheduleId);
+            var store = context.RequestServices.GetRequiredService<IBackupScheduleStore>();
+            store.DeleteByRuntimeIdAsync(scheduleId).GetAwaiter().GetResult();
+            Log.Information("Schedule {ScheduleId} unregistered and removed", scheduleId);
             return Results.Ok(new { message = "Schedule removed." });
         });
 
@@ -353,24 +354,23 @@ public static class SchedulerRouter
 
             try
             {
-                var scheduleExpr = new TempoSchedule.Cron(
-                    request.CronExpression,
-                    TempoTimeZoneResolver.Resolve(request.TimeZone ?? project.TimeZone));
+                var definition = new BackupScheduleDefinition
+                {
+                    ProjectId = project.Id,
+                    ProjectName = project.Name,
+                    DatabaseName = project.Database.DatabaseName,
+                    Cron = request.CronExpression,
+                    TimeZone = request.TimeZone ?? project.TimeZone,
+                    MissedRunPolicy = request.MissedRunPolicy.ToString(),
+                    OverlapPolicy = request.OverlapPolicy.ToString(),
+                    MaxDuration = request.MaxDuration?.ToString(),
+                };
 
-                var scheduleId = scheduler.Register(
-                    new BackupJob
-                    {
-                        TenantId = BackupJob.TenantIdFromProject(project.Id),
-                        ProjectId = project.Id,
-                        ProjectName = project.Name,
-                        DatabaseName = project.Database.DatabaseName,
-                    },
-                    scheduleExpr,
-                    request.MissedRunPolicy,
-                    request.OverlapPolicy,
-                    request.MaxDuration);
+                var store = context.RequestServices.GetRequiredService<IBackupScheduleStore>();
+                var scheduleId = SchedulerRegistration.Register(scheduler, definition);
+                await store.SaveAsync(definition with { RuntimeScheduleId = scheduleId });
 
-                Log.Information("Manual schedule registered for project {Project}: cron \"{Cron}\"",
+                Log.Information("Backup schedule saved for project {Project}: cron \"{Cron}\"",
                     project.Name, request.CronExpression);
 
                 return Results.Ok(new { scheduleId, message = "Schedule registered." });
@@ -389,7 +389,9 @@ public static class SchedulerRouter
             var scheduler = context.RequestServices
                 .GetRequiredService<TempoScheduler<BackupJob>>();
             scheduler.Unregister(scheduleId);
-            Log.Information("Schedule {ScheduleId} unregistered", scheduleId);
+            var store = context.RequestServices.GetRequiredService<IBackupScheduleStore>();
+            store.DeleteByRuntimeIdAsync(scheduleId).GetAwaiter().GetResult();
+            Log.Information("Schedule {ScheduleId} unregistered and removed", scheduleId);
             return Results.Ok(new { message = "Schedule removed." });
         });
 

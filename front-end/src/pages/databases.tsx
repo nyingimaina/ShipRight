@@ -65,6 +65,9 @@ export default function DatabasesPage() {
       databaseName: '',
       rootUser: provider === 'MariaDb' ? 'root' : 'sa',
       backupRetainCount: 10,
+    backupRetainDays: 0,
+    backupCompressionLevel: 12,
+    backupEncrypt: true,
     });
     setManaging(true);
   };
@@ -178,6 +181,24 @@ export default function DatabasesPage() {
                   <label style={{ display: 'block', fontSize: 11, color: '#637389', marginBottom: 4 }}>Backup retention</label>
                   <input style={inputStyle} type="number" min={1} value={dbConfig.backupRetainCount}
                     onChange={e => setCfg('backupRetainCount', Math.max(1, parseInt(e.target.value) || 10))} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 11, color: '#637389', marginBottom: 4 }}>Max age (days, 0 = none)</label>
+                  <input style={inputStyle} type="number" min={0} value={dbConfig.backupRetainDays ?? 0}
+                    onChange={e => setCfg('backupRetainDays', Math.max(0, parseInt(e.target.value) || 0))} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 11, color: '#637389', marginBottom: 4 }}>Compression (0–19)</label>
+                  <input style={inputStyle} type="number" min={0} max={19} value={dbConfig.backupCompressionLevel ?? 12}
+                    onChange={e => setCfg('backupCompressionLevel', Math.max(0, Math.min(19, parseInt(e.target.value) || 12)))} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 11, color: '#637389', marginBottom: 4 }}>Encryption</label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 36, fontSize: 13 }}>
+                    <input type="checkbox" checked={dbConfig.backupEncrypt ?? true}
+                      onChange={e => setCfg('backupEncrypt', e.target.checked)} />
+                    Encrypt at rest
+                  </label>
                 </div>
               </div>
             </div>

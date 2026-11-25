@@ -5,6 +5,7 @@ using Serilog;
 using ShipRight.Modules.Database;
 using ShipRight.Modules.Projects;
 using ShipRight.Shared.Store;
+using ShipRight.Shared.Tenancy;
 using ILogger = Serilog.ILogger;
 
 namespace ShipRight.Modules.Scheduler;
@@ -18,6 +19,8 @@ public static class SchedulerModule
             var dataDir = DataDirectory.Resolve();
             return new SqliteBackupHistoryStore(dataDir);
         });
+        services.AddSingleton<IBackupScheduleStore>(sp =>
+            new JsonBackupScheduleStore(DataDirectory.Resolve(), sp.GetService<ICompanyContext>()));
 
         services.AddSingleton<TempoQueue<TempoScheduledWork<BackupJob>>>(sp =>
         {
@@ -43,10 +46,12 @@ public static class SchedulerModule
                 processor, queueSettings, loggerFactory);
 
             var historyStore = sp.GetRequiredService<SqliteBackupHistoryStore>();
+            var telemetry = sp.GetService<BackupRunTelemetry>();
 
             queue.OnProcessed += (correlationId, work) =>
             {
                 var job = work.Job;
+                var run = telemetry?.Take(job.ProjectId);
                 historyStore.Append(new BackupHistoryRecord
                 {
                     ProjectId = job.ProjectId,
@@ -54,7 +59,9 @@ public static class SchedulerModule
                     DatabaseName = job.DatabaseName,
                     Status = "completed",
                     CompletedAt = DateTime.UtcNow,
-                    DurationMs = 0,
+                    DurationMs = run?.DurationMs ?? 0,
+                    BackupFileName = run?.FileName,
+                    BackupSizeBytes = run?.StoredBytes ?? 0,
                     CorrelationId = correlationId,
                     ScheduleId = work.ScheduleId,
                 });
@@ -94,9 +101,8 @@ public static class SchedulerModule
         services.AddSingleton<TempoScheduler<BackupJob>>(sp =>
         {
             var queue = sp.GetRequiredService<TempoQueue<TempoScheduledWork<BackupJob>>>();
-            var projectStore = sp.GetRequiredService<IProjectStore>();
-            var historyStore = sp.GetRequiredService<SqliteBackupHistoryStore>();
             var timeZone = TempoTimeZoneResolver.ResolveConfigured();
+            var store = sp.GetRequiredService<IBackupScheduleStore>();
 
             var schedulerSettings = new TempoSchedulerSettings
             {
@@ -107,7 +113,7 @@ public static class SchedulerModule
 
             var scheduler = new TempoScheduler<BackupJob>(queue, schedulerSettings);
 
-            RegisterProjectJobs(scheduler, projectStore, historyStore).GetAwaiter().GetResult();
+            SchedulerRegistration.RegisterPersistedAsync(scheduler, store).GetAwaiter().GetResult();
 
             return scheduler;
         });
@@ -120,64 +126,6 @@ public static class SchedulerModule
         });
 
         services.AddHostedService<SchedulerHostedService>();
-    }
-
-    private static async Task RegisterProjectJobs(
-        TempoScheduler<BackupJob> scheduler,
-        IProjectStore projectStore,
-        SqliteBackupHistoryStore historyStore)
-    {
-        var projects = await projectStore.GetAllAsync();
-        var registeredCount = 0;
-
-        foreach (var project in projects)
-        {
-            if (project.Database is null || string.IsNullOrWhiteSpace(project.Database.DatabaseName))
-                continue;
-
-            var scheduleExpr = DetectSchedule(project);
-
-            try
-            {
-                    scheduler.Register(
-                        new BackupJob
-                        {
-                            TenantId = BackupJob.TenantIdFromProject(project.Id),
-                            ProjectId = project.Id,
-                            ProjectName = project.Name,
-                            DatabaseName = project.Database.DatabaseName,
-                        },
-                        scheduleExpr,
-                        MissedRunPolicy.RunOnce,
-                        OverlapPolicy.Skip);
-
-                registeredCount++;
-                Log.Information("Registered backup schedule for project {Project}: {Schedule}",
-                    project.Name, DescribeSchedule(scheduleExpr));
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "Failed to register backup schedule for project {Project}", project.Name);
-            }
-        }
-
-        Log.Information("Scheduler: {Count} backup schedules registered", registeredCount);
-    }
-
-    private static TempoSchedule DetectSchedule(ProjectConfig project)
-    {
-            return new TempoSchedule.Cron("0 2 * * *", TempoTimeZoneResolver.Resolve(project.TimeZone));
-    }
-
-    private static string DescribeSchedule(TempoSchedule schedule)
-    {
-        return schedule switch
-        {
-            TempoSchedule.Cron c => $"cron \"{c.Expression}\"",
-            TempoSchedule.Every e => $"every {e.Interval}",
-            TempoSchedule.OnceAt o => $"once at {o.FireAt}",
-            _ => "unknown",
-        };
     }
 }
 

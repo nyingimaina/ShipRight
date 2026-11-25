@@ -40,7 +40,7 @@ Two options, both stored encrypted at rest and never returned by the API:
 
 1. **Auth key** — `tskey-auth-…`. Simplest. Make it reusable if you want it to outlive a restart, and give it the tag
    ShipRight should use.
-2. **Tailscale OAuth client** — client ID + secret with the `auth_keys` scope. ShipRight exchanges them for an access
+2. **Tailscale OAuth client** — client ID + secret with the **Auth keys** scope (read & write). ShipRight exchanges them for an access
    token (`client_credentials`) and mints a short-lived, ephemeral, preauthorized key per node. This is the closest thing
    to "sign in once": the OAuth client is authorized once in Tailscale Admin and ShipRight never needs a new key.
 

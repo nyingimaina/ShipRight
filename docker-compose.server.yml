@@ -60,6 +60,8 @@ services:
       SHIPRIGHT__HOST_SWAP__USERNAME: ${SHIPRIGHT__HOST_SWAP__USERNAME:-ubuntu}
       SHIPRIGHT__HOST_SWAP__SSH_KEY_PATH: ${SHIPRIGHT__HOST_SWAP__SSH_KEY_PATH:-/root/.shipright/ssh/host-swap.pem}
       SHIPRIGHT__HOST_SWAP__SIZE_GB: ${SHIPRIGHT__HOST_SWAP__SIZE_GB:-2}
+      # Backups live on a host folder so a stack teardown or an app image swap never takes them with it.
+      SHIPRIGHT__BACKUP_DIR: ${SHIPRIGHT__BACKUP_DIR:-/var/lib/shipright/backups}
     # Bound to the server itself: Caddy reaches the app over the compose network, and the deploy health check
     # curls localhost:5200. Plain-HTTP 5200 is not exposed to the internet.
     ports:
@@ -69,6 +71,8 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - shipright-app-data:/root/.shipright
+      # Host bind mount: survives `docker compose down -v`, image swaps, and app-data resets.
+      - ./backups:/var/lib/shipright/backups
 
   # HTTPS front door: gets and renews a Let's Encrypt certificate for SHIPRIGHT_DOMAIN by itself.
   # Needs: a DNS A record for the domain pointing at this server, and inbound ports 80 and 443 open.

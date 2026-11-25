@@ -278,15 +278,16 @@ public static class ServerRouter
             if (server is null)
                 return Results.NotFound(new { isError = true, message = $"Server '{serverId}' not found." });
 
-            if (string.IsNullOrWhiteSpace(request.BackupFile))
-                return Results.BadRequest(new { isError = true, message = "backupFile is required." });
-            if (!File.Exists(request.BackupFile))
-                return Results.BadRequest(new { isError = true, message = $"Backup file not found: {request.BackupFile}" });
+            if (string.IsNullOrWhiteSpace(request.FileName))
+                return Results.BadRequest(new { isError = true, message = "fileName is required." });
 
             var project = ProjectFromServer(server, request.DbConfig);
+            if (orchestrator.ListBackups(project.Id).All(a => a.FileName != request.FileName))
+                return Results.BadRequest(new { isError = true, message = $"Backup not found: {request.FileName}" });
+
             var opId = Guid.NewGuid().ToString("N");
             bus.Register(opId);
-            _ = Task.Run(() => orchestrator.RestoreAsync(project, opId, request.BackupFile, CancellationToken.None));
+            _ = Task.Run(() => orchestrator.RestoreAsync(project, opId, request.FileName!, CancellationToken.None));
             return Results.Accepted($"/api/servers/{serverId}/db/ops/{opId}/stream",
                 new { opId, message = "Restore started." });
         });
@@ -338,16 +339,52 @@ public static class ServerRouter
         // ── List backups (standalone) ────────────────────────────────────────
 
         app.MapGet("/api/servers/{serverId}/db/backups", async (
-            string serverId, string? container, string? database,
+            string serverId, string? container, string? database, int? retainCount, int? retainDays,
             IServerStore store, DatabaseOrchestrator orchestrator) =>
         {
             var server = await store.GetByIdAsync(serverId);
             if (server is null)
                 return Results.NotFound(new { isError = true, message = $"Server '{serverId}' not found." });
 
-            var projectId = $"standalone-{serverId}-{container ?? ""}-{database ?? ""}";
+            var projectId = StandaloneProjectId(serverId, container, database);
             var backups = orchestrator.ListBackups(projectId);
-            return Results.Ok(backups);
+            return Results.Ok(BackupViews.Build(backups, retainCount ?? 10, retainDays ?? 0));
+        });
+
+        // ── Download a standalone backup ─────────────────────────────────────
+
+        app.MapGet("/api/servers/{serverId}/db/backups/download", async (
+            string serverId, string file, string? format, string? container, string? database,
+            IServerStore store, DatabaseOrchestrator orchestrator, CancellationToken ct) =>
+        {
+            var server = await store.GetByIdAsync(serverId);
+            if (server is null)
+                return Results.NotFound(new { isError = true, message = $"Server '{serverId}' not found." });
+
+            var projectId = StandaloneProjectId(serverId, container, database);
+            if (orchestrator.ListBackups(projectId).All(a => a.FileName != file))
+                return Results.NotFound(new { isError = true, message = "Backup file not found." });
+
+            var mode = (format ?? "plain").Trim().ToLowerInvariant();
+            if (mode is not ("plain" or "zstd"))
+                return Results.BadRequest(new { isError = true, message = "format must be plain or zstd." });
+
+            try
+            {
+                var readMode = mode == "zstd" ? BackupReadMode.Compressed : BackupReadMode.Plain;
+                var (stream, meta) = await orchestrator.OpenBackupAsync(projectId, file, readMode, ct);
+                var name = BackupMetadata.OriginalFileName(meta);
+                if (mode == "zstd") name += ".zst";
+                return Results.Stream(stream, mode == "zstd" ? "application/zstd" : "application/octet-stream", name);
+            }
+            catch (FileNotFoundException)
+            {
+                return Results.NotFound(new { isError = true, message = "Backup file not found." });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(new { isError = true, message = ex.Message });
+            }
         });
 
         // ── Delete backup (standalone) ───────────────────────────────────────
@@ -381,27 +418,6 @@ public static class ServerRouter
             {
                 return Results.BadRequest(new { isError = true, message = ex.Message });
             }
-        });
-
-        // ── Open backup folder in Explorer (standalone) ───────────────────────
-
-        app.MapGet("/api/servers/{serverId}/db/backups/open-folder", async (
-            string serverId, string file, string? container, string? database,
-            IServerStore store, DatabaseOrchestrator orchestrator) =>
-        {
-            var server = await store.GetByIdAsync(serverId);
-            if (server is null)
-                return Results.NotFound(new { isError = true, message = $"Server '{serverId}' not found." });
-
-            var projectId = $"standalone-{serverId}-{container ?? ""}-{database ?? ""}";
-            var filePath = orchestrator.ResolveBackupFile(projectId, file);
-            if (filePath is null)
-                return Results.NotFound(new { isError = true, message = "Backup file not found." });
-
-            global::System.Diagnostics.Process.Start(new global::System.Diagnostics.ProcessStartInfo(
-                "explorer.exe", $"/select,\"{filePath}\"") { UseShellExecute = true });
-
-            return Results.Ok(new { message = "Opened." });
         });
 
         // ── Active operation query (standalone) ───────────────────────────────
@@ -556,7 +572,10 @@ public static class ServerRouter
     }
 
     private record SshExecRequest(string Command);
-    private record StandaloneRestoreRequest(DatabaseConfig DbConfig, string BackupFile);
+    private static string StandaloneProjectId(string serverId, string? container, string? database) =>
+        $"standalone-{serverId}-{container ?? ""}-{database ?? ""}";
+
+    private record StandaloneRestoreRequest(DatabaseConfig DbConfig, string? FileName);
     private record StandaloneQueryRequest(DatabaseConfig DbConfig, string LocalSqlPath);
     private record StandaloneQueryRawRequest(DatabaseConfig DbConfig, string Sql);
 }

@@ -2,10 +2,27 @@ import Head from 'next/head';
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import AppShell from '@/modules/AppShell/AppShell';
+import InfoTip from '@/shared/components/InfoTip';
 import ZestButton from 'jattac.libs.web.zest-button';
 import ZestTextbox from 'jattac.libs.web.zest-textbox';
 import { api } from '@/shared/ApiService';
 import styles from './Styles/Tailnets.module.css';
+
+const ADMIN = 'https://console.tailscale.com';
+const LINKS = {
+  keys: `${ADMIN}/admin/settings/keys`,
+  oauth: `${ADMIN}/admin/settings/oauth`,
+  acls: `${ADMIN}/admin/acls`,
+  machines: `${ADMIN}/admin/machines`,
+};
+
+function DeepLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a className={styles.deepLink} href={href} target="_blank" rel="noreferrer">
+      {children} <span aria-hidden="true">↗</span>
+    </a>
+  );
+}
 
 interface Tailnet {
   id: string;
@@ -121,14 +138,85 @@ export default function TailnetsPage() {
             Use an auth key, or a Tailscale OAuth client with device-creation access. If your tailnet signs in with Google,
             authorize the OAuth client in Tailscale Admin; Google sign-in itself is handled by Tailscale.
           </p>
+
+          <InfoTip title="New to Tailscale? Start here" id="tailscale-setup">
+            <ol className={styles.steps}>
+              <li>
+                Sign in at <DeepLink href={ADMIN}>console.tailscale.com</DeepLink>. This creates your tailnet
+                (its name is usually your email domain plus <code>.ts.net</code>).
+              </li>
+              <li>
+                Open <DeepLink href={LINKS.keys}>Settings → Keys</DeepLink> and choose <strong>Generate auth key</strong>.
+                Tick <strong>Reusable</strong> if you want it to survive restarts, and add the tag below.
+                The key starts with <code>tskey-auth-</code>.
+              </li>
+              <li>
+                Prefer no long-lived key? Create an <DeepLink href={LINKS.oauth}>OAuth client</DeepLink> with
+                <strong> Auth keys</strong> (read &amp; write). ShipRight then mints a short-lived key each time it joins.
+              </li>
+              <li>
+                Allow the node to reach your servers: add <code>tag:shipright</code> to
+                <DeepLink href={LINKS.acls}>Access controls → tagOwners</DeepLink>, then grant it port 22 on the
+                servers it should manage.
+              </li>
+              <li>
+                Paste the key (or OAuth client) below, press <strong>Save network</strong>, then <strong>Start</strong>.
+                The card turns <strong>Online</strong> when the node has joined.
+              </li>
+            </ol>
+          </InfoTip>
+
           <div className={styles.fields}>
-            <label>Name<ZestTextbox value={form.name} onChange={e => set('name', e.target.value)} placeholder="Acme production" zest={{ stretch: true }} /></label>
-            <label>Tailnet<ZestTextbox value={form.tailnet} onChange={e => set('tailnet', e.target.value)} placeholder="example.com or -" zest={{ stretch: true }} /></label>
-            <label>Auth key<ZestTextbox type="password" value={form.authKey} onChange={e => set('authKey', e.target.value)} placeholder="tskey-auth-…" zest={{ stretch: true }} /></label>
-            <label>OAuth client ID<ZestTextbox value={form.oauthClientId} onChange={e => set('oauthClientId', e.target.value)} placeholder="Optional" zest={{ stretch: true }} /></label>
-            <label>OAuth client secret<ZestTextbox type="password" value={form.oauthClientSecret} onChange={e => set('oauthClientSecret', e.target.value)} placeholder="Optional" zest={{ stretch: true }} /></label>
-            <label>Tags<ZestTextbox value={form.tags} onChange={e => set('tags', e.target.value)} placeholder="tag:shipright" zest={{ stretch: true }} /></label>
+            <div className={styles.fieldGroup}>
+              <label>Name<ZestTextbox value={form.name} onChange={e => set('name', e.target.value)} placeholder="Acme production" zest={{ stretch: true }} /></label>
+              <p className={styles.fieldHelp}>Just a label inside ShipRight, for example the company or environment.</p>
+            </div>
+
+            <div className={styles.fieldGroup}>
+              <label>Tailnet<ZestTextbox value={form.tailnet} onChange={e => set('tailnet', e.target.value)} placeholder="example.com or -" zest={{ stretch: true }} /></label>
+              <p className={styles.fieldHelp}>
+                Leave as <code>-</code> for your default tailnet. To target another one, use its name from
+                {' '}<DeepLink href={`${ADMIN}/admin/settings/general`}>Settings → General</DeepLink>.
+              </p>
+            </div>
+
+            <div className={styles.fieldGroup}>
+              <label>Auth key<ZestTextbox type="password" value={form.authKey} onChange={e => set('authKey', e.target.value)} placeholder="tskey-auth-…" zest={{ stretch: true }} /></label>
+              <p className={styles.fieldHelp}>
+                <DeepLink href={LINKS.keys}>Open Settings → Keys</DeepLink> → <strong>Generate auth key</strong>.
+                Give it the tag <code>tag:shipright</code>, then copy the <code>tskey-auth-…</code> value.
+              </p>
+              <InfoTip title="Auth key or OAuth client?" id="key-or-oauth">
+                An auth key is one value and is the simplest option. An OAuth client is a client ID and secret;
+                ShipRight exchanges them for a short-lived key whenever it joins, so there is no long-lived key to rotate.
+                Use one or the other, not both.
+              </InfoTip>
+            </div>
+
+            <div className={styles.fieldGroup}>
+              <label>OAuth client ID<ZestTextbox value={form.oauthClientId} onChange={e => set('oauthClientId', e.target.value)} placeholder="Optional" zest={{ stretch: true }} /></label>
+              <p className={styles.fieldHelp}>
+                <DeepLink href={LINKS.oauth}>Open Settings → OAuth clients</DeepLink> → <strong>Generate OAuth client</strong>,
+                scope <strong>Auth keys</strong> (read &amp; write). Leave blank if you pasted an auth key.
+              </p>
+            </div>
+
+            <div className={styles.fieldGroup}>
+              <label>OAuth client secret<ZestTextbox type="password" value={form.oauthClientSecret} onChange={e => set('oauthClientSecret', e.target.value)} placeholder="Optional" zest={{ stretch: true }} /></label>
+              <p className={styles.fieldHelp}>
+                Shown once, next to the client ID. It is stored encrypted and never shown again.
+              </p>
+            </div>
+
+            <div className={styles.fieldGroup}>
+              <label>Tags<ZestTextbox value={form.tags} onChange={e => set('tags', e.target.value)} placeholder="tag:shipright" zest={{ stretch: true }} /></label>
+              <p className={styles.fieldHelp}>
+                The tag the node joins with. It must be listed under
+                {' '}<DeepLink href={LINKS.acls}>Access controls → tagOwners</DeepLink>.
+              </p>
+            </div>
           </div>
+
           {error && <p role="alert" className={styles.error}>{error}</p>}
           <ZestButton onClick={save} disabled={busy} zest={{ semanticType: 'save', visualOptions: { variant: 'standard' } }}>
             {busy ? 'Saving.' : 'Save network'}

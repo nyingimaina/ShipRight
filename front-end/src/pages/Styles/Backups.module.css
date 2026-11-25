@@ -103,6 +103,83 @@
 .scheduleActions { display: flex; gap: 6px; }
 .refreshRow      { display: flex; justify-content: flex-end; margin-bottom: 12px; }
 
+/* Coverage: expandable per-project backup browser */
+.coverageList { display: flex; flex-direction: column; gap: 10px; }
+
+.coverageRow {
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: var(--bg-card);
+  overflow: hidden;
+}
+
+.coverageMain {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 10px 12px;
+}
+
+.coverageNames { display: flex; flex-direction: column; min-width: 0; flex: 1 1 160px; }
+.coverageName { font-size: 14px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.01em; }
+.coverageDb   { font-size: 11px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+.coverageMeta { font-size: 11px; color: var(--text-secondary); }
+
+.chevron {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.chevron:hover { border-color: var(--accent); color: var(--accent); }
+
+.expanded {
+  border-top: 1px solid var(--border-subtle);
+  padding: 12px;
+  background: var(--bg-input);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.policy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 12px;
+}
+
+.policyField { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--text-muted); }
+.policyField input,
+.policyField select {
+  min-height: var(--touch-target);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border-medium);
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 13px;
+  width: 110px;
+}
+.policyField select { width: 160px; }
+.policyField input:focus,
+.policyField select:focus { outline: none; border-color: var(--accent); }
+
+.policyCheck { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); min-height: var(--touch-target); }
+.policyCheck input { width: 16px; height: 16px; accent-color: var(--accent); }
+
+@media (min-width: 640px) {
+  .coverageMain { flex-wrap: nowrap; }
+}
+
 .filters     { display: flex; gap: 12px; margin-bottom: 12px; align-items: flex-end; flex-wrap: wrap; }
 .filterGroup { display: flex; flex-direction: column; gap: 4px; }
 .filterLabel { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }

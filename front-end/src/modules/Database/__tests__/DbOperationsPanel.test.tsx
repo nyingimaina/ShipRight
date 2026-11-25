@@ -15,11 +15,16 @@ jest.mock('next/dynamic', () => ({
 
 jest.mock('@/shared/ApiService', () => ({
   api: {
-    get: jest.fn().mockResolvedValue([]),
+    get: jest.fn((url: string) =>
+      url.includes('/backups')
+        ? Promise.resolve({ files: [], keepCount: 10, keepDays: 0, cadenceSeconds: null })
+        : Promise.resolve(null)),
     post: jest.fn(),
+    put: jest.fn(),
     delete: jest.fn(),
   },
   sseUrl: jest.fn((url: string) => url),
+  apiUrl: jest.fn((url: string) => url),
 }));
 
 jest.mock('jattac.libs.web.zest-button', () => ({
@@ -85,9 +90,10 @@ describe('DbOperationsPanel', () => {
     jest.clearAllMocks();
   });
 
-  it('renders without crashing', () => {
+  it('renders without crashing', async () => {
     render(<DbOperationsPanel {...defaultProps} />);
     expect(screen.getByText('Backup Now')).toBeInTheDocument();
+    expect(await screen.findByText(/No backups yet/)).toBeInTheDocument();
   });
 
   it('shows tabs when rendered', () => {
@@ -97,9 +103,10 @@ describe('DbOperationsPanel', () => {
     expect(screen.getByTestId('tab-sql')).toBeInTheDocument();
   });
 
-  it('shows backup & restore section by default', () => {
+  it('shows backup & restore section by default', async () => {
     render(<DbOperationsPanel {...defaultProps} />);
     expect(screen.getByText('Backup Now')).toBeInTheDocument();
+    expect(await screen.findByText(/No backups yet/)).toBeInTheDocument();
   });
 
   it('switches to SQL tab when clicked', async () => {
@@ -119,5 +126,6 @@ describe('DbOperationsPanel', () => {
 
     fireEvent.click(screen.getByTestId('tab-backup'));
     expect(screen.getByText('Backup Now')).toBeInTheDocument();
+    expect(await screen.findByText(/No backups yet/)).toBeInTheDocument();
   });
 });

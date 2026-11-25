@@ -652,6 +652,26 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
                   onChange={e => setDbField('backupRetainCount', Number(e.target.value) || 10)}
                   placeholder="10" zest={{ stretch: true }} />
               </Field>
+
+              <Field label="Backup age limit (days, 0 = none)">
+                <ZestTextbox value={String(db.backupRetainDays ?? 0)}
+                  onChange={e => setDbField('backupRetainDays', Math.max(0, Number(e.target.value) || 0))}
+                  placeholder="0" zest={{ stretch: true }} />
+              </Field>
+
+              <Field label="Backup compression (0 = none, 19 = smallest)">
+                <ZestTextbox value={String(db.backupCompressionLevel ?? 12)}
+                  onChange={e => setDbField('backupCompressionLevel', Math.max(0, Math.min(19, Number(e.target.value) || 12)))}
+                  placeholder="12" zest={{ stretch: true }} />
+              </Field>
+
+              <Field label="Encrypt backups at rest">
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, minHeight: 36 }}>
+                  <input type="checkbox" checked={db.backupEncrypt ?? true}
+                    onChange={e => setDbField('backupEncrypt', e.target.checked)} />
+                  Use the server-managed backup key
+                </span>
+              </Field>
             </>
           )}
         </TabPanel>

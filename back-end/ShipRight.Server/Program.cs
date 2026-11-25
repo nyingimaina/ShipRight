@@ -377,6 +377,7 @@ static void RegisterDesktopServices(IServiceCollection services, string dataDir)
     services.AddSingleton<DatabaseBackupService>();
     services.AddSingleton<IServerStore>(_ => new SqliteServerStore(dataDir));
     services.AddTailscaleNetworking(dataDir);
+    services.AddBackupArchive(dataDir);
     services.AddSingleton<SshKeyStore>(_ => new SshKeyStore(dataDir));
     services.AddSingleton<IRemoteHostProvider, LinuxSshProvider>();
     services.AddSingleton<IMonitoringProvider, LinuxSshMonitoringProvider>();
