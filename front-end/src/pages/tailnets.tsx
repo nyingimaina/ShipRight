@@ -214,7 +214,7 @@ export default function TailnetsPage() {
             <div className={styles.fieldGroup}>
               <label>Tailnet<ZestTextbox value={form.tailnet} onChange={e => set('tailnet', e.target.value)} placeholder="example.com or -" zest={{ stretch: true }} /></label>
               <p className={styles.fieldHelp}>
-                Leave as <code>-</code> to use the credential's default tailnet. Otherwise use the name from
+                Leave as <code>-</code> to use the credential&apos;s default tailnet. Otherwise use the name from
                 {' '}<DeepLink href={LINKS.general}>Settings → General</DeepLink> — for a solo plan that is the
                 email you signed up with, not a <code>.ts.net</code> device name.
               </p>
@@ -296,8 +296,8 @@ export default function TailnetsPage() {
             </div>
             <pre className={styles.snippetPre}>{ACL_GRANT}</pre>
             <p className={styles.snippetNote}>
-              This allows ShipRight's node to reach any host on SSH. Prefer a tighter rule? Change
-              {' '}<code>"dst": ["*"]</code> to <code>"dst": ["tag:servers"]</code> and tag each server with
+              This allows ShipRight&apos;s node to reach any host on SSH. Prefer a tighter rule? Change
+              {' '}<code>{'"dst": ["*"]'}</code> to <code>{'"dst": ["tag:servers"]'}</code> and tag each server with
               {' '}<code>tag:servers</code> under <DeepLink href={LINKS.machines}>Machines</DeepLink>.
             </p>
           </div>
