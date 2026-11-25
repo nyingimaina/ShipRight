@@ -6,6 +6,7 @@ import AppShell from '@/modules/AppShell/AppShell';
 import BackupScheduleDialog from '@/modules/Backups/BackupScheduleDialog';
 import BackupFiles from '@/modules/Backups/BackupFiles';
 import RecoveryKeyPanel from '@/modules/Backups/RecoveryKeyPanel';
+import DecryptBackupPanel from '@/modules/Backups/DecryptBackupPanel';
 import { BackupStorageInfo, fmtBytes } from '@/modules/Backups/backupTypes';
 import { api } from '@/shared/ApiService';
 import { IProject } from '@/shared/types/IProject';
@@ -353,6 +354,13 @@ export default function BackupsPage() {
 
         <div className={styles.section}>
           <RecoveryKeyPanel />
+        </div>
+
+        <div className={styles.section}>
+          <div className={styles.sectionTitle}>Decrypt a backup file</div>
+          <div className={styles.panel}>
+            <DecryptBackupPanel />
+          </div>
         </div>
 
         <div className={styles.section}>

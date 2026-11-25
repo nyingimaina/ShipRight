@@ -8,13 +8,14 @@ import { resetServerVersionCache } from '@/shared/serverInfo';
 jest.mock('next/router', () => ({ useRouter: () => ({ push: jest.fn(), pathname: '/' }) }));
 jest.mock('jattac.libs.web.zest-sidekick-menu', () => ({
   __esModule: true,
-  default: ({ headerContent, footerContent, ...props }: any) => (
+  default: ({ headerContent, footerContent, items = [], ...props }: any) => (
     <nav
       data-search={String(props.searchEnabled)}
       data-swipe={String(props.swipeEnabled)}
       data-surface={props.zest?.visualOptions?.surface}
       data-motion={props.zest?.motionOptions?.intensity}
     >
+      {items.map((item: any) => <span key={item.id}>{item.label}</span>)}
       <header>{headerContent}</header>
       <footer>{footerContent}</footer>
     </nav>
@@ -90,5 +91,20 @@ describe('AppShell version', () => {
     expect(nav).toHaveAttribute('data-swipe', 'true');
     expect(nav).toHaveAttribute('data-surface', 'translucent');
     expect(nav).toHaveAttribute('data-motion', 'playful');
+  });
+
+  it('hides the Windows-only Utilities entry when the server runs in cloud mode', async () => {
+    health({ mode: 'Cloud', serverVersion: '4.11.0' });
+    render(<AppShell><p>page</p></AppShell>);
+
+    await waitFor(() => expect(screen.queryByText('Utilities')).toBeNull());
+    expect(screen.getByText('Backups')).toBeInTheDocument();
+  });
+
+  it('keeps Utilities in desktop mode', async () => {
+    health({ mode: 'Desktop', serverVersion: '4.11.0' });
+    render(<AppShell><p>page</p></AppShell>);
+
+    expect(await screen.findByText('Utilities')).toBeInTheDocument();
   });
 });

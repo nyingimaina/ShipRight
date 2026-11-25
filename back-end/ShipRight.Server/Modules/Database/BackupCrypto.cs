@@ -258,7 +258,8 @@ public sealed class BackupDecryptStream : Stream
         var id = new byte[idLength];
         _inner.ReadExactly(id);
         KeyId = global::System.Text.Encoding.ASCII.GetString(id);
-        Key = keyFor(KeyId) ?? throw new InvalidDataException($"The key '{KeyId}' for this backup is missing.");
+        Key = keyFor(KeyId) ?? throw new InvalidOperationException(
+            $"The key '{KeyId}' for this backup is missing. Choose the recovery file that was exported with it.");
     }
 
     protected override void Dispose(bool disposing)

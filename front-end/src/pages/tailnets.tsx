@@ -11,10 +11,49 @@ import styles from './Styles/Tailnets.module.css';
 const ADMIN = 'https://console.tailscale.com';
 const LINKS = {
   keys: `${ADMIN}/admin/settings/keys`,
-  oauth: `${ADMIN}/admin/settings/oauth`,
+  oauth: `${ADMIN}/admin/settings/trust-credentials`,
   acls: `${ADMIN}/admin/acls`,
+  general: `${ADMIN}/admin/settings/general`,
   machines: `${ADMIN}/admin/machines`,
 };
+
+const ACL_TAG_OWNER = `"tag:shipright": ["autogroup:admin"]`;
+
+const ACL_GRANT = `{
+  "src": ["tag:shipright"],
+  "dst": ["*"],
+  "ip": ["tcp:22"]
+}`;
+
+const ACL_FULL_EXAMPLE = `{
+  "tagOwners": {
+    "tag:shipright": ["autogroup:admin"]
+  },
+  "grants": [
+    {
+      "src": ["tag:shipright"],
+      "dst": ["*"],
+      "ip": ["tcp:22"]
+    }
+  ]
+}`;
+
+function CopyButton({ text, label }: { text: string; label: string }) {
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(`${label} copied.`);
+    } catch {
+      toast.error('Could not copy automatically. Select the text and copy it.');
+    }
+  };
+
+  return (
+    <ZestButton onClick={copy} zest={{ buttonStyle: 'outline', semanticType: 'edit', visualOptions: { size: 'sm' } }}>
+      Copy
+    </ZestButton>
+  );
+}
 
 function DeepLink({ href, children }: { href: string; children: React.ReactNode }) {
   return (
@@ -151,7 +190,7 @@ export default function TailnetsPage() {
                 The key starts with <code>tskey-auth-</code>.
               </li>
               <li>
-                Prefer no long-lived key? Create an <DeepLink href={LINKS.oauth}>OAuth client</DeepLink> with
+                Prefer no long-lived key? Create a <DeepLink href={LINKS.oauth}>trust credential (OAuth client)</DeepLink> with
                 <strong> Auth keys</strong> (read &amp; write). ShipRight then mints a short-lived key each time it joins.
               </li>
               <li>
@@ -175,9 +214,15 @@ export default function TailnetsPage() {
             <div className={styles.fieldGroup}>
               <label>Tailnet<ZestTextbox value={form.tailnet} onChange={e => set('tailnet', e.target.value)} placeholder="example.com or -" zest={{ stretch: true }} /></label>
               <p className={styles.fieldHelp}>
-                Leave as <code>-</code> for your default tailnet. To target another one, use its name from
-                {' '}<DeepLink href={`${ADMIN}/admin/settings/general`}>Settings → General</DeepLink>.
+                Leave as <code>-</code> to use the credential's default tailnet. Otherwise use the name from
+                {' '}<DeepLink href={LINKS.general}>Settings → General</DeepLink> — for a solo plan that is the
+                email you signed up with, not a <code>.ts.net</code> device name.
               </p>
+              <InfoTip title="Which tailnet name do I use?" id="tailnet-name">
+                The tailnet name is shown at the top of the admin console. Organizations usually see a domain such as
+                <code> example.com</code>; solo plans see the signup email. A machine name like
+                <code> my-server.tail1234.ts.net</code> is not a tailnet and will be rejected.
+              </InfoTip>
             </div>
 
             <div className={styles.fieldGroup}>
@@ -196,7 +241,7 @@ export default function TailnetsPage() {
             <div className={styles.fieldGroup}>
               <label>OAuth client ID<ZestTextbox value={form.oauthClientId} onChange={e => set('oauthClientId', e.target.value)} placeholder="Optional" zest={{ stretch: true }} /></label>
               <p className={styles.fieldHelp}>
-                <DeepLink href={LINKS.oauth}>Open Settings → OAuth clients</DeepLink> → <strong>Generate OAuth client</strong>,
+                <DeepLink href={LINKS.oauth}>Open Settings → Trust credentials</DeepLink> → <strong>Generate trust credential</strong>,
                 scope <strong>Auth keys</strong> (read &amp; write). Leave blank if you pasted an auth key.
               </p>
             </div>
@@ -226,6 +271,45 @@ export default function TailnetsPage() {
           <ZestButton onClick={save} disabled={busy} zest={{ semanticType: 'save', visualOptions: { variant: 'standard' } }}>
             {busy ? 'Saving.' : 'Save network'}
           </ZestButton>
+        </section>
+
+        <section className={styles.snippetCard}>
+          <h2>Copy the Tailscale rules</h2>
+          <p className={styles.note}>
+            These two snippets are all Tailscale needs. Open
+            {' '}<DeepLink href={LINKS.acls}>Access controls</DeepLink>, merge them into the matching sections, and save.
+            If you already have rules, add to them — do not replace the file.
+          </p>
+
+          <div className={styles.snippetBlock}>
+            <div className={styles.copyRow}>
+              <span>1. Add to <code>tagOwners</code></span>
+              <CopyButton text={ACL_TAG_OWNER} label="Tag owner" />
+            </div>
+            <pre className={styles.snippetPre}>{ACL_TAG_OWNER}</pre>
+          </div>
+
+          <div className={styles.snippetBlock}>
+            <div className={styles.copyRow}>
+              <span>2. Add to <code>grants</code> (port 22 only)</span>
+              <CopyButton text={ACL_GRANT} label="Grant rule" />
+            </div>
+            <pre className={styles.snippetPre}>{ACL_GRANT}</pre>
+            <p className={styles.snippetNote}>
+              This allows ShipRight's node to reach any host on SSH. Prefer a tighter rule? Change
+              {' '}<code>"dst": ["*"]</code> to <code>"dst": ["tag:servers"]</code> and tag each server with
+              {' '}<code>tag:servers</code> under <DeepLink href={LINKS.machines}>Machines</DeepLink>.
+            </p>
+          </div>
+
+          <details className={styles.fullExample}>
+            <summary>Show a complete policy example</summary>
+            <p className={styles.snippetNote}>
+              Only paste this as the whole file if you have no other rules. Otherwise copy the two snippets above.
+            </p>
+            <pre className={styles.snippetPre}>{ACL_FULL_EXAMPLE}</pre>
+            <CopyButton text={ACL_FULL_EXAMPLE} label="Full policy example" />
+          </details>
         </section>
       </AppShell>
     </>

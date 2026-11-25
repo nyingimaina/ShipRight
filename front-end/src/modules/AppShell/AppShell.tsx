@@ -20,7 +20,7 @@ import ThemeToggle from "@/shared/theme/ThemeToggle";
 import { useTheme } from "@/shared/theme/ThemeContext";
 import { authApi, useAuthStore } from "@/shared/auth";
 import styles from "./Styles/AppShell.module.css";
-import { useServerVersion } from "@/shared/serverInfo";
+import { useServerVersion, useServerMode } from "@/shared/serverInfo";
 import { useInRootShell } from "@/shared/layout/ShellContext";
 
 interface Props {
@@ -35,6 +35,7 @@ export default function AppShell({ children }: Props) {
   const version = useServerVersion();
   const { theme } = useTheme();
   const inRootShell = useInRootShell();
+  const mode = useServerMode();
 
   // Pages still wrap themselves in AppShell; under the root layout that would draw a second sidebar.
   if (inRootShell) return <>{children}</>;
@@ -153,7 +154,12 @@ export default function AppShell({ children }: Props) {
   return (
     <>
       <SidekickMenu
-        items={isAdmin ? menuItems : menuItems.filter((item) => item.id !== "team" && item.id !== "tailnets")}
+        items={menuItems.filter((item) => {
+          if (!isAdmin && (item.id === "team" || item.id === "tailnets")) return false;
+          // The Utilities page manages the Windows build machine (WSL, diskpart); it has no meaning in cloud mode.
+          if (mode === "cloud" && item.id === "utilities") return false;
+          return true;
+        })}
         searchEnabled={false}
         favouritesEnabled
         favouritesOptions={{ maxItems: 8, minToShowTab: 3, windowDays: 30 }}

@@ -40,9 +40,24 @@ Two options, both stored encrypted at rest and never returned by the API:
 
 1. **Auth key** — `tskey-auth-…`. Simplest. Make it reusable if you want it to outlive a restart, and give it the tag
    ShipRight should use.
-2. **Tailscale OAuth client** — client ID + secret with the **Auth keys** scope (read & write). ShipRight exchanges them for an access
-   token (`client_credentials`) and mints a short-lived, ephemeral, preauthorized key per node. This is the closest thing
-   to "sign in once": the OAuth client is authorized once in Tailscale Admin and ShipRight never needs a new key.
+2. **Trust credential (OAuth client)** — client ID + secret with the **Auth keys** scope (read & write), created at
+   `Settings → Trust credentials`. ShipRight exchanges the client credentials for an access token and mints a
+   short-lived, ephemeral, preauthorized key per node. This is the closest thing to "sign in once": the credential is
+   authorized once in Tailscale Admin and ShipRight never needs a new key.
+
+If the **Tailnet** field is left as `-`, the API resolves the default tailnet from the credential. A custom name must be
+the tailnet name from `Settings → General` (a domain such as `example.com`, or the signup email on a solo plan) — not a
+device DNS name like `my-server.tail1234.ts.net`. If a custom name returns 404, ShipRight retries with `-` once, which
+is usually the right tailnet for that credential.
+
+### When joining fails
+
+| Message | Meaning and fix |
+|---|---|
+| `could not find the tailnet '…'` (404) | Wrong tailnet name, or the credential has no `auth_keys` scope. Set Tailnet to `-`, or use the name from Settings → General; give the trust credential **Auth keys** write access. |
+| `Tailscale rejected the trust credential` (401/403) | The credential is revoked, or its scope is not **Auth keys**. Create a new trust credential with that scope. |
+| `invalid key` | The auth key is expired or already used. Generate a reusable key, or switch to a trust credential. |
+| `requested tags … are not permitted` | Add the tag to `tagOwners`, or use a key that already carries it. |
 
 The node's identity lives in the app's persistent volume (`/root/.shipright/tailscale/<company>/<tailnet>`), so a restart
 reuses the saved login instead of spending another key.

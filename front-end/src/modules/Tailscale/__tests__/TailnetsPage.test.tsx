@@ -59,6 +59,22 @@ describe('TailnetsPage', () => {
     expect(screen.getByText(/Google sign-in itself is handled by Tailscale/i)).toBeInTheDocument();
   });
 
+  it('gives copy-pastable ACL snippets instead of sending people to search', async () => {
+    Object.assign(navigator, { clipboard: { writeText: jest.fn().mockResolvedValue(undefined) } });
+
+    render(<TailnetsPage />);
+    await screen.findByText('Acme');
+
+    expect(screen.getByText('Copy the Tailscale rules')).toBeInTheDocument();
+    expect(screen.getAllByText(/tcp:22/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/tag:shipright/).length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Copy' })[0]);
+
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining('tag:shipright'));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Tag owner copied.'));
+  });
+
   it('explains where each value comes from and links straight into the Tailscale admin console', async () => {
     render(<TailnetsPage />);
     await screen.findByText('Acme');
@@ -75,7 +91,7 @@ describe('TailnetsPage', () => {
 
     for (const href of [
       'https://console.tailscale.com/admin/settings/keys',
-      'https://console.tailscale.com/admin/settings/oauth',
+      'https://console.tailscale.com/admin/settings/trust-credentials',
       'https://console.tailscale.com/admin/acls',
     ]) {
       const match = links.find(link => link.href === href);

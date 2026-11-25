@@ -352,13 +352,44 @@ public sealed class TailscaleOAuthKeyMinter(HttpClient? http = null)
         var accessToken = tokenDoc.RootElement.GetProperty("access_token").GetString()
             ?? throw new NetworkUnavailableException("Tailscale OAuth token response had no access token.");
 
-        var tailnet = string.IsNullOrWhiteSpace(connection.Tailnet) ? "-" : Uri.EscapeDataString(connection.Tailnet);
-        using var keyRequest = new HttpRequestMessage(HttpMethod.Post, $"https://api.tailscale.com/api/v2/tailnet/{tailnet}/keys");
-        keyRequest.Headers.Authorization = new global::System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+        var configured = string.IsNullOrWhiteSpace(connection.Tailnet) ? "-" : connection.Tailnet.Trim();
+        var candidates = configured == "-" ? new[] { "-" } : new[] { configured, "-" };
         var tags = string.IsNullOrWhiteSpace(connection.Tags)
             ? Array.Empty<string>()
             : connection.Tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        keyRequest.Content = JsonContent.Create(new
+
+        HttpStatusCode? lastStatus = null;
+        string? lastBody = null;
+        foreach (var tailnet in candidates)
+        {
+            using var keyRequest = BuildKeyRequest(accessToken, tailnet, tags);
+            using var keyResponse = await _http.SendAsync(keyRequest, ct);
+            var keyBody = await keyResponse.Content.ReadAsStringAsync(ct);
+
+            if (keyResponse.IsSuccessStatusCode)
+            {
+                using var keyDoc = JsonDocument.Parse(keyBody);
+                return keyDoc.RootElement.GetProperty("key").GetString()
+                    ?? throw new NetworkUnavailableException("Tailscale auth key response had no key.");
+            }
+
+            lastStatus = keyResponse.StatusCode;
+            lastBody = keyBody;
+
+            if (keyResponse.StatusCode != HttpStatusCode.NotFound) break;
+            if (tailnet != "-")
+                Log.Warning("Tailscale tailnet '{Tailnet}' was not found; retrying with the credential's default tailnet", configured);
+        }
+
+        throw new NetworkUnavailableException(DescribeKeyFailure(lastStatus, configured, lastBody));
+    }
+
+    private static HttpRequestMessage BuildKeyRequest(string accessToken, string tailnet, string[] tags)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post,
+            $"https://api.tailscale.com/api/v2/tailnet/{Uri.EscapeDataString(tailnet)}/keys");
+        request.Headers.Authorization = new global::System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+        request.Content = JsonContent.Create(new
         {
             capabilities = new
             {
@@ -375,14 +406,23 @@ public sealed class TailscaleOAuthKeyMinter(HttpClient? http = null)
             },
             expirySeconds = 3600,
         });
+        return request;
+    }
 
-        using var keyResponse = await _http.SendAsync(keyRequest, ct);
-        var keyBody = await keyResponse.Content.ReadAsStringAsync(ct);
-        if (!keyResponse.IsSuccessStatusCode)
-            throw new NetworkUnavailableException($"Tailscale could not create an auth key: {keyBody}");
-
-        using var keyDoc = JsonDocument.Parse(keyBody);
-        return keyDoc.RootElement.GetProperty("key").GetString()
-            ?? throw new NetworkUnavailableException("Tailscale auth key response had no key.");
+    private static string DescribeKeyFailure(HttpStatusCode? status, string configuredTailnet, string? body)
+    {
+        var detail = string.IsNullOrWhiteSpace(body) ? string.Empty : $" Tailscale said: {body.Trim()}";
+        return status switch
+        {
+            HttpStatusCode.NotFound =>
+                $"Tailscale could not find the tailnet '{configuredTailnet}'. Use the tailnet name from " +
+                "Admin → Settings → General (for a solo plan it is the email you signed up with), or set " +
+                "Tailnet to '-' to use the trust credential's default tailnet. Also confirm the trust " +
+                $"credential has the 'Auth keys' scope with Write access.{detail}",
+            HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden =>
+                "Tailscale rejected the trust credential. Give it the 'Auth keys' scope with Write access " +
+                $"and make sure it belongs to this tailnet.{detail}",
+            _ => $"Tailscale could not create an auth key ({status?.ToString() ?? "no response"}).{detail}",
+        };
     }
 }

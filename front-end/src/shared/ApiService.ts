@@ -66,8 +66,26 @@ async function upload<T>(path: string, file: File, headers: Record<string, strin
   return data as T;
 }
 
+/** Upload a form and receive JSON (used by the backup decrypt tool). */
+async function uploadForm<T>(path: string, form: FormData): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, { method: 'POST', body: form, credentials: 'include' });
+
+  if (res.status === 401) {
+    clearSession();
+    throw { isError: true, message: 'Sign in required.' };
+  }
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({ message: `HTTP ${res.status}` }));
+    throw data;
+  }
+
+  return res.json() as Promise<T>;
+}
+
 export const api = {
   upload,
+  uploadForm,
   get:    <T>(path: string)               => request<T>('GET',    path),
   post:   <T>(path: string, body: unknown) => request<T>('POST',   path, body),
   put:    <T>(path: string, body: unknown) => request<T>('PUT',    path, body),

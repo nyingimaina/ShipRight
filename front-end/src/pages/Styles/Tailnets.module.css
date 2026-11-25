@@ -151,6 +151,85 @@
   line-height: 1.5;
 }
 
+.snippetCard {
+  margin-top: 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 18px;
+  background: linear-gradient(160deg, var(--bg-card), var(--bg-elevated));
+  padding: 16px;
+}
+
+.snippetCard h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.snippetBlock {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.copyRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.copyRow code,
+.snippetNote code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+.snippetPre {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.snippetNote {
+  margin: 2px 0 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.fullExample {
+  margin-top: 14px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 12px;
+}
+
+.fullExample summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 0.82rem;
+  min-height: var(--touch-target);
+  display: flex;
+  align-items: center;
+}
+
+.fullExample .snippetPre {
+  margin: 8px 0;
+}
+
 .error {
   margin: 0 0 12px;
   color: var(--error);

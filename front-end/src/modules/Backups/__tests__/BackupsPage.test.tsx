@@ -29,13 +29,14 @@ jest.mock('react-hot-toast', () => ({
   default: { success: jest.fn(), error: jest.fn() },
 }));
 jest.mock('@/shared/ApiService', () => ({
-  api: { get: jest.fn(), post: jest.fn(), put: jest.fn(), delete: jest.fn() },
+  api: { get: jest.fn(), post: jest.fn(), put: jest.fn(), delete: jest.fn(), uploadForm: jest.fn() },
   apiUrl: (path: string) => path,
 }));
 
 const get = (api as any).get as jest.Mock;
 const post = (api as any).post as jest.Mock;
 const put = (api as any).put as jest.Mock;
+const uploadForm = (api as any).uploadForm as jest.Mock;
 
 const backupFile = {
   fileName: 'shop_2026-11-25_02-00-00_schedule.sql.zst.enc',
@@ -194,6 +195,19 @@ describe('BackupsPage', () => {
     expect(screen.getByRole('link', { name: 'Download recovery file' }))
       .toHaveAttribute('href', '/api/backups/recovery-key/export');
     expect(screen.getByText('active')).toBeInTheDocument();
+  });
+
+  it('offers a decrypt tool for backup files copied off the host', async () => {
+    uploadForm.mockResolvedValue({ token: 'abc123', fileName: 'shop.sql' });
+
+    render(<BackupsPage />);
+    await screen.findByText('Shop');
+
+    const file = new File(['encrypted'], 'shop.sql.zst.enc', { type: 'application/octet-stream' });
+    fireEvent.change(screen.getByLabelText('Backup file to decrypt'), { target: { files: [file] } });
+    fireEvent.click(screen.getByRole('button', { name: 'Decrypt and download' }));
+
+    await waitFor(() => expect(uploadForm).toHaveBeenCalledWith('/api/backups/decrypt', expect.any(FormData)));
   });
 
   it('warns when backups sit inside the app data directory', async () => {

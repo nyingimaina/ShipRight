@@ -239,6 +239,7 @@ try
     app.MapProjectSummaryRoutes();
     app.MapBuildRoutes();
     app.MapDatabaseRoutes();
+    app.MapBackupToolRoutes();
     app.MapSshTerminalRoutes();
     app.MapContainerLogRoutes();
     app.MapRepoMaintenanceRoutes();

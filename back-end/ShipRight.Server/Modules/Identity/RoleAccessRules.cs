@@ -29,6 +29,8 @@ public static class RoleAccessRules
         R("GET", @"/api/tailnets(/.*)?", AppRoles.Viewer),
         R(null, @"/api/tailnets(/.*)?", AppRoles.Admin),
         R("GET", @"/api/backups/recovery-key/export", AppRoles.Admin),
+        R("POST", @"/api/backups/decrypt", AppRoles.Operator),
+        R("GET", @"/api/backups/decrypt/.+", AppRoles.Operator),
         R("GET", @"/api/backups(/.*)?", AppRoles.Viewer),
         R(null, @"/api/backups(/.*)?", AppRoles.Admin),
 

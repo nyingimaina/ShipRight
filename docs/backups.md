@@ -99,6 +99,19 @@ Recovery file shape:
 Encryption never blocks a download: the server decrypts while streaming, so no key is needed outside ShipRight.
 Downloads are Operator-only; the recovery-key export is Admin-only.
 
+## Decrypting a file without the app
+
+The Backups page has **Decrypt a backup file**: choose an artifact copied from the backup folder (for example
+`shop_2026-11-25_02-00-00_schedule.sql.zst.enc`) and the recovery JSON. ShipRight validates the key, then streams
+the decrypted (and decompressed) file back; the upload is temporary and removed when the download completes.
+
+- Plain `.sql`/`.bak` files pass through unchanged.
+- zstd-only files (`.sql.zst`, no `.enc`) are decompressed without a recovery file.
+- The download is a second request with a one-hour, unguessable token, so large files go straight to disk instead of
+  through browser memory.
+- Encryption does not change the download formats on the project row: **Download** gives plain bytes,
+  **Download .zst** gives decrypted-but-compressed bytes.
+
 ## API additions
 
 | Method and path | Purpose |
