@@ -18,6 +18,12 @@ Added in 4.11.0. Every backup is written as one artifact plus a `.meta.json` sid
 SQL Server `.bak` files are first written inside the container, copied to the host with `docker cp`, and then pulled
 over SFTP into the same pipeline. Restore copies the file back in before running `RESTORE`.
 
+## Schedules
+
+Schedules created on the Backups page are saved (`backup-schedules.json`, company-scoped) and re-registered at
+startup, so a restart does not forget them. There is **no implicit daily backup** any more: a project is only backed
+up when a schedule exists or someone presses **Backup now**. Verified by `JsonBackupScheduleStoreTests`.
+
 ## Retention
 
 Each project has two limits, applied after every successful run:
