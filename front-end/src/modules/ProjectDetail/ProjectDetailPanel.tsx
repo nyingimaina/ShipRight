@@ -11,6 +11,10 @@ import LocalCleanupCard from '@/modules/ProjectDetail/LocalCleanupCard';
 import ProjectSpaceCard from '@/modules/ProjectDetail/ProjectSpaceCard';
 import ProjectDeployTab from '@/modules/ProjectDetail/ProjectDeployTab';
 import { withDeployTab } from '@/modules/ProjectDetail/deployTab';
+import { formatDateTime } from '@/shared/time';
+import { useAuthStore } from '@/shared/auth';
+import MoveToCompanyDialog from '@/modules/Companies/MoveToCompanyDialog';
+import ProjectBackupsPanel from '@/modules/Backups/ProjectBackupsPanel';
 import { ProjectSummary } from '@/modules/Dashboard/ProjectCard';
 import LogViewer, { LogEntry } from '@/modules/BuildWizard/LogViewer';
 import ZestButton from 'jattac.libs.web.zest-button';
@@ -63,6 +67,8 @@ export default function ProjectDetailPanel({ projectId, onBack }: Props) {
   const [wizardBuildId, setWizardBuildId] = useState<string | undefined>(undefined);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('overview');
+  const [moveOpen, setMoveOpen] = useState(false);
+  const companyCount = useAuthStore((s) => s.user?.companies?.length ?? 1);
   const [inferring, setInferring] = useState(false);
   const [inferResult, setInferResult] = useState<{ config: IDatabaseConfig; detected: string[] } | null>(null);
   const [savingInfer, setSavingInfer] = useState(false);
@@ -319,10 +325,18 @@ export default function ProjectDetailPanel({ projectId, onBack }: Props) {
       <AppShell>
         <div className={styles.titleRow}>
           <h1 className={styles.heading}>{project.name}</h1>
-          <ZestButton onClick={onBack}
-            zest={{ visualOptions: { size: 'sm' }, buttonStyle: 'outline', semanticType: 'edit' }}>
-            Edit
-          </ZestButton>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {companyCount > 1 && (
+              <ZestButton onClick={() => setMoveOpen(true)}
+                zest={{ visualOptions: { size: 'sm' }, buttonStyle: 'outline' }}>
+                Move to company
+              </ZestButton>
+            )}
+            <ZestButton onClick={onBack}
+              zest={{ visualOptions: { size: 'sm' }, buttonStyle: 'outline', semanticType: 'edit' }}>
+              Edit
+            </ZestButton>
+          </div>
         </div>
         <p className={styles.breadcrumb}>
           <button onClick={onBack} className={styles.breadcrumbBtn}>Projects</button>
@@ -448,7 +462,7 @@ export default function ProjectDetailPanel({ projectId, onBack }: Props) {
                     <div key={dep.id} style={{ display: 'flex', alignItems: 'center', gap: 12,
                       padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', flexWrap: 'wrap' }}>
                       <span style={{ fontSize: 11, color: '#637389', flexShrink: 0, fontFamily: "'JetBrains Mono', monospace" }}>
-                        {new Date(dep.deployedAt).toLocaleString()}
+                        {formatDateTime(dep.deployedAt)}
                       </span>
                       <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#C9A84C', flexShrink: 0 }}>
                         {dep.gitTag || '—'}
@@ -624,6 +638,15 @@ export default function ProjectDetailPanel({ projectId, onBack }: Props) {
                   projectId={projectId}
                   dbConfig={project.database}
                 />
+
+                <div style={{ marginTop: 18 }}>
+                  <ProjectBackupsPanel
+                    project={project}
+                    onProjectChanged={() => {
+                      api.get<IProject>(`/api/projects/${projectId}`).then(setProject).catch(() => {});
+                    }}
+                  />
+                </div>
               </>
             )}
           </section>
@@ -725,6 +748,14 @@ export default function ProjectDetailPanel({ projectId, onBack }: Props) {
           </section>
         )}
 
+        {moveOpen && (
+          <MoveToCompanyDialog
+            kind="project"
+            id={project.id}
+            name={project.name}
+            onClose={() => setMoveOpen(false)}
+          />
+        )}
       </AppShell>
 
       <BuildWizard

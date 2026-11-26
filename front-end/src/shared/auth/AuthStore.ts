@@ -2,6 +2,14 @@ import { create } from 'zustand';
 
 export type Role = 'Admin' | 'Operator' | 'Viewer';
 
+export interface CompanyChoice {
+  id: string;
+  name: string;
+  role: Role;
+  isActive: boolean;
+  current: boolean;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -11,6 +19,10 @@ export interface User {
   companyName?: string;
   role: Role;
   mustChangePassword: boolean;
+  /** Every company this person may enter; optional because older servers omit it. */
+  companies?: CompanyChoice[];
+  /** The person's chosen IANA zone; empty means the app default. */
+  timeZone?: string;
 }
 
 export interface AuthState {

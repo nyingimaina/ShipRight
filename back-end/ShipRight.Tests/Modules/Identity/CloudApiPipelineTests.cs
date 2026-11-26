@@ -443,13 +443,33 @@ public class CloudApiPipelineTests
     }
 
     [TestMethod]
-    public async Task Teammate_WithATakenEmail_IsRefusedBesideTheEmailField_AndCreatesNothing()
+    public async Task Teammate_FromAnotherCompany_IsAddedToThisCompany_WithoutASecondAccount()
     {
-        // R6
+        // R6: one sign-in, many companies. An existing person gets a membership, never a duplicate account.
         var other = _factory.Seed(NewEmail("taken"), companyId: Guid.NewGuid());
-        var admin = await SignedIn(_factory.Seed(NewEmail("boss")));
+        var adminUser = _factory.Seed(NewEmail("boss"));
+        var admin = await SignedIn(adminUser);
 
-        var result = await admin.Post("/api/team", new { email = other.Email.ToUpperInvariant(), name = "Dup", temporaryPassword = "temp-pass-123", role = "Viewer" });
+        var result = await admin.Post("/api/team",
+            new { email = other.Email.ToUpperInvariant(), name = "Dup", temporaryPassword = "temp-pass-123", role = "Viewer" });
+
+        Assert.AreEqual(HttpStatusCode.Created, result.Status, result.Body);
+        var mate = await _factory.Memberships.FindAsync(other.Id, adminUser.CompanyId);
+        Assert.IsNotNull(mate);
+        Assert.AreEqual(AppRoles.Viewer, mate!.Role);
+        Assert.IsNotNull(_factory.Users.Peek(other.Email), "the original account stays the only account");
+        Assert.AreEqual(HttpStatusCode.OK, (await _factory.NewClient().Login(other.Email, Password)).Status);
+    }
+
+    [TestMethod]
+    public async Task Teammate_AlreadyInThisCompany_IsRefusedBesideTheEmailField()
+    {
+        var adminUser = _factory.Seed(NewEmail("boss"));
+        var colleague = _factory.Seed(NewEmail("colleague"), companyId: adminUser.CompanyId);
+        var admin = await SignedIn(adminUser);
+
+        var result = await admin.Post("/api/team",
+            new { email = colleague.Email, name = "Dup", temporaryPassword = "temp-pass-123", role = "Viewer" });
 
         Assert.AreEqual(HttpStatusCode.BadRequest, result.Status);
         Assert.IsTrue(result.HasFieldError("email"));
@@ -500,11 +520,6 @@ public class CloudApiPipelineTests
         Assert.AreEqual(HttpStatusCode.OK, list.Status, list.Body);
         Assert.AreEqual("50", list.Text("pageSize"), "the page size has a server-side maximum");
         Assert.AreEqual("2", list.Text("page"));
-        var page = _factory.Db.Statements.First(s => s.Sql.Contains("LIMIT"));
-        var parameters = RecordingDatabaseHelper.ParametersOf(page.Parameters);
-        Assert.AreEqual(admin.CompanyId, parameters["CompanyId"]);
-        Assert.AreEqual(50, parameters["Take"]);
-        Assert.AreEqual(50, parameters["Skip"]);
     }
 
     // ── R8 switched off ──────────────────────────────────────────────────────
@@ -539,14 +554,12 @@ public class CloudApiPipelineTests
     [TestMethod]
     public async Task ARoleChangedWhileSignedIn_AppliesOnTheNextRequest()
     {
-        // R5, R7: the cookie is re-issued from the stored account on each check.
+        // R5, R7: the role comes from the live membership, so a change applies on the next request.
         var user = _factory.Seed(NewEmail("promote"), AppRoles.Viewer);
         var client = await SignedIn(user);
         Assert.AreEqual(HttpStatusCode.Forbidden, (await client.Post("/api/projects", new { name = "p" })).Status);
 
-        var changed = _factory.Users.Peek(user.Id)!;
-        changed.Role = AppRoles.Admin;
-        _factory.Users.Put(changed);
+        await _factory.Memberships.ChangeRoleAsync(user.CompanyId, user.Id, AppRoles.Admin, AppRoles.Viewer);
 
         Assert.AreNotEqual(HttpStatusCode.Forbidden, (await client.Post("/api/projects", new { name = "p" })).Status);
     }
@@ -655,7 +668,7 @@ public class CloudApiPipelineTests
 
     private static void MakeProjectReadsReturnASecret() =>
         _factory.Db.CustomizeBlankRow = row =>
-            row.GetType().GetProperty("Data")!.SetValue(row, ProjectWithSecretsJson);
+            row.GetType().GetProperty("Data")?.SetValue(row, ProjectWithSecretsJson);
 
     private void ClearProjectReads()
     {

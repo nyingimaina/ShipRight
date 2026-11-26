@@ -87,21 +87,20 @@ describe('TailnetsPage', () => {
     render(<TailnetsPage />);
     await screen.findByText('Acme');
 
-    expect(screen.getByText('Copy the Tailscale rules')).toBeInTheDocument();
+    // The guide opens by default so a new person sees the rules before anything else.
+    expect(screen.getByRole('button', { name: /Set up Tailscale/i })).toBeInTheDocument();
     expect(screen.getAllByText(/tcp:22/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/tag:shipright/).length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Copy' })[0]);
+    fireEvent.click(screen.getByRole('button', { name: /Copy tagOwners/i }));
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining('tag:shipright'));
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Tag owner copied.'));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('tagOwners copied.'));
   });
 
   it('explains where each value comes from and links straight into the Tailscale admin console', async () => {
     render(<TailnetsPage />);
     await screen.findByText('Acme');
-
-    fireEvent.click(screen.getByRole('button', { name: /Help: New to Tailscale/i }));
 
     expect(screen.getAllByText(/Generate auth key/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/tagOwners/i).length).toBeGreaterThan(0);

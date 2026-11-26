@@ -19,9 +19,11 @@ public static class ConnectionTestRoutes
     public static void MapConnectionTestRoutes(this WebApplication app) =>
         app.MapPost("/api/servers/{serverId}/connection-test",
             (string serverId, IServerStore store, ISshRunner ssh, IServerNetworkResolver networks, CancellationToken ct) =>
-                HandleAsync(serverId, store, ssh, new DiagnosticTcpProbe(new RoutedTcpProbe(new TcpProbe(), networks)), ct));
+                HandleAsync(serverId, store, ssh, new DiagnosticTcpProbe(new RoutedTcpProbe(new TcpProbe(), networks)), networks, ct));
 
-    internal static async Task<IResult> HandleAsync(string serverId, IServerStore store, ISshRunner ssh, ITcpProbe tcp, CancellationToken ct)
+    internal static async Task<IResult> HandleAsync(
+        string serverId, IServerStore store, ISshRunner ssh, ITcpProbe tcp,
+        IServerNetworkResolver? networks = null, CancellationToken ct = default)
     {
         var server = await store.GetByIdAsync(serverId);
         if (server is null)
@@ -31,7 +33,11 @@ public static class ConnectionTestRoutes
         ConnectionTestResult result;
         try
         {
-            result = await new TailscaleSshAwareTester(new ConnectionTester(ssh, tcp)).TestAsync(server, ct);
+            var tester = new ConnectionTester(ssh, tcp);
+            result = networks is null
+                ? await new TailscaleSshAwareTester(tester).TestAsync(server, ct)
+                : await new TailscaleSshAwareTester(tester,
+                    (_, token) => new RoutedSshBannerProbe(networks).ReadAsync(server, token)).TestAsync(server, ct);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)

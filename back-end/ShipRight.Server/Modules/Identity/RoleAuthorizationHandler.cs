@@ -20,6 +20,10 @@ public sealed class RoleAuthorizationHandler(IHttpContextAccessor accessor) : Au
             return Task.CompletedTask;
         }
 
+        // A chosen company carries its own role from the membership table; the second handler decides, so the
+        // primary company's claim can never leak a higher role into another company.
+        if (ActiveCompanyContext.IsExplicit) return Task.CompletedTask;
+
         var user = context.User;
         if (user.Identity?.IsAuthenticated != true) return Task.CompletedTask;
 

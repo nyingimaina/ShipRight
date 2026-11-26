@@ -15,6 +15,7 @@ import {
   RiHardDriveLine,
   RiLinksLine,
   RiLogoutCircleLine,
+  RiSettings3Line,
 } from "react-icons/ri";
 import ThemeToggle from "@/shared/theme/ThemeToggle";
 import { useTheme } from "@/shared/theme/ThemeContext";
@@ -22,6 +23,7 @@ import { authApi, useAuthStore } from "@/shared/auth";
 import styles from "./Styles/AppShell.module.css";
 import { useServerVersion, useServerMode } from "@/shared/serverInfo";
 import { useInRootShell } from "@/shared/layout/ShellContext";
+import CompanySwitcher from "./CompanySwitcher";
 
 interface Props {
   children: React.ReactNode;
@@ -149,6 +151,14 @@ export default function AppShell({ children }: Props) {
       searchTerms: "monitoring health metrics cpu ram disk",
       onClick: () => router.push("/monitoring"),
     },
+    {
+      id: "settings",
+      label: "Settings",
+      icon: <RiSettings3Line size={18} />,
+      searchTerms: "settings preferences time zone companies appearance account",
+      description: "Your time zone, look and companies",
+      onClick: () => router.push("/settings"),
+    },
   ];
 
   return (
@@ -158,6 +168,8 @@ export default function AppShell({ children }: Props) {
           if (!isAdmin && (item.id === "team" || item.id === "tailnets")) return false;
           // The Utilities page manages the Windows build machine (WSL, diskpart); it has no meaning in cloud mode.
           if (mode === "cloud" && item.id === "utilities") return false;
+          // Settings holds a person's sign-in preferences; desktop mode has no signed-in person.
+          if (mode === "desktop" && item.id === "settings") return false;
           return true;
         })}
         searchEnabled={false}
@@ -177,6 +189,7 @@ export default function AppShell({ children }: Props) {
           <div className={styles.header}>
             <div className={styles.headerTitle}>ShipRight{version && <span className={styles.headerVersion}>v{version}</span>}</div>
             <div className={styles.headerSub}>Build. Ship. Done.</div>
+            <CompanySwitcher />
           </div>
         }
         footerContent={

@@ -11,8 +11,20 @@ public record ChangePasswordRequest(string? CurrentPassword, string? NewPassword
 public record CreateTeammateRequest(string? Email, string? Name, string? TemporaryPassword, string? Role);
 public record ChangeRoleRequest(string? Role, string? ExpectedRole);
 
-public record SessionUserDto(Guid Id, string Email, string Name, Guid CompanyId, string Role, bool MustChangePassword, string CompanyName = "");
+public record CompanyChoiceDto(Guid Id, string Name, string Role, bool IsActive, bool Current);
+
+public record SessionUserDto(
+    Guid Id, string Email, string Name, Guid CompanyId, string Role, bool MustChangePassword, string CompanyName = "",
+    IReadOnlyList<CompanyChoiceDto>? Companies = null,
+    string TimeZone = "");
+
 public record SessionDto(SessionUserDto User);
+
+public record UpdatePreferencesRequest(string? TimeZone);
+
+public record CreateCompanyRequest(string? Name);
+public record RenameCompanyRequest(string? Name);
+public record SwitchCompanyRequest(Guid CompanyId);
 public record ProvidersDto(bool Google);
 
 public record TeamMemberDto(Guid Id, string Email, string Name, string Role, bool IsActive, DateTime Created);

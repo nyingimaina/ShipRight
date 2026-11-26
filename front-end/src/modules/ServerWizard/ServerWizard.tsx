@@ -256,17 +256,27 @@ export default function ServerWizard({ existingServerId, onClose, onFinished }: 
       {route === 'tailscale' && !looksLikeTailnet(form.host) && form.host.trim() !== '' && (
         <p style={muted}>That does not look like a Tailscale address. That is fine if it works, but Tailscale names end in .ts.net and addresses start with 100.</p>
       )}
-      {tailnets.length > 0 && (
-        <div style={{ marginTop: 12 }}>
-          <label htmlFor="wiz-tailnet" style={{ ...label, marginBottom: 4 }}>Network</label>
-          <select id="wiz-tailnet" style={input} value={form.tailnetId ?? ''}
-            onChange={e => set('tailnetId', e.target.value)}>
-            <option value="">Direct network</option>
-            {tailnets.map(t => <option key={t.id} value={t.id}>{t.name}{t.online ? '' : ' (offline)'}</option>)}
-          </select>
-          <p style={muted}>Choose a tenant Tailscale network when this server is only reachable through it.</p>
-        </div>
-      )}
+      <div style={{ marginTop: 12 }}>
+        <label htmlFor="wiz-tailnet" style={{ ...label, marginBottom: 4 }}>Network</label>
+        {tailnets.length > 0 ? (
+          <>
+            <select id="wiz-tailnet" style={input} value={form.tailnetId ?? ''}
+              onChange={e => set('tailnetId', e.target.value)}>
+              <option value="">Direct network</option>
+              {tailnets.map(t => <option key={t.id} value={t.id}>{t.name}{t.online ? '' : ' (offline)'}</option>)}
+            </select>
+            <p style={muted}>
+              Choose a tenant Tailscale network when this server is only reachable through it.
+              {' '}<a href="/tailnets#tailscale-setup" target="_blank" rel="noreferrer">Setup help ↗</a>
+            </p>
+          </>
+        ) : (
+          <p style={muted}>
+            Direct network. If this server is private,
+            {' '}<a href="/tailnets#tailscale-setup" target="_blank" rel="noreferrer">set up Tailscale ↗</a>.
+          </p>
+        )}
+      </div>
       {field('username', 'Username', 'The name you log in to the server with. Ubuntu servers usually use "ubuntu", Amazon Linux uses "ec2-user", and Debian uses "admin" or "debian".', 'ubuntu')}
       {field('remoteWorkingDir', 'Folder for your projects (optional)', 'The folder on the server where ShipRight keeps your project. Leave it empty and ShipRight suggests a folder in the user\'s home directory.', defaultFolder(form.username) || '/home/ubuntu/apps')}
     </div>

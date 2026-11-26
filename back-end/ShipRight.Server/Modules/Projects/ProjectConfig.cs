@@ -211,8 +211,8 @@ public record ProjectConfig
     public DatabaseConfig? Database { get; init; }
     public DateTime CreatedAt { get; init; }
     public DateTime ModifiedAt { get; set; }
-    /// IANA timezone captured from the browser used to configure this project.
-    public string TimeZone { get; init; } = "UTC";
+    /// IANA timezone captured from the browser used to configure this project; the app default when none was captured.
+    public string TimeZone { get; init; } = Shared.Time.AppTimeZone.DefaultId;
     /// Remote branch to watch for SHA changes. Null means watching is disabled for this project.
     public string? WatchBranch { get; init; }
     /// How often (in seconds) to poll the remote. Defaults to 5 minutes.

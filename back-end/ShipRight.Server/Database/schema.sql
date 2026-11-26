@@ -19,7 +19,8 @@ CREATE TABLE Company (
     UNIQUE KEY uq_company_slug (Slug)
 ) ENGINE=InnoDB;
 
--- One person: exactly one company and one role (Admin, Operator or Viewer). Matches migrations 0001 + 0002.
+-- One person. CompanyId/Role are the person's primary company (kept for older builds); CompanyMembership below is
+-- what current builds authorise against. Matches migrations 0001, 0002 and 0005.
 CREATE TABLE User (
     Id                 CHAR(36)     NOT NULL PRIMARY KEY,
     CompanyId          CHAR(36)     NOT NULL,
@@ -30,6 +31,7 @@ CREATE TABLE User (
     Role               VARCHAR(20)  NOT NULL DEFAULT 'Viewer',
     IsActive           BOOLEAN      NOT NULL DEFAULT TRUE,
     MustChangePassword BOOLEAN      NOT NULL DEFAULT FALSE,
+    TimeZone           VARCHAR(100) NULL,
     SecurityStamp      VARCHAR(64)  NULL,
     LockoutEnd         DATETIME     NULL,
     AccessFailedCount  INT          NOT NULL DEFAULT 0,
@@ -54,13 +56,30 @@ CREATE TABLE ExternalLogin (
     CONSTRAINT fk_external_login_user FOREIGN KEY (UserId) REFERENCES User(Id)
 ) ENGINE=InnoDB;
 
+-- One person can belong to several companies, with a role in each. User.CompanyId/Role above stays the primary
+-- company for old builds; this table is what current builds authorise against.
+CREATE TABLE CompanyMembership (
+    Id        CHAR(36)    NOT NULL PRIMARY KEY,
+    UserId    CHAR(36)    NOT NULL,
+    CompanyId CHAR(36)    NOT NULL,
+    Role      VARCHAR(20) NOT NULL DEFAULT 'Viewer',
+    IsActive  BOOLEAN     NOT NULL DEFAULT TRUE,
+    Created   DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    Modified  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_company_membership_user_company (UserId, CompanyId),
+    KEY idx_company_membership_company (CompanyId, Role, IsActive),
+    KEY idx_company_membership_user (UserId, IsActive),
+    CONSTRAINT fk_company_membership_user FOREIGN KEY (UserId) REFERENCES User(Id),
+    CONSTRAINT fk_company_membership_company FOREIGN KEY (CompanyId) REFERENCES Company(Id)
+) ENGINE=InnoDB;
+
 -- Records which numbered migrations have run. A fresh database already has their result, so they are marked done.
 CREATE TABLE SchemaMigration (
     Id        VARCHAR(100) NOT NULL PRIMARY KEY,
     AppliedAt DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
-INSERT INTO SchemaMigration (Id) VALUES ('0001_identity'), ('0002_drop_legacy_auth'), ('0003_key_files');
+INSERT INTO SchemaMigration (Id) VALUES ('0001_identity'), ('0002_drop_legacy_auth'), ('0003_key_files'), ('0004_company_memberships'), ('0005_user_time_zone');
 
 -- ============================================================================
 -- Domain Tables (JSON-based for flexibility, matching existing SQLite pattern)

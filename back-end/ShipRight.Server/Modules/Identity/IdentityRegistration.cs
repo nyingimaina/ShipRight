@@ -27,6 +27,8 @@ public static class IdentityRegistration
 
         services.AddSingleton<IdentityRepository>();
         services.AddSingleton<TeamRepository>();
+        services.AddSingleton<ICompanyMembershipStore, CompanyMembershipStore>();
+        services.AddSingleton<CompanyRepository>();
         services.AddScoped<DapperUserStore>();
         services.AddScoped<RegistrationService>();
 
@@ -78,6 +80,7 @@ public static class IdentityRegistration
         });
 
         services.AddSingleton<IAuthorizationHandler, RoleAuthorizationHandler>();
+        services.AddSingleton<IAuthorizationHandler, MembershipRoleAuthorizationHandler>();
         services.AddAuthorization(options =>
             options.FallbackPolicy = new AuthorizationPolicyBuilder().AddRequirements(new RoleAccessRequirement()).Build());
     }

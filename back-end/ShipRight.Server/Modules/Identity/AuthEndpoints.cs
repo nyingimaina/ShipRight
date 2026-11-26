@@ -33,12 +33,17 @@ public static class AuthEndpoints
         group.MapPost("/logout", LogoutAsync);
         group.MapGet("/me", MeAsync);
         group.MapPost("/change-password", ChangePasswordAsync);
+        // Signed-in: moves this browser to another company the person already belongs to.
+        group.MapPost("/active-company", SwitchCompanyAsync);
+        // Signed-in: personal preferences used by every screen (time zone today).
+        group.MapPut("/preferences", UpdatePreferencesAsync);
 
         app.MapGoogleSignInRoutes();
     }
 
     private static async Task<IResult> LoginAsync(
-        LoginRequest request, UserManager<AppUser> users, SignInManager<AppUser> signIn, IdentityRepository identity)
+        LoginRequest request, UserManager<AppUser> users, SignInManager<AppUser> signIn, IdentityRepository identity,
+        ICompanyMembershipStore memberships, HttpContext http)
     {
         var email = IdentityValidation.Trimmed(request.Email);
         if (email.Length == 0 || string.IsNullOrEmpty(request.Password))
@@ -56,16 +61,19 @@ public static class AuthEndpoints
         if (!user.IsActive) return Results.Json(new { message = SwitchedOff, isError = true }, statusCode: 403);
 
         await signIn.SignInAsync(user, isPersistent: true);
-        return Results.Ok(await ToSessionAsync(user, identity));
+        var (companyId, role) = await IdentitySession.ResolveForSignInAsync(http, user, memberships);
+        IdentitySession.Select(http, companyId, role);
+        return Results.Ok(await IdentitySession.BuildAsync(user, identity, memberships, companyId, role));
     }
 
     private static async Task<IResult> RegisterAsync(
-        RegisterRequest request, RegistrationService registration, SignInManager<AppUser> signIn, IdentityRepository identity)
+        RegisterRequest request, RegistrationService registration, SignInManager<AppUser> signIn,
+        IdentityRepository identity, ICompanyMembershipStore memberships, HttpContext http)
     {
         var errors = IdentityValidation.Register(request);
         if (errors.Count > 0) return Results.ValidationProblem(errors);
 
-        var user = await registration.RegisterAsync(
+        var user = await registration.RegisterWithMembershipAsync(
             request.Email!, request.Name!, request.CompanyName, request.Password);
         if (user is null)
             return Results.ValidationProblem(new Dictionary<string, string[]>
@@ -74,7 +82,8 @@ public static class AuthEndpoints
             });
 
         await signIn.SignInAsync(user, isPersistent: true);
-        return Results.Ok(await ToSessionAsync(user, identity));
+        IdentitySession.Select(http, user.CompanyId, user.Role);
+        return Results.Ok(await IdentitySession.BuildAsync(user, identity, memberships, user.CompanyId, user.Role));
     }
 
     private static async Task<IResult> ForgotPasswordAsync(
@@ -130,15 +139,69 @@ public static class AuthEndpoints
         return Results.Ok(new { message = "Signed out." });
     }
 
-    private static async Task<IResult> MeAsync(ClaimsPrincipal principal, UserManager<AppUser> users, IdentityRepository identity)
+    private static async Task<IResult> MeAsync(
+        ClaimsPrincipal principal, UserManager<AppUser> users, IdentityRepository identity,
+        ICompanyMembershipStore memberships)
     {
         var user = await users.GetUserAsync(principal);
-        return user is { IsActive: true } ? Results.Ok(await ToSessionAsync(user, identity)) : Unauthorized("Sign in required.");
+        if (user is not { IsActive: true }) return Unauthorized("Sign in required.");
+
+        var (companyId, role) = IdentitySession.ExplicitChoice;
+        return Results.Ok(await IdentitySession.BuildAsync(user, identity, memberships, companyId, role));
+    }
+
+    private static async Task<IResult> UpdatePreferencesAsync(
+        UpdatePreferencesRequest request, ClaimsPrincipal principal, UserManager<AppUser> users,
+        IdentityRepository identity, ICompanyMembershipStore memberships)
+    {
+        var user = await users.GetUserAsync(principal);
+        if (user is not { IsActive: true }) return Unauthorized("Sign in required.");
+
+        var requested = IdentityValidation.Trimmed(request.TimeZone);
+        if (requested.Length > 100) requested = requested[..100];
+        if (requested.Length == 0)
+        {
+            // Empty means "follow the app default" (Africa/Nairobi).
+            user.TimeZone = "";
+            await identity.UpdateTimeZoneAsync(user.Id, "");
+        }
+        else
+        {
+            if (!Shared.Time.AppTimeZone.TryResolve(requested, out _))
+                return Results.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    ["timeZone"] = ["Choose a time zone from the list."],
+                });
+
+            user.TimeZone = requested;
+            await identity.UpdateTimeZoneAsync(user.Id, requested);
+        }
+
+        var (companyId, role) = IdentitySession.ExplicitChoice;
+        return Results.Ok(await IdentitySession.BuildAsync(user, identity, memberships, companyId, role));
+    }
+
+    private static async Task<IResult> SwitchCompanyAsync(
+        SwitchCompanyRequest request, ClaimsPrincipal principal, UserManager<AppUser> users,
+        IdentityRepository identity, ICompanyMembershipStore memberships, HttpContext http)
+    {
+        var user = await users.GetUserAsync(principal);
+        if (user is not { IsActive: true }) return Unauthorized("Sign in required.");
+
+        var membership = request.CompanyId == Guid.Empty ? null : await memberships.FindAsync(user.Id, request.CompanyId);
+        if (membership is not { IsActive: true })
+            return Results.Json(
+                new { message = "You do not have access to that company. Ask its Admin to add you.", isError = true },
+                statusCode: 403);
+
+        IdentitySession.Select(http, membership.CompanyId, membership.Role);
+        return Results.Ok(await IdentitySession.BuildAsync(
+            user, identity, memberships, membership.CompanyId, membership.Role));
     }
 
     private static async Task<IResult> ChangePasswordAsync(
         ChangePasswordRequest request, ClaimsPrincipal principal, UserManager<AppUser> users,
-        SignInManager<AppUser> signIn, IdentityRepository identity)
+        SignInManager<AppUser> signIn, IdentityRepository identity, ICompanyMembershipStore memberships)
     {
         var errors = IdentityValidation.NewPassword("newPassword", request.NewPassword);
         if (string.IsNullOrEmpty(request.CurrentPassword)) errors["currentPassword"] = ["Enter your current password."];
@@ -157,7 +220,8 @@ public static class AuthEndpoints
         user.MustChangePassword = false;
         await users.UpdateAsync(user);
         await signIn.RefreshSignInAsync(user);
-        return Results.Ok(await ToSessionAsync(user, identity));
+        var (companyId, role) = IdentitySession.ExplicitChoice;
+        return Results.Ok(await IdentitySession.BuildAsync(user, identity, memberships, companyId, role));
     }
 
     internal static async Task<SessionDto> ToSessionAsync(AppUser user, IdentityRepository identity) =>

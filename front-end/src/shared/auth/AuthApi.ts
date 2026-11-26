@@ -1,5 +1,13 @@
 import type { Role } from './AuthStore';
 
+export interface CompanyChoice {
+  id: string;
+  name: string;
+  role: Role;
+  isActive: boolean;
+  current: boolean;
+}
+
 export interface SessionUser {
   id: string;
   email: string;
@@ -8,6 +16,10 @@ export interface SessionUser {
   companyName?: string;
   role: Role;
   mustChangePassword: boolean;
+  /** Every company this person may enter; older servers omit it. */
+  companies?: CompanyChoice[];
+  /** The person's chosen IANA zone; older servers omit it. */
+  timeZone?: string;
 }
 
 export interface Session {
@@ -83,4 +95,19 @@ export const authApi = {
 
   changePassword: (currentPassword: string, newPassword: string) =>
     authRequest<Session>('POST', '/api/auth/change-password', { currentPassword, newPassword }),
+
+  /** Moves this browser to another company the person belongs to. */
+  switchCompany: (companyId: string) =>
+    authRequest<Session>('POST', '/api/auth/active-company', { companyId }),
+
+  /** Creates a company and lands the person in it as Admin. */
+  createCompany: (name: string) =>
+    authRequest<Session>('POST', '/api/companies', { name }),
+
+  renameCompany: (companyId: string, name: string) =>
+    authRequest<{ id: string; name: string }>('PUT', `/api/companies/${companyId}`, { name }),
+
+  /** Personal preferences used by every screen. */
+  updatePreferences: (preferences: { timeZone?: string }) =>
+    authRequest<Session>('PUT', '/api/auth/preferences', preferences),
 };

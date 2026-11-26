@@ -9,7 +9,7 @@ public class IdentityRepository(IDatabaseHelper<Guid> db)
     private const int DuplicateKey = 1062;
 
     private const string UserColumns =
-        "Id, CompanyId, Email, NormalizedEmail, Name, PasswordHash, Role, IsActive, MustChangePassword, " +
+        "Id, CompanyId, Email, NormalizedEmail, Name, PasswordHash, Role, IsActive, MustChangePassword, TimeZone, " +
         "SecurityStamp, LockoutEnd, AccessFailedCount, Created, Modified";
 
     private const string SelectById =
@@ -20,15 +20,15 @@ public class IdentityRepository(IDatabaseHelper<Guid> db)
 
     private const string SelectByLogin =
         "SELECT u.Id, u.CompanyId, u.Email, u.NormalizedEmail, u.Name, u.PasswordHash, u.Role, u.IsActive, " +
-        "u.MustChangePassword, u.SecurityStamp, u.LockoutEnd, u.AccessFailedCount, u.Created, u.Modified " +
+        "u.MustChangePassword, u.TimeZone, u.SecurityStamp, u.LockoutEnd, u.AccessFailedCount, u.Created, u.Modified " +
         "FROM `User` u INNER JOIN ExternalLogin l ON l.UserId = u.Id " +
         "WHERE l.Provider = @Provider AND l.ProviderKey = @ProviderKey AND u.Deleted = 0";
 
     private const string InsertUser =
         "INSERT INTO `User` (Id, CompanyId, Email, NormalizedEmail, Name, PasswordHash, Role, IsActive, " +
-        "MustChangePassword, SecurityStamp, LockoutEnd, AccessFailedCount, Created, Modified) " +
+        "MustChangePassword, TimeZone, SecurityStamp, LockoutEnd, AccessFailedCount, Created, Modified) " +
         "VALUES (@Id, @CompanyId, @Email, @NormalizedEmail, @Name, @PasswordHash, @Role, @IsActive, " +
-        "@MustChangePassword, @SecurityStamp, @LockoutEnd, @AccessFailedCount, @Created, @Modified)";
+        "@MustChangePassword, @TimeZone, @SecurityStamp, @LockoutEnd, @AccessFailedCount, @Created, @Modified)";
 
     // Role, IsActive and CompanyId are deliberately absent: only the team endpoints change them,
     // so a sign-in that saves a failed-attempt counter can never overwrite an Admin's decision.
@@ -36,6 +36,9 @@ public class IdentityRepository(IDatabaseHelper<Guid> db)
         "UPDATE `User` SET Email = @Email, NormalizedEmail = @NormalizedEmail, Name = @Name, " +
         "PasswordHash = @PasswordHash, MustChangePassword = @MustChangePassword, SecurityStamp = @SecurityStamp, " +
         "LockoutEnd = @LockoutEnd, AccessFailedCount = @AccessFailedCount, Modified = @Modified WHERE Id = @Id";
+
+    private const string UpdateTimeZone =
+        "UPDATE `User` SET TimeZone = @TimeZone, Modified = UTC_TIMESTAMP() WHERE Id = @Id AND Deleted = 0";
 
     private const string InsertCompany =
         "INSERT INTO Company (Id, Name, Slug, Created, Modified, Deleted) " +
@@ -75,8 +78,8 @@ public class IdentityRepository(IDatabaseHelper<Guid> db)
             await db.ExecuteAsync(InsertUser, new
             {
                 user.Id, user.CompanyId, user.Email, user.NormalizedEmail, user.Name, user.PasswordHash, user.Role,
-                user.IsActive, user.MustChangePassword, user.SecurityStamp, user.LockoutEnd, user.AccessFailedCount,
-                user.Created, user.Modified,
+                user.IsActive, user.MustChangePassword, user.TimeZone, user.SecurityStamp, user.LockoutEnd,
+                user.AccessFailedCount, user.Created, user.Modified,
             });
             return true;
         }
@@ -85,6 +88,10 @@ public class IdentityRepository(IDatabaseHelper<Guid> db)
             return false;
         }
     }
+
+    /// <summary>Only the person's own preference; never touched by sign-in, a role change or a password reset.</summary>
+    public virtual Task UpdateTimeZoneAsync(Guid userId, string timeZone) =>
+        db.ExecuteAsync(UpdateTimeZone, new { Id = userId, TimeZone = timeZone });
 
     public virtual Task UpdateCredentialsAsync(AppUser user) =>
         db.ExecuteAsync(UpdateUserCredentials, new

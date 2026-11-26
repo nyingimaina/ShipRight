@@ -36,10 +36,12 @@ public sealed class RoutedTcpProbe(ITcpProbe direct, IServerNetworkResolver reso
     {
         using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
         limit.CancelAfter(timeout);
+        var connected = false;
         try
         {
             using var client = new TcpClient();
             await client.ConnectAsync(proxy.Host, proxy.Port, limit.Token);
+            connected = true;
             using var stream = client.GetStream();
 
             // Greeting: version 5, one method, "no authentication".
@@ -61,19 +63,20 @@ public sealed class RoutedTcpProbe(ITcpProbe direct, IServerNetworkResolver reso
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            return TcpProbeResult.Failed(TcpFailure.TimedOut);
+            // Once the proxy is connected, a timeout means it could not reach the target (usually ACL).
+            return TcpProbeResult.Failed(connected ? TcpFailure.ProxyBlocked : TcpFailure.ProxyUnavailable);
         }
         catch (SocketException ex)
         {
             // The proxy itself refused or dropped the connection, so the tailnet is not usable.
             return ex.SocketErrorCode is SocketError.ConnectionRefused or SocketError.NetworkUnreachable
                 or SocketError.HostUnreachable or SocketError.HostNotFound or SocketError.TimedOut
-                ? TcpProbeResult.Failed(TcpFailure.ProxyUnavailable)
+                ? TcpProbeResult.Failed(connected ? TcpFailure.ProxyBlocked : TcpFailure.ProxyUnavailable)
                 : TcpProbeResult.Failed(TcpProbe.Kind(ex));
         }
         catch (IOException)
         {
-            return TcpProbeResult.Failed(TcpFailure.ProxyUnavailable);
+            return TcpProbeResult.Failed(connected ? TcpFailure.ProxyBlocked : TcpFailure.ProxyUnavailable);
         }
     }
 
@@ -108,6 +111,7 @@ public sealed class RoutedTcpProbe(ITcpProbe direct, IServerNetworkResolver reso
 
     private static TcpFailure ReplyKind(byte reply) => reply switch
     {
+        1 or 2 => TcpFailure.ProxyBlocked,
         3 or 4 => TcpFailure.Unreachable,
         5 => TcpFailure.Refused,
         6 => TcpFailure.TimedOut,

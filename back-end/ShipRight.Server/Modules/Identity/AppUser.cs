@@ -32,6 +32,8 @@ public sealed class AppUser
     public string Role { get; set; } = AppRoles.Viewer;
     public bool IsActive { get; set; } = true;
     public bool MustChangePassword { get; set; }
+    /// <summary>The person's chosen IANA time zone; empty means the app default (Africa/Nairobi).</summary>
+    public string TimeZone { get; set; } = "";
     public string SecurityStamp { get; set; } = Guid.NewGuid().ToString("N");
     public DateTime? LockoutEnd { get; set; }
     public int AccessFailedCount { get; set; }

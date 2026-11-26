@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import AppShell from '@/modules/AppShell/AppShell';
 import InfoTip from '@/shared/components/InfoTip';
+import TailscaleSetupGuide from '@/modules/Tailscale/setup/TailscaleSetupGuide';
 import ZestButton from 'jattac.libs.web.zest-button';
 import ZestTextbox from 'jattac.libs.web.zest-textbox';
 import { api } from '@/shared/ApiService';
@@ -16,44 +17,6 @@ const LINKS = {
   general: `${ADMIN}/admin/settings/general`,
   machines: `${ADMIN}/admin/machines`,
 };
-
-const ACL_TAG_OWNER = `"tag:shipright": ["autogroup:admin"]`;
-
-const ACL_GRANT = `{
-  "src": ["tag:shipright"],
-  "dst": ["*"],
-  "ip": ["tcp:22"]
-}`;
-
-const ACL_FULL_EXAMPLE = `{
-  "tagOwners": {
-    "tag:shipright": ["autogroup:admin"]
-  },
-  "grants": [
-    {
-      "src": ["tag:shipright"],
-      "dst": ["*"],
-      "ip": ["tcp:22"]
-    }
-  ]
-}`;
-
-function CopyButton({ text, label }: { text: string; label: string }) {
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      toast.success(`${label} copied.`);
-    } catch {
-      toast.error('Could not copy automatically. Select the text and copy it.');
-    }
-  };
-
-  return (
-    <ZestButton onClick={copy} zest={{ buttonStyle: 'outline', semanticType: 'edit', visualOptions: { size: 'sm' } }}>
-      Copy
-    </ZestButton>
-  );
-}
 
 function DeepLink({ href, children }: { href: string; children: React.ReactNode }) {
   return (
@@ -177,8 +140,15 @@ export default function TailnetsPage() {
           <ZestButton onClick={load} zest={{ buttonStyle: 'outline', semanticType: 'refresh' }}>Refresh</ZestButton>
         </header>
 
+        <TailscaleSetupGuide defaultOpen={items.length === 0} />
+
         <div className={styles.grid}>
-          {items.length === 0 && <p className={styles.empty}>No Tailscale networks yet.</p>}
+          {items.length === 0 && (
+            <p className={styles.empty}>
+              No Tailscale networks yet.{' '}
+              <a className={styles.deepLink} href="#tailscale-setup">Open the setup guide</a> to connect one.
+            </p>
+          )}
           {items.map(item => (
             <article key={item.id} className={styles.card}>
               <div className={styles.cardTop}>
@@ -355,44 +325,10 @@ export default function TailnetsPage() {
           </div>
         </section>
 
-        <section className={styles.snippetCard}>
-          <h2>Copy the Tailscale rules</h2>
-          <p className={styles.note}>
-            These two snippets are all Tailscale needs. Open
-            {' '}<DeepLink href={LINKS.acls}>Access controls</DeepLink>, merge them into the matching sections, and save.
-            If you already have rules, add to them — do not replace the file.
-          </p>
-
-          <div className={styles.snippetBlock}>
-            <div className={styles.copyRow}>
-              <span>1. Add to <code>tagOwners</code></span>
-              <CopyButton text={ACL_TAG_OWNER} label="Tag owner" />
-            </div>
-            <pre className={styles.snippetPre}>{ACL_TAG_OWNER}</pre>
-          </div>
-
-          <div className={styles.snippetBlock}>
-            <div className={styles.copyRow}>
-              <span>2. Add to <code>grants</code> (port 22 only)</span>
-              <CopyButton text={ACL_GRANT} label="Grant rule" />
-            </div>
-            <pre className={styles.snippetPre}>{ACL_GRANT}</pre>
-            <p className={styles.snippetNote}>
-              This allows ShipRight&apos;s node to reach any host on SSH. Prefer a tighter rule? Change
-              {' '}<code>{'"dst": ["*"]'}</code> to <code>{'"dst": ["tag:servers"]'}</code> and tag each server with
-              {' '}<code>tag:servers</code> under <DeepLink href={LINKS.machines}>Machines</DeepLink>.
-            </p>
-          </div>
-
-          <details className={styles.fullExample}>
-            <summary>Show a complete policy example</summary>
-            <p className={styles.snippetNote}>
-              Only paste this as the whole file if you have no other rules. Otherwise copy the two snippets above.
-            </p>
-            <pre className={styles.snippetPre}>{ACL_FULL_EXAMPLE}</pre>
-            <CopyButton text={ACL_FULL_EXAMPLE} label="Full policy example" />
-          </details>
-        </section>
+        <p className={styles.note}>
+          The setup guide above has every rule, deep link and copy button in one place — including the exact
+          <code> tagOwners</code>, <code>grants</code> and <code>ssh</code> snippets.
+        </p>
       </AppShell>
     </>
   );

@@ -9,6 +9,7 @@ import { RiAddLine, RiDeleteBinLine } from 'react-icons/ri';
 import { IApiError, IDatabaseConfig, IProjectInput, IServerConfig, ICredentialResource, DbProviderType, DeployMode, emptyDatabaseConfig, emptyProjectInput, IPipelineResource } from '@/shared/types/IProject';
 import { api } from '@/shared/ApiService';
 import { getBrowserTimeZone } from '@/shared/timeZone';
+import { DEFAULT_TIME_ZONE } from '@/shared/time';
 import SshKeySection from './SshKeySection';
 import WatchBranchSection from './WatchBranchSection';
 import styles from './Styles/ProjectConfigForm.module.css';
@@ -431,7 +432,7 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
             }))}
           />
           <Field label="Time Zone" error={errors['timeZone']}>
-            <ZestTextbox value={form.timeZone ?? 'UTC'} onChange={e => set('timeZone', e.target.value)}
+            <ZestTextbox value={form.timeZone ?? DEFAULT_TIME_ZONE} onChange={e => set('timeZone', e.target.value)}
               placeholder="America/New_York" zest={{ stretch: true }} />
             <p style={{ margin: '4px 0 0', fontSize: 11, color: '#637389' }}>
               Defaults to this browser&apos;s timezone. Use an IANA timezone name.

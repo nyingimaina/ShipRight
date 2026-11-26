@@ -4,6 +4,7 @@ import ZestButton from 'jattac.libs.web.zest-button';
 import OverflowMenu from 'jattac.libs.web.overflow-menu';
 import { api } from '@/shared/ApiService';
 import { IKeyFilePage, IKeyFileResource } from '@/shared/types/IProject';
+import { formatDate } from '@/shared/time';
 import KeyFileForm, { KeyFileFormErrors, KeyFileFormValues } from './KeyFileForm';
 import styles from '@/pages/Styles/Resources.module.css';
 
@@ -178,8 +179,4 @@ export default function KeyFilesPanel() {
   );
 }
 
-function formatDate(value: string): string {
-  if (!value) return '—';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString();
-}
+

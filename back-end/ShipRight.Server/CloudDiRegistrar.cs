@@ -80,6 +80,7 @@ public static class CloudDiRegistrar
         });
 
         // MariaDB-backed stores, each limited to the signed-in person's company
+        services.AddSingleton<CompanyMoveService>();
         services.AddSingleton<IProjectStore, CompanyScopedProjectStore>();
         services.AddSingleton<IServerStore, CompanyScopedServerStore>();
         services.AddSingleton<IBuildStore, CompanyScopedBuildStore>();

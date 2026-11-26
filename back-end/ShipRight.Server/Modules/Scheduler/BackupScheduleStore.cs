@@ -12,7 +12,7 @@ public sealed record BackupScheduleDefinition
     public string ProjectName { get; init; } = string.Empty;
     public string DatabaseName { get; init; } = string.Empty;
     public string Cron { get; init; } = string.Empty;
-    public string TimeZone { get; init; } = "UTC";
+    public string TimeZone { get; init; } = Shared.Time.AppTimeZone.DefaultId;
     public string MissedRunPolicy { get; init; } = "RunOnce";
     public string OverlapPolicy { get; init; } = "Skip";
     public string? MaxDuration { get; init; }
@@ -28,6 +28,9 @@ public interface IBackupScheduleStore
     Task SaveAsync(BackupScheduleDefinition definition);
     Task DeleteByRuntimeIdAsync(Guid runtimeScheduleId);
     Task DeleteAsync(string id);
+
+    /// <summary>Re-stamps a project's schedules when the project moves to another company. Returns how many moved.</summary>
+    Task<int> MoveProjectAsync(string projectId, Guid fromCompanyId, Guid toCompanyId);
 }
 
 /// <summary>Company-scoped JSON store, matching how the other small ShipRight settings are kept.</summary>
@@ -115,6 +118,25 @@ public sealed class JsonBackupScheduleStore : IBackupScheduleStore
             if (removed > 0) Write(all);
         }
         return Task.CompletedTask;
+    }
+
+    public Task<int> MoveProjectAsync(string projectId, Guid fromCompanyId, Guid toCompanyId)
+    {
+        lock (_gate)
+        {
+            var all = Read();
+            var moved = 0;
+            for (var i = 0; i < all.Count; i++)
+            {
+                // Project ids are unique across companies, and the caller has already proved ownership; matching on
+                // the project alone also re-stamps a schedule written before memberships existed.
+                if (all[i].ProjectId != projectId) continue;
+                all[i] = all[i] with { CompanyId = toCompanyId };
+                moved++;
+            }
+            if (moved > 0) Write(all);
+            return Task.FromResult(moved);
+        }
     }
 
     private Guid? Filter() =>

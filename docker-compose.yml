@@ -51,7 +51,7 @@ services:
         condition: service_healthy
     environment:
       SHIPRIGHT__MODE: ${SHIPRIGHT__MODE:-Cloud}
-      SHIPRIGHT__TIME_ZONE: ${SHIPRIGHT__TIME_ZONE:-UTC}
+      SHIPRIGHT__TIME_ZONE: ${SHIPRIGHT__TIME_ZONE:-Africa/Nairobi}
       SHIPRIGHT__DB_CONNECTION: ${SHIPRIGHT__DB_CONNECTION:-Server=db;Port=3306;Database=${MYSQL_DATABASE:-shipright};User Id=${MYSQL_USER:-shipright};Password=${MYSQL_PASSWORD:-shipright};Charset=utf8;ConvertZeroDateTime=True;}
       SHIPRIGHT__CORS_ORIGINS: ${SHIPRIGHT__CORS_ORIGINS:-https://${SHIPRIGHT_DOMAIN:-localhost}}
       SHIPRIGHT__PUBLIC_URL: ${SHIPRIGHT__PUBLIC_URL:-https://${SHIPRIGHT_DOMAIN:-localhost}}

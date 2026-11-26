@@ -35,6 +35,7 @@ public sealed class InMemoryCloudFactory : WebApplicationFactory<Program>
     public RecordingDatabaseHelper Db { get; } = new();
     public RecordingEmailSender Email { get; } = new();
     public InMemoryIdentityRepository Users { get; }
+    public InMemoryCompanyMembershipStore Memberships { get; }
 
     // A header the test middleware turns into an external (Google) sign-in cookie, standing in for Google's callback.
     public const string TestExternalIdentityHeader = "X-Test-External-Identity";
@@ -43,6 +44,7 @@ public sealed class InMemoryCloudFactory : WebApplicationFactory<Program>
     public InMemoryCloudFactory(bool google = false)
     {
         Users = new InMemoryIdentityRepository(Db);
+        Memberships = new InMemoryCompanyMembershipStore(Users);
         Set("SHIPRIGHT__MODE", "cloud");
         Set("SHIPRIGHT__DB_CONNECTION", "Server=db;Database=none;User Id=x;Password=not-used;");
         Set("SHIPRIGHT__CORS_ORIGINS", "https://app.example.test");
@@ -63,6 +65,7 @@ public sealed class InMemoryCloudFactory : WebApplicationFactory<Program>
         {
             services.Replace(ServiceDescriptor.Singleton<IDatabaseHelper<Guid>>(Db));
             services.Replace(ServiceDescriptor.Singleton<IdentityRepository>(Users));
+            services.Replace(ServiceDescriptor.Singleton<ICompanyMembershipStore>(Memberships));
             services.Replace(ServiceDescriptor.Singleton<MigrationRunner>(
                 new NoMigrations(Options.Create(new DatabaseConnectionSettings()))));
             services.Replace(ServiceDescriptor.Singleton<IPasswordResetEmailSender>(Email));
@@ -97,6 +100,7 @@ public sealed class InMemoryCloudFactory : WebApplicationFactory<Program>
         };
         user.PasswordHash = passwordHash ?? new LegacyAwarePasswordHasher().HashPassword(user, password);
         Users.Put(user);
+        Memberships.Put(user.Id, user.CompanyId, role, active);
         return user;
     }
 
@@ -161,6 +165,127 @@ public sealed class InMemoryCloudFactory : WebApplicationFactory<Program>
                 });
                 next(app);
             };
+    }
+}
+
+// Memberships kept in memory, behaving like the real table: one role per person per company, a last-Admin guard, and
+// an account that is switched off only when its last active company is taken away.
+public sealed class InMemoryCompanyMembershipStore(InMemoryIdentityRepository users) : ICompanyMembershipStore
+{
+    private readonly object _gate = new();
+    private readonly Dictionary<(Guid UserId, Guid CompanyId), CompanyMembership> _rows = new();
+
+    public void Put(Guid userId, Guid companyId, string role, bool active = true) =>
+        _rows[(userId, companyId)] = new CompanyMembership
+        {
+            Id = Guid.NewGuid(), UserId = userId, CompanyId = companyId, Role = role, IsActive = active,
+            Created = DateTime.UtcNow, Modified = DateTime.UtcNow,
+        };
+
+    public Task<IReadOnlyList<CompanyMembership>> ListForUserAsync(Guid userId, bool includeInactive = false)
+    {
+        lock (_gate)
+            return Task.FromResult<IReadOnlyList<CompanyMembership>>(_rows.Values
+                .Where(m => m.UserId == userId && (includeInactive || m.IsActive))
+                .Select(Copy)
+                .OrderBy(m => m.CompanyName)
+                .ToList());
+    }
+
+    public Task<CompanyMembership?> FindAsync(Guid userId, Guid companyId)
+    {
+        lock (_gate)
+            return Task.FromResult(_rows.TryGetValue((userId, companyId), out var m) ? Copy(m) : null);
+    }
+
+    public Task<bool> IsAdminAsync(Guid userId, Guid companyId)
+    {
+        lock (_gate)
+            return Task.FromResult(_rows.TryGetValue((userId, companyId), out var m)
+                && m is { IsActive: true, Role: AppRoles.Admin });
+    }
+
+    public Task EnsureAsync(Guid userId, Guid companyId, string role, bool isActive = true)
+    {
+        lock (_gate)
+        {
+            if (!_rows.ContainsKey((userId, companyId))) Put(userId, companyId, role, isActive);
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<CompanyMembership>> ListCompanyAsync(Guid companyId)
+    {
+        lock (_gate)
+            return Task.FromResult<IReadOnlyList<CompanyMembership>>(_rows.Values
+                .Where(m => m.CompanyId == companyId)
+                .Select(Copy)
+                .OrderBy(m => m.Name, StringComparer.Ordinal)
+                .ToList());
+    }
+
+    public Task<(IReadOnlyList<CompanyMembership> Items, int Total)> ListCompanyPageAsync(
+        Guid companyId, int page, int pageSize)
+    {
+        lock (_gate)
+        {
+            var all = _rows.Values
+                .Where(m => m.CompanyId == companyId)
+                .Select(Copy)
+                .OrderBy(m => m.Name, StringComparer.Ordinal)
+                .ThenBy(m => m.UserId)
+                .ToList();
+            return Task.FromResult<(IReadOnlyList<CompanyMembership>, int)>(
+                (all.Skip((page - 1) * pageSize).Take(pageSize).ToList(), all.Count));
+        }
+    }
+
+    public Task<CompanyMembership?> FindMemberAsync(Guid companyId, Guid userId) =>
+        FindAsync(userId, companyId);
+
+    public Task<TeamChange> ChangeRoleAsync(Guid companyId, Guid userId, string role, string? expectedRole)
+    {
+        lock (_gate)
+        {
+            if (!_rows.TryGetValue((userId, companyId), out var m)) return Task.FromResult(TeamChange.NotFound);
+            if (m.Role == role) return Task.FromResult(TeamChange.NoChange);
+            if (expectedRole is not null && m.Role != expectedRole) return Task.FromResult(TeamChange.Conflict);
+            if (role != AppRoles.Admin && IsLastAdmin(companyId, userId)) return Task.FromResult(TeamChange.LastAdmin);
+
+            _rows[(userId, companyId)] = m with { Role = role, Modified = DateTime.UtcNow };
+            if (users.Peek(userId)?.CompanyId == companyId) users.SetPrimaryRole(userId, role);
+            return Task.FromResult(TeamChange.Applied);
+        }
+    }
+
+    public Task<TeamChange> SetActiveAsync(Guid companyId, Guid userId, bool active)
+    {
+        lock (_gate)
+        {
+            if (!_rows.TryGetValue((userId, companyId), out var m)) return Task.FromResult(TeamChange.NotFound);
+            if (m.IsActive == active) return Task.FromResult(TeamChange.NoChange);
+            if (!active && IsLastAdmin(companyId, userId)) return Task.FromResult(TeamChange.LastAdmin);
+
+            _rows[(userId, companyId)] = m with { IsActive = active, Modified = DateTime.UtcNow };
+            var anyActive = _rows.Values.Any(r => r.UserId == userId && r.IsActive);
+            users.SetAccountActive(userId, anyActive);
+            return Task.FromResult(TeamChange.Applied);
+        }
+    }
+
+    private bool IsLastAdmin(Guid companyId, Guid userId) =>
+        !_rows.Values.Any(m => m.CompanyId == companyId && m.UserId != userId && m is { IsActive: true, Role: AppRoles.Admin });
+
+    private CompanyMembership Copy(CompanyMembership m)
+    {
+        var user = users.Peek(m.UserId);
+        return m with
+        {
+            CompanyName = m.CompanyId.ToString("N")[..8],
+            Email = user?.Email ?? "",
+            Name = user?.Name ?? "",
+            AccountIsActive = user?.IsActive ?? true,
+        };
     }
 }
 
@@ -269,6 +394,21 @@ public sealed class InMemoryIdentityRepository(IDatabaseHelper<Guid> db) : Ident
             _users[id].IsActive = false;
             _users[id].SecurityStamp = Guid.NewGuid().ToString("N");
         }
+    }
+
+    public void SetAccountActive(Guid id, bool active)
+    {
+        lock (_gate)
+        {
+            if (!_users.TryGetValue(id, out var user)) return;
+            user.IsActive = active;
+            user.SecurityStamp = Guid.NewGuid().ToString("N");
+        }
+    }
+
+    public void SetPrimaryRole(Guid id, string role)
+    {
+        lock (_gate) if (_users.TryGetValue(id, out var user)) user.Role = role;
     }
 
     private static AppUser Copy(AppUser u) => new()

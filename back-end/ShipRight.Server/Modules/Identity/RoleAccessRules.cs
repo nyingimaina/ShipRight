@@ -34,8 +34,13 @@ public static class RoleAccessRules
         R("GET", @"/api/backups(/.*)?", AppRoles.Viewer),
         R(null, @"/api/backups(/.*)?", AppRoles.Admin),
 
-        // Sign-in plumbing for an already signed-in person.
-        R(null, @"/api/auth/(me|logout|change-password)", AppRoles.Viewer),
+        // Sign-in plumbing for an already signed-in person, including moving between their own companies.
+        R(null, @"/api/auth/(me|logout|change-password|active-company|preferences)", AppRoles.Viewer),
+
+        // Companies: every signed-in person may see and create their own workspace. Renaming and moving resources
+        // additionally check Admin in the specific company inside the endpoints.
+        R("GET", @"/api/companies(/.*)?", AppRoles.Viewer),
+        R("POST", @"/api/companies", AppRoles.Viewer),
 
         // Secrets and settings. Registries carry a plaintext password and AWS profiles carry
         // secret access keys, so their reads need Admin just like credentials (API-004, R5).
@@ -76,6 +81,7 @@ public static class RoleAccessRules
 
         // Scheduling changes are settings.
         R("POST", @"/api/scheduler/(schedules|replay)", AppRoles.Admin),
+        R("PUT", @"/api/scheduler/schedules/.+", AppRoles.Admin),
         R("DELETE", @"/api/scheduler/schedules/.+", AppRoles.Admin),
     ];
 

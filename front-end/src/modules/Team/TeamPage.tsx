@@ -131,7 +131,9 @@ export default function TeamPage() {
 
   const confirmAndDeactivate = (member: TeamMember) => {
     setActionError('');
-    const confirmed = window.confirm(`Switch off ${member.name}? They will not be able to sign in until you switch them back on.`);
+    const confirmed = window.confirm(
+      `Switch off ${member.name} in this company? They lose access here. If this is their only company, they will not be able to sign in until you switch them back on.`,
+    );
     if (confirmed) setActive(member, false);
   };
 
@@ -193,6 +195,10 @@ export default function TeamPage() {
 
       <form className={styles.addCard} onSubmit={handleCreate} noValidate>
         <div className={styles.addTitle}>Add a teammate</div>
+        <p style={{ margin: '-4px 0 4px', fontSize: 12, lineHeight: 1.5, color: 'var(--text-muted)' }}>
+          Already has a ShipRight account? Enter their email and choose a role — they are added to this company with
+          the same sign-in, and the temporary password is ignored.
+        </p>
         {formError && <div className={styles.formError} role="alert">{formError}</div>}
 
         <div className={styles.addFields}>

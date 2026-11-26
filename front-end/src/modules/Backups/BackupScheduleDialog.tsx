@@ -1,13 +1,24 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import ZestButton from 'jattac.libs.web.zest-button';
 import { api } from '@/shared/ApiService';
 import { runZestAction } from '@/shared/components/ZestAsync/zestAction';
 import { IProject } from '@/shared/types/IProject';
+import { useAuthStore } from '@/shared/auth';
+import { DEFAULT_TIME_ZONE, timeZoneChoices, timeZoneLabel } from '@/shared/time';
 import styles from './BackupScheduleDialog.module.css';
+
+export interface EditableSchedule {
+  scheduleId: string;
+  projectId?: string;
+  cron?: string;
+  timeZone?: string;
+}
 
 interface Props {
   projects: IProject[];
+  /** When present the dialog edits this schedule instead of creating one. */
+  initial?: EditableSchedule | null;
   onClose: () => void;
   onScheduled: () => void;
 }
@@ -26,12 +37,20 @@ const PRESETS: Preset[] = [
   { id: 'custom', label: 'Custom cron expression' },
 ];
 
-/** Creates a backup schedule for a project that already has a database. */
-export default function BackupScheduleDialog({ projects, onClose, onScheduled }: Props) {
+/** Creates or edits a backup schedule for a project that already has a database. */
+export default function BackupScheduleDialog({ projects, initial, onClose, onScheduled }: Props) {
+  const editing = Boolean(initial);
   const databaseProjects = projects.filter((p) => p.database?.databaseName);
-  const [projectId, setProjectId] = useState(databaseProjects[0]?.id ?? '');
-  const [presetId, setPresetId] = useState(PRESETS[0].id);
-  const [cron, setCron] = useState(PRESETS[0].cron ?? '');
+  const preferredZone = useAuthStore((s) => s.user?.timeZone) || DEFAULT_TIME_ZONE;
+  const zones = useMemo(() => timeZoneChoices(), []);
+
+  const initialCron = initial?.cron ?? PRESETS[0].cron ?? '';
+  const matchingPreset = PRESETS.find((p) => p.cron === initialCron)?.id ?? 'custom';
+
+  const [projectId, setProjectId] = useState(initial?.projectId ?? databaseProjects[0]?.id ?? '');
+  const [presetId, setPresetId] = useState(initial ? matchingPreset : PRESETS[0].id);
+  const [cron, setCron] = useState(initialCron);
+  const [timeZone, setTimeZone] = useState(initial?.timeZone || preferredZone);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const errorRef = useRef<HTMLParagraphElement>(null);
@@ -46,7 +65,7 @@ export default function BackupScheduleDialog({ projects, onClose, onScheduled }:
   const effectiveCron = PRESETS.find((p) => p.id === presetId)?.cron ?? cron;
 
   const submit = async () => {
-    if (!project) {
+    if (!editing && !project) {
       setError('Choose a project with a database.');
       return;
     }
@@ -58,15 +77,27 @@ export default function BackupScheduleDialog({ projects, onClose, onScheduled }:
     setBusy(true);
     setError('');
     try {
-      await runZestAction(
-        () => api.post('/api/scheduler/schedules', {
-          projectId: project.id,
-          cronExpression: effectiveCron.trim(),
-          timeZone: project.timeZone || 'UTC',
-        }),
-        { fallbackMessage: 'Could not schedule the backup.', onError: setError, errorRef },
-      );
-      toast.success('Backup scheduled.');
+      if (editing && initial) {
+        await runZestAction(
+          () => api.put(`/api/scheduler/schedules/${initial.scheduleId}`, {
+            cronExpression: effectiveCron.trim(),
+            timeZone,
+          }),
+          { fallbackMessage: 'Could not update the schedule.', onError: setError, errorRef },
+        );
+        toast.success('Schedule updated.');
+      } else {
+        if (!project) return;
+        await runZestAction(
+          () => api.post('/api/scheduler/schedules', {
+            projectId: project.id,
+            cronExpression: effectiveCron.trim(),
+            timeZone,
+          }),
+          { fallbackMessage: 'Could not schedule the backup.', onError: setError, errorRef },
+        );
+        toast.success('Backup scheduled.');
+      }
       onScheduled();
       onClose();
     } finally {
@@ -76,25 +107,39 @@ export default function BackupScheduleDialog({ projects, onClose, onScheduled }:
 
   return (
     <div className={styles.overlay} role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
-      <div className={styles.dialog} role="dialog" aria-modal="true" aria-label="Schedule a backup">
+      <div className={styles.dialog} role="dialog" aria-modal="true" aria-label={editing ? 'Edit a backup schedule' : 'Schedule a backup'}>
         <div className={styles.headingRow}>
           <div>
-            <h2 className={styles.title}>Schedule a backup</h2>
-            <p className={styles.subtitle}>ShipRight will run it automatically and keep the history here.</p>
+            <h2 className={styles.title}>{editing ? 'Edit schedule' : 'Schedule a backup'}</h2>
+            <p className={styles.subtitle}>
+              {editing
+                ? 'Change when this backup runs. The saved history stays where it is.'
+                : 'ShipRight will run it automatically and keep the history here.'}
+            </p>
           </div>
           <button type="button" className={styles.close} aria-label="Close" onClick={onClose} disabled={busy}>×</button>
         </div>
 
-        {databaseProjects.length === 0 ? (
+        {!editing && databaseProjects.length === 0 ? (
           <p className={styles.empty}>Add a database to a project before scheduling backups.</p>
         ) : (
           <div className={styles.fields}>
             <label className={styles.field}>
               <span>Project</span>
-              <select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-                {databaseProjects.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name} · {p.database?.databaseName}</option>
-                ))}
+              <select
+                value={projectId}
+                onChange={(e) => setProjectId(e.target.value)}
+                disabled={editing}
+              >
+                {editing ? (
+                  <option value={projectId}>
+                    {projects.find((p) => p.id === projectId)?.name ?? 'This project'}
+                  </option>
+                ) : (
+                  databaseProjects.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name} · {p.database?.databaseName}</option>
+                  ))
+                )}
               </select>
             </label>
 
@@ -126,7 +171,19 @@ export default function BackupScheduleDialog({ projects, onClose, onScheduled }:
               </label>
             )}
 
-            <p className={styles.note}>Times use the project time zone ({project?.timeZone || 'UTC'}).</p>
+            <label className={styles.field}>
+              <span>Time zone</span>
+              <select value={timeZone} onChange={(e) => setTimeZone(e.target.value)}>
+                {zones.map((zone) => (
+                  <option key={zone} value={zone}>{zone.replace(/_/g, ' ')}</option>
+                ))}
+              </select>
+              <small>Times are read in {timeZoneLabel(timeZone)} time. You can change your default in Settings.</small>
+            </label>
+
+            {project && !editing && (
+              <p className={styles.note}>Project: {project.name} · {project.database?.databaseName}</p>
+            )}
           </div>
         )}
 
@@ -138,10 +195,10 @@ export default function BackupScheduleDialog({ projects, onClose, onScheduled }:
           </ZestButton>
           <ZestButton
             onClick={submit}
-            disabled={busy || databaseProjects.length === 0}
+            disabled={busy || (!editing && databaseProjects.length === 0)}
             zest={{ semanticType: 'save', visualOptions: { variant: 'standard' } }}
           >
-            {busy ? 'Scheduling…' : 'Schedule backup'}
+            {busy ? (editing ? 'Saving…' : 'Scheduling…') : (editing ? 'Save changes' : 'Schedule backup')}
           </ZestButton>
         </div>
       </div>

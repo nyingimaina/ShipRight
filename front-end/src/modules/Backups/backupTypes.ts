@@ -1,3 +1,5 @@
+import { formatDate as formatInUserZone, formatDateTime as formatDateTimeInUserZone } from '@/shared/time';
+
 export interface BackupFile {
   fileName: string;
   databaseName: string;
@@ -50,15 +52,15 @@ export function fmtWhen(iso: string): string {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
   if (seconds < 86400 * 30) return `${Math.floor(seconds / 86400)}d ago`;
-  return date.toLocaleDateString();
+  return formatInUserZone(date);
 }
 
 export function fmtDate(iso: string | null): string {
-  return iso ? new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+  return iso ? formatInUserZone(iso) : '—';
 }
 
 export function fmtExact(iso: string): string {
-  return new Date(iso).toLocaleString();
+  return formatDateTimeInUserZone(iso);
 }
 
 /** "kept #2 of 10 (roughly 5 Dec)" — honest about count-based retention being an estimate. */

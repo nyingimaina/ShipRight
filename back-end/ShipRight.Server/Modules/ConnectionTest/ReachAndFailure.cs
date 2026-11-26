@@ -4,7 +4,7 @@ using Renci.SshNet.Common;
 
 namespace ShipRight.Modules.ConnectionTest;
 
-public enum TcpFailure { None, NameNotFound, Refused, TimedOut, Unreachable, ProxyUnavailable, Other }
+public enum TcpFailure { None, NameNotFound, Refused, TimedOut, Unreachable, ProxyUnavailable, ProxyBlocked, Other }
 
 public sealed record TcpProbeResult(bool Reached, TcpFailure Failure)
 {
@@ -93,6 +93,9 @@ public static class ReachAdvisor
             TcpFailure.ProxyUnavailable => new(id, title, CheckStatus.Fail,
                 "The server's Tailscale network is not connected, so ShipRight could not reach it.",
                 "Open Tailscale in ShipRight, start this server's network, then test again. If it is already started, check that the server is signed in to the same tailnet."),
+            TcpFailure.ProxyBlocked => new(id, title, CheckStatus.Fail,
+                "Tailscale is connected, but it blocked the connection to this server.",
+                "This is almost always the tailnet ACL: tag the server 'tag:servers', then allow 'tag:shipright' to reach 'tag:servers' on tcp:22. Alternatively, change the grant's destination to '*' (still tcp:22). Check the server is online in Tailscale, then test again."),
             _ => new(id, title, CheckStatus.Fail,
                 "ShipRight could not open a connection to the server.",
                 "Check the address and your network, then test again."),

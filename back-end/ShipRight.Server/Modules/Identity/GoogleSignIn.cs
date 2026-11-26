@@ -82,7 +82,8 @@ public static class GoogleSignIn
 
     private static async Task<IResult> CompleteAsync(
         HttpContext http, GoogleSettings settings, UserManager<AppUser> users, SignInManager<AppUser> signIn,
-        RegistrationService registration, IDatabaseHelper<Guid> db, ILogger<RegistrationService> logger)
+        RegistrationService registration, IDatabaseHelper<Guid> db, ILogger<RegistrationService> logger,
+        ICompanyMembershipStore memberships)
     {
         if (!settings.Enabled) return Results.Redirect(FailedRedirect);
 
@@ -99,7 +100,7 @@ public static class GoogleSignIn
         AppUser? user;
         try
         {
-            user = await ResolveUserAsync(users, registration, google.Email, google.Name, google.Subject);
+            user = await ResolveUserWithMembershipAsync(users, registration, google.Email, google.Name, google.Subject);
             db.CommitTransaction();
         }
         catch (Exception ex)
@@ -113,7 +114,29 @@ public static class GoogleSignIn
         if (!user.IsActive) return Results.Redirect(SwitchedOffRedirect);
 
         await signIn.SignInAsync(user, isPersistent: true);
+        var (companyId, role) = await IdentitySession.ResolveForSignInAsync(http, user, memberships);
+        IdentitySession.Select(http, companyId, role);
         return Results.Redirect("/");
+    }
+
+    // Same lookup as ResolveUserAsync, but a brand-new Google account also gets the membership that puts its company
+    // in the switcher. Existing accounts already have one (or fall back to their primary company).
+    internal static async Task<AppUser?> ResolveUserWithMembershipAsync(
+        UserManager<AppUser> users, RegistrationService registration, string email, string? displayName, string subject)
+    {
+        var linked = await users.FindByLoginAsync(GoogleSettings.Scheme, subject);
+        if (linked is not null) return linked;
+
+        var existing = await users.FindByEmailAsync(email);
+        if (existing is not null)
+        {
+            await users.AddLoginAsync(existing, new UserLoginInfo(GoogleSettings.Scheme, subject, GoogleSettings.Scheme));
+            return existing;
+        }
+
+        var created = await registration.RegisterExternalWithMembershipAsync(
+            email, displayName ?? email, GoogleSettings.Scheme, subject);
+        return created ?? await users.FindByEmailAsync(email);
     }
 
     internal sealed record GoogleIdentity(string Subject, string Email, string? Name);

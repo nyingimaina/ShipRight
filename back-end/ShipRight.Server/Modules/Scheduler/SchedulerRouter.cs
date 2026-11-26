@@ -9,6 +9,7 @@ public static class SchedulerRouter
 {
     public static void MapSchedulerRoutes(this WebApplication app)
     {
+        MapProjectScheduleRoutes(app);
         app.MapGet("/api/scheduler/inflight", (HttpContext context) =>
         {
             var queue = context.RequestServices
@@ -121,23 +122,41 @@ public static class SchedulerRouter
             return Results.Ok(new { reports, count = reports.Count });
         });
 
-        app.MapGet("/api/scheduler/schedules", (HttpContext context) =>
+        app.MapGet("/api/scheduler/schedules", async (HttpContext context) =>
         {
             var scheduler = context.RequestServices
                 .GetRequiredService<TempoScheduler<BackupJob>>();
+            var definitions = await context.RequestServices
+                .GetRequiredService<IBackupScheduleStore>().GetAllAsync();
+            var byRuntime = definitions
+                .Where(d => d.RuntimeScheduleId is not null)
+                .ToDictionary(d => d.RuntimeScheduleId!.Value);
+
             var snapshot = scheduler.GetSnapshot();
-            var jobs = snapshot.Jobs.Select(j => new
+            var jobs = snapshot.Jobs.Select(j =>
             {
-                scheduleId = j.ScheduleId,
-                jobName = j.JobName,
-                scheduleType = j.Schedule.GetType().Name,
-                scheduleDescription = DescribeSchedule(j.Schedule),
-                lastFiredAt = j.LastFiredAt,
-                nextFireAt = j.NextFireAt,
-                inFlightCount = j.InFlightCount,
-                totalFired = j.TotalFired,
-                totalMissed = j.TotalMissed,
-                lastDrift = j.LastDrift,
+                byRuntime.TryGetValue(j.ScheduleId, out var definition);
+                return new
+                {
+                    scheduleId = j.ScheduleId,
+                    definitionId = definition?.Id,
+                    projectId = definition?.ProjectId,
+                    projectName = definition?.ProjectName,
+                    cron = definition?.Cron,
+                    timeZone = definition?.TimeZone,
+                    missedRunPolicy = definition?.MissedRunPolicy,
+                    overlapPolicy = definition?.OverlapPolicy,
+                    maxDuration = definition?.MaxDuration,
+                    jobName = j.JobName,
+                    scheduleType = j.Schedule.GetType().Name,
+                    scheduleDescription = DescribeSchedule(j.Schedule),
+                    lastFiredAt = j.LastFiredAt,
+                    nextFireAt = j.NextFireAt,
+                    inFlightCount = j.InFlightCount,
+                    totalFired = j.TotalFired,
+                    totalMissed = j.TotalMissed,
+                    lastDrift = j.LastDrift,
+                };
             }).ToList();
 
             return Results.Ok(new { jobs, count = jobs.Count, capturedAt = snapshot.CapturedAt });
@@ -203,6 +222,64 @@ public static class SchedulerRouter
             return Results.Ok(new { message = "Schedule removed." });
         });
 
+        // Editing keeps the same saved schedule (and its project) while changing when it runs. If the new cron is
+        // rejected, the old registration is put back, so a typo never leaves a project without its backup.
+        app.MapPut("/api/scheduler/schedules/{scheduleId:guid}", async (
+            Guid scheduleId,
+            UpdateScheduleRequest request,
+            HttpContext context) =>
+        {
+            var scheduler = context.RequestServices.GetRequiredService<TempoScheduler<BackupJob>>();
+            var store = context.RequestServices.GetRequiredService<IBackupScheduleStore>();
+
+            var existing = await store.GetByRuntimeIdAsync(scheduleId);
+            if (existing is null)
+                return Results.NotFound(new { isError = true, message = "That backup schedule no longer exists." });
+
+            if (string.IsNullOrWhiteSpace(request.CronExpression))
+                return Results.BadRequest(new { isError = true, message = "cronExpression is required." });
+
+            var timeZone = string.IsNullOrWhiteSpace(request.TimeZone) ? existing.TimeZone : request.TimeZone.Trim();
+            if (!ShipRight.Shared.Time.AppTimeZone.IsKnown(timeZone))
+                return Results.BadRequest(new { isError = true, message = "Choose a recognised time zone." });
+
+            var updated = existing with
+            {
+                Cron = request.CronExpression.Trim(),
+                TimeZone = timeZone,
+                MissedRunPolicy = request.MissedRunPolicy?.ToString() ?? existing.MissedRunPolicy,
+                OverlapPolicy = request.OverlapPolicy?.ToString() ?? existing.OverlapPolicy,
+                MaxDuration = request.MaxDuration?.ToString() ?? existing.MaxDuration,
+                RuntimeScheduleId = null,
+            };
+
+            scheduler.Unregister(scheduleId);
+            try
+            {
+                var newId = SchedulerRegistration.Register(scheduler, updated);
+                await store.SaveAsync(updated with { RuntimeScheduleId = newId });
+                Log.Information("Backup schedule {ScheduleId} updated to cron \"{Cron}\" ({Zone})",
+                    newId, updated.Cron, updated.TimeZone);
+                return Results.Ok(new { scheduleId = newId, message = "Schedule updated." });
+            }
+            catch (Exception ex)
+            {
+                // Put the previous schedule back exactly as it was.
+                try
+                {
+                    var restored = SchedulerRegistration.Register(scheduler, existing with { RuntimeScheduleId = null });
+                    await store.SaveAsync(existing with { RuntimeScheduleId = restored });
+                }
+                catch (Exception restoreError)
+                {
+                    Log.Error(restoreError, "Could not restore schedule {ScheduleId} after a rejected edit", scheduleId);
+                }
+
+                Log.Warning(ex, "Backup schedule edit rejected for {ScheduleId}", scheduleId);
+                return Results.BadRequest(new { isError = true, message = ex.Message });
+            }
+        });
+
         app.MapPost("/api/scheduler/replay", async (
             ReplayRequest? request,
             SqliteBackupOverflowStore overflowStore) =>
@@ -234,6 +311,7 @@ public static class SchedulerRouter
     /// </summary>
     public static void MapSchedulerCoreRoutes(this WebApplication app)
     {
+        MapProjectScheduleRoutes(app);
         app.MapGet("/api/scheduler/inflight", (HttpContext context) =>
         {
             var queue = context.RequestServices
@@ -313,23 +391,41 @@ public static class SchedulerRouter
             });
         });
 
-        app.MapGet("/api/scheduler/schedules", (HttpContext context) =>
+        app.MapGet("/api/scheduler/schedules", async (HttpContext context) =>
         {
             var scheduler = context.RequestServices
                 .GetRequiredService<TempoScheduler<BackupJob>>();
+            var definitions = await context.RequestServices
+                .GetRequiredService<IBackupScheduleStore>().GetAllAsync();
+            var byRuntime = definitions
+                .Where(d => d.RuntimeScheduleId is not null)
+                .ToDictionary(d => d.RuntimeScheduleId!.Value);
+
             var snapshot = scheduler.GetSnapshot();
-            var jobs = snapshot.Jobs.Select(j => new
+            var jobs = snapshot.Jobs.Select(j =>
             {
-                scheduleId = j.ScheduleId,
-                jobName = j.JobName,
-                scheduleType = j.Schedule.GetType().Name,
-                scheduleDescription = DescribeSchedule(j.Schedule),
-                lastFiredAt = j.LastFiredAt,
-                nextFireAt = j.NextFireAt,
-                inFlightCount = j.InFlightCount,
-                totalFired = j.TotalFired,
-                totalMissed = j.TotalMissed,
-                lastDrift = j.LastDrift,
+                byRuntime.TryGetValue(j.ScheduleId, out var definition);
+                return new
+                {
+                    scheduleId = j.ScheduleId,
+                    definitionId = definition?.Id,
+                    projectId = definition?.ProjectId,
+                    projectName = definition?.ProjectName,
+                    cron = definition?.Cron,
+                    timeZone = definition?.TimeZone,
+                    missedRunPolicy = definition?.MissedRunPolicy,
+                    overlapPolicy = definition?.OverlapPolicy,
+                    maxDuration = definition?.MaxDuration,
+                    jobName = j.JobName,
+                    scheduleType = j.Schedule.GetType().Name,
+                    scheduleDescription = DescribeSchedule(j.Schedule),
+                    lastFiredAt = j.LastFiredAt,
+                    nextFireAt = j.NextFireAt,
+                    inFlightCount = j.InFlightCount,
+                    totalFired = j.TotalFired,
+                    totalMissed = j.TotalMissed,
+                    lastDrift = j.LastDrift,
+                };
             }).ToList();
 
             return Results.Ok(new { jobs, count = jobs.Count, capturedAt = snapshot.CapturedAt });
@@ -395,6 +491,64 @@ public static class SchedulerRouter
             return Results.Ok(new { message = "Schedule removed." });
         });
 
+        // Editing keeps the same saved schedule (and its project) while changing when it runs. If the new cron is
+        // rejected, the old registration is put back, so a typo never leaves a project without its backup.
+        app.MapPut("/api/scheduler/schedules/{scheduleId:guid}", async (
+            Guid scheduleId,
+            UpdateScheduleRequest request,
+            HttpContext context) =>
+        {
+            var scheduler = context.RequestServices.GetRequiredService<TempoScheduler<BackupJob>>();
+            var store = context.RequestServices.GetRequiredService<IBackupScheduleStore>();
+
+            var existing = await store.GetByRuntimeIdAsync(scheduleId);
+            if (existing is null)
+                return Results.NotFound(new { isError = true, message = "That backup schedule no longer exists." });
+
+            if (string.IsNullOrWhiteSpace(request.CronExpression))
+                return Results.BadRequest(new { isError = true, message = "cronExpression is required." });
+
+            var timeZone = string.IsNullOrWhiteSpace(request.TimeZone) ? existing.TimeZone : request.TimeZone.Trim();
+            if (!ShipRight.Shared.Time.AppTimeZone.IsKnown(timeZone))
+                return Results.BadRequest(new { isError = true, message = "Choose a recognised time zone." });
+
+            var updated = existing with
+            {
+                Cron = request.CronExpression.Trim(),
+                TimeZone = timeZone,
+                MissedRunPolicy = request.MissedRunPolicy?.ToString() ?? existing.MissedRunPolicy,
+                OverlapPolicy = request.OverlapPolicy?.ToString() ?? existing.OverlapPolicy,
+                MaxDuration = request.MaxDuration?.ToString() ?? existing.MaxDuration,
+                RuntimeScheduleId = null,
+            };
+
+            scheduler.Unregister(scheduleId);
+            try
+            {
+                var newId = SchedulerRegistration.Register(scheduler, updated);
+                await store.SaveAsync(updated with { RuntimeScheduleId = newId });
+                Log.Information("Backup schedule {ScheduleId} updated to cron \"{Cron}\" ({Zone})",
+                    newId, updated.Cron, updated.TimeZone);
+                return Results.Ok(new { scheduleId = newId, message = "Schedule updated." });
+            }
+            catch (Exception ex)
+            {
+                // Put the previous schedule back exactly as it was.
+                try
+                {
+                    var restored = SchedulerRegistration.Register(scheduler, existing with { RuntimeScheduleId = null });
+                    await store.SaveAsync(existing with { RuntimeScheduleId = restored });
+                }
+                catch (Exception restoreError)
+                {
+                    Log.Error(restoreError, "Could not restore schedule {ScheduleId} after a rejected edit", scheduleId);
+                }
+
+                Log.Warning(ex, "Backup schedule edit rejected for {ScheduleId}", scheduleId);
+                return Results.BadRequest(new { isError = true, message = ex.Message });
+            }
+        });
+
         app.MapPost("/api/scheduler/replay", async (
             ReplayRequest? request,
             BackupOverflowStore overflowStore) =>
@@ -420,6 +574,46 @@ public static class SchedulerRouter
         });
     }
 
+    /// <summary>The project's saved schedules plus their live next/last fire times, for the project Backups tab.</summary>
+    private static void MapProjectScheduleRoutes(WebApplication app)
+    {
+        app.MapGet("/api/projects/{id}/backup-schedule", async (
+            string id, IProjectStore store, IBackupScheduleStore schedules, HttpContext context) =>
+        {
+            var project = await store.GetByIdAsync(id);
+            if (project is null)
+                return Results.NotFound(new { isError = true, message = $"Project '{id}' not found." });
+
+            var definitions = (await schedules.GetAllAsync())
+                .Where(d => string.Equals(d.ProjectId, id, StringComparison.Ordinal))
+                .ToList();
+            var snapshot = context.RequestServices
+                .GetRequiredService<TempoScheduler<BackupJob>>()
+                .GetSnapshot();
+
+            var items = definitions.Select(definition =>
+            {
+                var runtime = definition.RuntimeScheduleId is Guid runtimeId
+                    ? snapshot.Jobs.FirstOrDefault(j => j.ScheduleId == runtimeId)
+                    : null;
+
+                return new
+                {
+                    scheduleId = definition.RuntimeScheduleId,
+                    cron = definition.Cron,
+                    timeZone = definition.TimeZone,
+                    description = $"cron \"{definition.Cron}\"",
+                    nextFireAt = runtime?.NextFireAt,
+                    lastFiredAt = runtime?.LastFiredAt,
+                    totalFired = runtime?.TotalFired ?? 0,
+                    totalMissed = runtime?.TotalMissed ?? 0,
+                };
+            }).ToList();
+
+            return Results.Ok(items);
+        });
+    }
+
     private static string DescribeSchedule(TempoSchedule schedule)
     {
         return schedule switch
@@ -439,6 +633,15 @@ public record ScheduleRequest
     public MissedRunPolicy MissedRunPolicy { get; init; } = MissedRunPolicy.RunOnce;
     public OverlapPolicy OverlapPolicy { get; init; } = OverlapPolicy.Skip;
     public TimeSpan? MaxDuration { get; init; } = TimeSpan.FromMinutes(30);
+    public string? TimeZone { get; init; }
+}
+
+public record UpdateScheduleRequest
+{
+    public string? CronExpression { get; init; }
+    public MissedRunPolicy? MissedRunPolicy { get; init; }
+    public OverlapPolicy? OverlapPolicy { get; init; }
+    public TimeSpan? MaxDuration { get; init; }
     public string? TimeZone { get; init; }
 }
 

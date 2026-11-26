@@ -15,24 +15,39 @@ public static class TeamEndpoints
         group.MapGet("", ListAsync);
         group.MapPost("", CreateAsync);
         group.MapPut("/{id:guid}/role", ChangeRoleAsync);
-        group.MapPost("/{id:guid}/deactivate", (Guid id, ICompanyContext company, TeamRepository team) => SetActiveAsync(id, false, company, team));
-        group.MapPost("/{id:guid}/activate", (Guid id, ICompanyContext company, TeamRepository team) => SetActiveAsync(id, true, company, team));
+        group.MapPost("/{id:guid}/deactivate", (Guid id, ICompanyContext company, TeamRepository team, ICompanyMembershipStore m) =>
+            SetActiveAsync(id, false, company, team, m));
+        group.MapPost("/{id:guid}/activate", (Guid id, ICompanyContext company, TeamRepository team, ICompanyMembershipStore m) =>
+            SetActiveAsync(id, true, company, team, m));
     }
 
-    private static async Task<IResult> ListAsync(ICompanyContext company, TeamRepository team, int page = 1, int pageSize = TeamRepository.DefaultPageSize)
+    private static async Task<IResult> ListAsync(
+        ICompanyContext company, TeamRepository team, ICompanyMembershipStore memberships,
+        int page = 1, int pageSize = TeamRepository.DefaultPageSize)
     {
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, TeamRepository.MaxPageSize);
-        var (items, total) = await team.ListAsync(company.RequireCompanyId(), page, pageSize);
-        return Results.Ok(new TeamPageDto(items, total, page, pageSize));
+        var companyId = company.RequireCompanyId();
+
+        var (rows, total) = await memberships.ListCompanyPageAsync(companyId, page, pageSize);
+        if (total == 0)
+        {
+            // A database from before memberships: keep listing the people on the company exactly as before.
+            var (legacy, legacyTotal) = await team.ListAsync(companyId, page, pageSize);
+            return Results.Ok(new TeamPageDto(legacy, legacyTotal, page, pageSize));
+        }
+
+        return Results.Ok(new TeamPageDto(rows.Select(ToDto).ToList(), total, page, pageSize));
     }
 
-    private static async Task<IResult> CreateAsync(CreateTeammateRequest request, ICompanyContext company, RegistrationService registration, TeamRepository team)
+    private static async Task<IResult> CreateAsync(
+        CreateTeammateRequest request, ICompanyContext company, RegistrationService registration,
+        TeamRepository team, ICompanyMembershipStore memberships)
     {
         var errors = IdentityValidation.Teammate(request);
         if (errors.Count > 0) return Results.ValidationProblem(errors);
 
-        var created = await registration.CreateTeammateAsync(
+        var created = await registration.CreateTeammateWithMembershipAsync(
             company.RequireCompanyId(), request.Email!, request.Name!, request.Role!, request.TemporaryPassword!);
         if (created is null)
             return Results.ValidationProblem(new Dictionary<string, string[]>
@@ -40,34 +55,58 @@ public static class TeamEndpoints
                 ["email"] = ["That email is already in use."],
             });
 
-        var dto = await team.FindAsync(created.CompanyId, created.Id);
+        var dto = await FindAsync(company.RequireCompanyId(), created.Id, team, memberships);
         return Results.Created($"/api/team/{created.Id}", dto);
     }
 
-    private static async Task<IResult> ChangeRoleAsync(Guid id, ChangeRoleRequest request, ICompanyContext company, TeamRepository team)
+    private static async Task<IResult> ChangeRoleAsync(
+        Guid id, ChangeRoleRequest request, ICompanyContext company, TeamRepository team, ICompanyMembershipStore memberships)
     {
         var errors = IdentityValidation.Role(request);
         if (errors.Count > 0) return Results.ValidationProblem(errors);
 
         var companyId = company.RequireCompanyId();
-        return await team.ChangeRoleAsync(companyId, id, request.Role!, AppRoles.IsValid(request.ExpectedRole) ? request.ExpectedRole : null)
-            switch
-            {
-                TeamChange.NotFound => Results.NotFound(),
-                TeamChange.LastAdmin => Results.Json(new { message = LastAdminMessage, isError = true }, statusCode: 409),
-                TeamChange.Conflict => Results.Json(new { message = ConflictMessage, isError = true }, statusCode: 409),
-                _ => Results.Ok(await team.FindAsync(companyId, id)),
-            };
-    }
+        var expected = AppRoles.IsValid(request.ExpectedRole) ? request.ExpectedRole : null;
+        var change = await memberships.ChangeRoleAsync(companyId, id, request.Role!, expected);
+        if (change == TeamChange.NotFound && !await HasMembershipsAsync(companyId, memberships))
+            change = await team.ChangeRoleAsync(companyId, id, request.Role!, expected);
 
-    private static async Task<IResult> SetActiveAsync(Guid id, bool active, ICompanyContext company, TeamRepository team)
-    {
-        var companyId = company.RequireCompanyId();
-        return await team.SetActiveAsync(companyId, id, active) switch
+        return change switch
         {
             TeamChange.NotFound => Results.NotFound(),
             TeamChange.LastAdmin => Results.Json(new { message = LastAdminMessage, isError = true }, statusCode: 409),
-            _ => Results.Ok(await team.FindAsync(companyId, id)),
+            TeamChange.Conflict => Results.Json(new { message = ConflictMessage, isError = true }, statusCode: 409),
+            _ => Results.Ok(await FindAsync(companyId, id, team, memberships)),
         };
     }
+
+    private static async Task<IResult> SetActiveAsync(
+        Guid id, bool active, ICompanyContext company, TeamRepository team, ICompanyMembershipStore memberships)
+    {
+        var companyId = company.RequireCompanyId();
+        var change = await memberships.SetActiveAsync(companyId, id, active);
+        if (change == TeamChange.NotFound && !await HasMembershipsAsync(companyId, memberships))
+            change = await team.SetActiveAsync(companyId, id, active);
+
+        return change switch
+        {
+            TeamChange.NotFound => Results.NotFound(),
+            TeamChange.LastAdmin => Results.Json(new { message = LastAdminMessage, isError = true }, statusCode: 409),
+            _ => Results.Ok(await FindAsync(companyId, id, team, memberships)),
+        };
+    }
+
+    private static async Task<TeamMemberDto?> FindAsync(
+        Guid companyId, Guid userId, TeamRepository team, ICompanyMembershipStore memberships)
+    {
+        var member = await memberships.FindMemberAsync(companyId, userId);
+        if (member is not null) return ToDto(member);
+        return (await team.FindAsync(companyId, userId));
+    }
+
+    private static async Task<bool> HasMembershipsAsync(Guid companyId, ICompanyMembershipStore memberships) =>
+        (await memberships.ListCompanyAsync(companyId)).Count > 0;
+
+    private static TeamMemberDto ToDto(CompanyMembership m) =>
+        new(m.UserId, m.Email, m.Name, m.Role, m.IsActive && m.AccountIsActive, m.Created);
 }

@@ -5,6 +5,7 @@ import { IBuildRecord, BuildStatus } from '@/shared/types/IBuildRecord';
 import ResponsiveTable from 'jattac.libs.web.responsive-table';
 import LogViewer, { LogEntry } from '@/modules/BuildWizard/LogViewer';
 import { useTheme } from '@/shared/theme/ThemeContext';
+import { formatDateTime } from '@/shared/time';
 import styles from './Styles/HistoryTable.module.css';
 
 interface Props {
@@ -78,7 +79,7 @@ export default function HistoryTable({ records, loading }: Props) {
     {
       columnId: 'started',
       displayLabel: 'Started',
-      cellRenderer: (r: IBuildRecord) => new Date(r.startedAt).toLocaleString(),
+      cellRenderer: (r: IBuildRecord) => formatDateTime(r.startedAt),
       getSortableValue: (r: IBuildRecord) => new Date(r.startedAt).getTime(),
     },
     {

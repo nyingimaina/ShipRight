@@ -118,7 +118,7 @@ describe('BackupsPage', () => {
     await waitFor(() => expect(post).toHaveBeenCalledWith('/api/scheduler/schedules', {
       projectId: 'p1',
       cronExpression: '0 2 * * *',
-      timeZone: 'UTC',
+      timeZone: 'Africa/Nairobi',
     }));
     expect(toast.success).toHaveBeenCalledWith('Backup scheduled.');
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Schedule a backup' })).toBeNull());

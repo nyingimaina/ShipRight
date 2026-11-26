@@ -14,6 +14,8 @@ import SshKeySection from '@/modules/ProjectConfig/SshKeySection';
 import BrowsePathField from '@/modules/FilePicker/BrowsePathField';
 import ServerDeploySection from '@/modules/ServerDeploy/ServerDeploySection';
 import ServerWizardLauncher, { requestConnectionFix } from '@/modules/ServerWizard/ServerWizardLauncher';
+import MoveToCompanyDialog from '@/modules/Companies/MoveToCompanyDialog';
+import { useAuthStore } from '@/shared/auth';
 import styles from './Styles/Servers.module.css';
 
 export type ServerInput = Omit<IServerConfig, 'id'> & { id?: string };
@@ -29,6 +31,8 @@ export default function ServersPage() {
   const [projects, setProjects] = useState<IProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [paneTarget, setPaneTarget] = useState<ServerInput | undefined>(undefined);
+  const [moving, setMoving] = useState<IServerConfig | null>(null);
+  const companyCount = useAuthStore((s) => s.user?.companies?.length ?? 1);
 
   const load = async () => {
     setLoading(true);
@@ -128,6 +132,7 @@ export default function ServersPage() {
                       { content: 'Open', onClick: () => openDetail(s) },
                       { content: 'Edit', onClick: () => openEdit(s) },
                       { content: 'Test / fix connection', onClick: () => requestConnectionFix(s.id!) },
+                      ...(companyCount > 1 ? [{ content: 'Move to another company', onClick: () => setMoving(s) }] : []),
                       { content: 'Delete', onClick: () => handleDelete(s) },
                     ]} />
                   </div>
@@ -161,6 +166,14 @@ export default function ServersPage() {
             </p>
           )}
         </ZestResponsiveLayout>
+        {moving && (
+          <MoveToCompanyDialog
+            kind="server"
+            id={moving.id!}
+            name={moving.name || moving.host}
+            onClose={() => setMoving(null)}
+          />
+        )}
       </AppShell>
     </>
   );
@@ -207,19 +220,26 @@ export function ServerForm({ initial, onSave, onCancel, hideDeployActions }: {
         <ZestTextbox value={form.host} onChange={e => set('host', e.target.value)}
           placeholder="3.130.65.46" zest={{ stretch: true }} />
       </div>
-      {tailnets.length > 0 && (
-        <div className={styles.formRow}>
-          <label className={styles.label}>Network</label>
-          <select
-            value={form.tailnetId ?? ''}
-            onChange={e => set('tailnetId', e.target.value)}
-            style={{ width: '100%', minHeight: 44, padding: '8px 10px', borderRadius: 10, border: '1px solid var(--border-medium)', background: 'var(--bg-input)', color: 'var(--text-primary)' }}
-          >
-            <option value="">Direct network</option>
-            {tailnets.map(t => <option key={t.id} value={t.id}>{t.name}{t.online ? '' : ' (offline)'}</option>)}
-          </select>
-        </div>
-      )}
+      <div className={styles.formRow}>
+        <label className={styles.label}>Network</label>
+        {tailnets.length > 0 ? (
+          <>
+            <select
+              value={form.tailnetId ?? ''}
+              onChange={e => set('tailnetId', e.target.value)}
+              style={{ width: '100%', minHeight: 44, padding: '8px 10px', borderRadius: 10, border: '1px solid var(--border-medium)', background: 'var(--bg-input)', color: 'var(--text-primary)' }}
+            >
+              <option value="">Direct network</option>
+              {tailnets.map(t => <option key={t.id} value={t.id}>{t.name}{t.online ? '' : ' (offline)'}</option>)}
+            </select>
+            <Link href="/tailnets#tailscale-setup" style={{ fontSize: 12 }}>Tailscale setup help</Link>
+          </>
+        ) : (
+          <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted)' }}>
+            Direct network. <Link href="/tailnets#tailscale-setup">Set up Tailscale</Link> if this server is private.
+          </p>
+        )}
+      </div>
       <div className={styles.formRow}>
         <label className={styles.label}>Username</label>
         <ZestTextbox value={form.username} onChange={e => set('username', e.target.value)}

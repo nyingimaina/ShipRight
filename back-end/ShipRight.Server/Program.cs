@@ -194,6 +194,7 @@ try
         app.UseAuthentication();
         app.UseMiddleware<AuthDiagnosticsMiddleware>();
         app.UseMiddleware<CompanyContextMiddleware>();
+        app.UseMiddleware<ActiveCompanyMiddleware>();
         app.UseAuthorization();
     }
 
@@ -203,6 +204,7 @@ try
     {
         app.MapIdentityAuthRoutes();
         app.MapTeamRoutes();
+        app.MapCompanyRoutes();
     }
 
     app.MapHealthRoutes(profile, cloudMode ? AppMode.Cloud : AppMode.Desktop);
@@ -240,6 +242,7 @@ try
     app.MapBuildRoutes();
     app.MapDatabaseRoutes();
     app.MapBackupToolRoutes();
+    app.MapBackupCoverageRoutes();
     app.MapSshTerminalRoutes();
     app.MapContainerLogRoutes();
     app.MapRepoMaintenanceRoutes();
