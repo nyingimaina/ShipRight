@@ -141,6 +141,7 @@
 html, body {
   background: var(--bg-base);
   color: var(--text-primary);
+  font-family: Manrope, 'Segoe UI', ui-sans-serif, system-ui, -apple-system, sans-serif;
   font-size: 14px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
@@ -181,7 +182,7 @@ a { color: var(--accent); text-decoration: none; }
   color: var(--text-primary);
 }
 
-code, pre, kbd, samp { font-family: var(--font-mono), 'Fira Code', monospace; }
+code, pre, kbd, samp { font-family: var(--font-mono), 'JetBrains Mono', 'Fira Code', monospace; }
 
 /* The menu ships its own Inter import; keep its layout but use ShipRight's typeface. */
 html body [class*="SidekickMenu-module_container"] { font-family: inherit; }
