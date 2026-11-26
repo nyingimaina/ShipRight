@@ -10,6 +10,8 @@ const CORE = [
   '/icons/icon-maskable-512.png',
   '/icons/apple-touch-icon.png',
   '/icon.svg',
+  '/fonts/manrope-latin.woff2',
+  '/fonts/jetbrains-mono-latin.woff2',
 ];
 
 self.addEventListener('install', (event) => {

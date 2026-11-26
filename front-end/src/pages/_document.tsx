@@ -7,6 +7,8 @@ export default function Document() {
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
         <meta name="theme-color" content="#0B1120" media="(prefers-color-scheme: dark)" />
         <meta name="theme-color" content="#F0F4F8" media="(prefers-color-scheme: light)" />
+        <link rel="preload" href="/fonts/manrope-latin.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+        <link rel="preload" href="/fonts/jetbrains-mono-latin.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
         <link rel="manifest" href="/manifest.webmanifest" />
         <link rel="icon" href="/favicon.ico" sizes="any" />
         <link rel="icon" href="/icon.svg" type="image/svg+xml" />
