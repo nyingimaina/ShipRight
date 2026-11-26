@@ -70,11 +70,26 @@ public sealed class ActiveCompanyMiddleware(RequestDelegate next)
             return;
         }
 
-        var all = await memberships.ListForUserAsync(userId);
-        if (all.Count == 0)
+        var everyMembership = await memberships.ListForUserAsync(userId, includeInactive: true);
+        if (everyMembership.Count == 0)
         {
             // A database from before memberships: the sign-in cookie's company and role are the whole answer.
             await next(http);
+            return;
+        }
+
+        var all = everyMembership.Where(m => m.IsActive).ToList();
+        if (all.Count == 0)
+        {
+            // Memberships exist but every one is switched off. Fail closed instead of falling back to the old claim,
+            // which would quietly restore access an Admin has taken away.
+            ActiveCompanyCookie.Clear(http);
+            http.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await http.Response.WriteAsJsonAsync(new
+            {
+                message = "Your access has been switched off. Ask an Admin of your company to switch it back on.",
+                isError = true,
+            });
             return;
         }
 
