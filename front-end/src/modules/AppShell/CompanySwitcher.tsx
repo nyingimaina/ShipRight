@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/router';
 import toast from 'react-hot-toast';
 import { RiAddLine, RiArrowDownSLine, RiBuilding2Line, RiCheckLine, RiSettings3Line } from 'react-icons/ri';
@@ -90,7 +91,7 @@ export default function CompanySwitcher() {
         <RiArrowDownSLine size={16} className={styles.chevron} aria-hidden="true" />
       </button>
 
-      {open && (
+      {open && typeof document !== 'undefined' && createPortal(
         <div className={styles.backdrop} onMouseDown={(e) => { if (e.target === e.currentTarget) setOpen(false); }}>
           <div className={styles.sheet} role="dialog" aria-modal="true" aria-label="Switch company" tabIndex={-1} ref={panelRef}>
             <div className={styles.grabber} aria-hidden="true" />
@@ -165,7 +166,8 @@ export default function CompanySwitcher() {
               <RiSettings3Line size={15} /> Manage companies, time zone and appearance
             </button>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );
