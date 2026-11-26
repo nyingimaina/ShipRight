@@ -393,6 +393,28 @@ public static class DatabaseRouter
             }
         });
 
+        // ── Cheap backup status for the project screen's poller ───────────────
+
+        app.MapGet("/api/projects/{id}/db/backup-status", async (
+            string id, IProjectStore store, DatabaseOrchestrator orchestrator) =>
+        {
+            if (await store.GetByIdAsync(id) is null)
+                return Results.NotFound(new { isError = true, message = $"Project '{id}' not found." });
+
+            var artifacts = orchestrator.ListBackups(id);
+            var latest = artifacts.FirstOrDefault();
+            return Results.Ok(new
+            {
+                isRunning = orchestrator.IsRunning(id),
+                opId = orchestrator.GetActiveOpId(id),
+                activeSince = orchestrator.GetActiveSince(id),
+                backupCount = artifacts.Count,
+                storedBytes = artifacts.Sum(a => a.StoredBytes),
+                latestFileName = latest?.FileName,
+                latestBackupAt = latest?.CreatedAtUtc,
+            });
+        });
+
         // ── Active operation query ────────────────────────────────────────────
 
         app.MapGet("/api/projects/{id}/db/ops/active", (

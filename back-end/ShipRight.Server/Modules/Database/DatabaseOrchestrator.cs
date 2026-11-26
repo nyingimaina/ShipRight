@@ -22,6 +22,8 @@ public class DatabaseOrchestrator
     private readonly BuildEventBus _bus;
     private readonly IServerNetworkResolver? _networks;
     private readonly ConcurrentDictionary<string, string> _activeOps = new();
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _activeStarted = new();
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _scheduledActive = new();
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _projectLocks = new(StringComparer.Ordinal);
     private readonly BackupStorage _storage;
     private readonly BackupKeyring _keyring;
@@ -58,6 +60,7 @@ public class DatabaseOrchestrator
         var provider = _resolver.Resolve(cfg.Provider);
 
         _activeOps[project.Id] = opId;
+        _activeStarted[project.Id] = DateTimeOffset.UtcNow;
         try
         {
             await EmitLog(opId, $"Starting {provider.ProviderName} backup of {cfg.DatabaseName}…");
@@ -84,12 +87,22 @@ public class DatabaseOrchestrator
         finally
         {
             _activeOps.TryRemove(project.Id, out _);
+            _activeStarted.TryRemove(project.Id, out _);
             _bus.Complete(opId);
         }
     }
 
     public string? GetActiveOpId(string projectId) =>
         _activeOps.TryGetValue(projectId, out var id) ? id : null;
+
+    /// <summary>True for a manual backup (with an SSE operation) or a scheduled one (status only).</summary>
+    public bool IsRunning(string projectId) =>
+        _activeOps.ContainsKey(projectId) || _scheduledActive.ContainsKey(projectId);
+
+    public DateTimeOffset? GetActiveSince(string projectId) =>
+        _activeStarted.TryGetValue(projectId, out var started)
+            ? started
+            : _scheduledActive.TryGetValue(projectId, out var scheduled) ? scheduled : null;
 
     /// <summary>
     /// One path for manual and scheduled runs: read the dump as raw bytes, hash it, compress it, seal it,
@@ -672,6 +685,9 @@ public class DatabaseOrchestrator
     {
         var provider = _resolver.Resolve(project.Database!.Provider);
         var started = Stopwatch.GetTimestamp();
+        // Scheduled work is visible to the project screen while it runs, exactly like a manual backup. It has no SSE
+        // operation, so it stays out of the manual operation map.
+        _scheduledActive[project.Id] = DateTimeOffset.UtcNow;
         try
         {
             var meta = await RunBackupAsync(project, provider, BackupSource.Schedule, null, ct);
@@ -685,6 +701,10 @@ public class DatabaseOrchestrator
         {
             Log.Error(ex, "Scheduled backup failed for project {ProjectId}", project.Id);
             return false;
+        }
+        finally
+        {
+            _scheduledActive.TryRemove(project.Id, out _);
         }
     }
 

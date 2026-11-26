@@ -4,7 +4,8 @@ COPY front-end/package*.json ./
 ARG NPM_FALLBACK_REGISTRY=https://registry.npmmirror.com
 RUN --mount=type=cache,target=/root/.npm (npm ci --no-audit --no-fund --maxsockets=4 --fetch-retries=1 --fetch-timeout=20000 --registry=https://registry.npmjs.org/ && test -x node_modules/.bin/next) || (echo "npmjs unreachable or too slow - retrying via $NPM_FALLBACK_REGISTRY (package integrity is verified against package-lock.json)" && npm ci --no-audit --no-fund --maxsockets=4 --fetch-retries=5 --fetch-timeout=120000 --registry="$NPM_FALLBACK_REGISTRY" && test -x node_modules/.bin/next) || { echo "=== npm debug log ==="; tail -n 80 /root/.npm/_logs/*.log; exit 1; }
 COPY front-end/ .
-RUN npm run build
+# The production host is memory-tight; Next's default heap can abort at ~450 MB. Let Node use the swap.
+RUN NEXT_TELEMETRY_DISABLED=1 NODE_OPTIONS=--max-old-space-size=768 npm run build
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS backend
 WORKDIR /build

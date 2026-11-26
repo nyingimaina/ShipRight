@@ -2,6 +2,7 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
+import Poller from 'jattac-web-poller';
 import ZestButton from 'jattac.libs.web.zest-button';
 import AppShell from '@/modules/AppShell/AppShell';
 import RecoveryKeyPanel from '@/modules/Backups/RecoveryKeyPanel';
@@ -102,6 +103,32 @@ export default function BackupsPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // The control room watches the same cheap coverage signal as a project, so a scheduled or manual backup that
+  // finishes while this page is open updates the cards and history without a refresh.
+  useEffect(() => {
+    let previous: { coverage: CoverageProject[]; inflight: InflightResponse['inflight'] } | null = null;
+    const poller = new Poller<{ coverage: CoverageProject[]; inflight: InflightResponse['inflight'] }>({
+      pollIntervalMilliseconds: 10_000,
+      maxIntervalMilliseconds: 30_000,
+      func: async () => {
+        const [coverage, running] = await Promise.all([
+          api.get<CoverageResponse>('/api/backups/coverage').catch(() => ({ projects: [], capturedAt: '' })),
+          api.get<InflightResponse>('/api/scheduler/inflight').catch(() => ({ inflight: null })),
+        ]);
+        return { coverage: coverage.projects, inflight: running.inflight };
+      },
+      onResult: (status, deltaDetected) => {
+        setCoverage(status.coverage);
+        setInflight(status.inflight);
+        if (previous && deltaDetected) void load();
+        previous = status;
+      },
+      onError: () => { /* the page keeps its last state */ },
+    });
+    poller.start();
+    return () => { void poller.stop(); };
+  }, [load]);
 
   const replayOverflow = async () => {
     await api.post('/api/scheduler/replay', {});

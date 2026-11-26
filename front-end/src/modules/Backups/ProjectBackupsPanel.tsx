@@ -1,13 +1,24 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
+import Poller from 'jattac-web-poller';
 import ZestButton from 'jattac.libs.web.zest-button';
 import { api } from '@/shared/ApiService';
 import { IProject } from '@/shared/types/IProject';
-import { formatDateTime } from '@/shared/time';
+import { formatDateTime, formatRelative } from '@/shared/time';
 import BackupFiles from './BackupFiles';
 import BackupPolicyEditor from './BackupPolicyEditor';
 import BackupScheduleDialog, { EditableSchedule } from './BackupScheduleDialog';
 import styles from './ProjectBackupsPanel.module.css';
+
+interface BackupStatus {
+  isRunning: boolean;
+  opId: string | null;
+  activeSince: string | null;
+  backupCount: number;
+  storedBytes: number;
+  latestFileName: string | null;
+  latestBackupAt: string | null;
+}
 
 interface ProjectSchedule {
   scheduleId: string;
@@ -32,6 +43,9 @@ export default function ProjectBackupsPanel({ project, onProjectChanged }: {
   const [revision, setRevision] = useState(0);
   const [dialog, setDialog] = useState<{ initial?: EditableSchedule } | null>(null);
   const [backingUp, setBackingUp] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [activeSince, setActiveSince] = useState<string | null>(null);
+  const pollerRef = useRef<Poller<BackupStatus> | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -44,6 +58,39 @@ export default function ProjectBackupsPanel({ project, onProjectChanged }: {
   }, [project.id]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // One cheap status call, with backoff when nothing changes. It also sees a scheduled run, so the screen updates
+  // without the person doing anything.
+  useEffect(() => {
+    let previous: BackupStatus | null = null;
+    const poller = new Poller<BackupStatus>({
+      pollIntervalMilliseconds: 3000,
+      maxIntervalMilliseconds: 15000,
+      func: () => api.get<BackupStatus>(`/api/projects/${project.id}/db/backup-status`),
+      onResult: (status) => {
+        setRunning(status.isRunning);
+        setActiveSince(status.activeSince);
+        if (previous) {
+          const finished = previous.isRunning && !status.isRunning;
+          const filesChanged = previous.backupCount !== status.backupCount
+            || previous.latestFileName !== status.latestFileName;
+          if (finished) toast.success('Backup finished.');
+          if (filesChanged || finished) {
+            setRevision(value => value + 1);
+            void load();
+          }
+        }
+        previous = status;
+      },
+      onError: () => { /* a status poll must never disturb the page */ },
+    });
+    pollerRef.current = poller;
+    poller.start();
+    return () => {
+      pollerRef.current = null;
+      void poller.stop();
+    };
+  }, [project.id, load]);
 
   const remove = async (scheduleId: string) => {
     try {
@@ -59,11 +106,14 @@ export default function ProjectBackupsPanel({ project, onProjectChanged }: {
     setBackingUp(true);
     try {
       await api.post(`/api/projects/${project.id}/db/backup`, {});
-      toast.success('Backup started. It will appear below when it finishes.');
-      // Give the container a moment, then refresh the file list.
-      window.setTimeout(() => setRevision(r => r + 1), 2500);
+      setRunning(true);
+      setActiveSince(new Date().toISOString());
+      toast.success('Backup started. It keeps running if you leave this page.');
+      pollerRef.current?.pollNow();
+      pollerRef.current?.resetBackoff();
     } catch (error) {
       toast.error((error as { message?: string })?.message ?? 'Could not start the backup.');
+      setRunning(false);
     } finally {
       setBackingUp(false);
     }
@@ -86,6 +136,19 @@ export default function ProjectBackupsPanel({ project, onProjectChanged }: {
           {backingUp ? 'Starting…' : 'Back up now'}
         </ZestButton>
       </div>
+
+      {running && (
+        <div className={styles.running} role="status" aria-live="polite">
+          <span className={styles.pulse} aria-hidden="true" />
+          <div>
+            <strong>Backup in progress</strong>
+            <span>
+              {activeSince ? `Started ${formatRelative(activeSince)}. ` : ''}
+              It keeps running if you leave this page, and the files below update when it finishes.
+            </span>
+          </div>
+        </div>
+      )}
 
       <BackupPolicyEditor
         project={project}
