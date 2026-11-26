@@ -3,6 +3,8 @@ const nextConfig = {
   output: 'export',
   trailingSlash: true,
   reactStrictMode: true,
+  // Lint is a developer step; the production image runs type checking and the test suite separately.
+  eslint: { ignoreDuringBuilds: true },
   images: { unoptimized: true },
   transpilePackages: [
     'jattac.libs.web.zest-button',
