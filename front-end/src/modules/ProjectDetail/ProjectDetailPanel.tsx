@@ -1,4 +1,5 @@
 import Head from 'next/head';
+import { useRouter } from 'next/router';
 import { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import dynamic from 'next/dynamic';
@@ -18,7 +19,7 @@ import ProjectBackupsPanel from '@/modules/Backups/ProjectBackupsPanel';
 import { ProjectSummary } from '@/modules/Dashboard/ProjectCard';
 import LogViewer, { LogEntry } from '@/modules/BuildWizard/LogViewer';
 import ZestButton from 'jattac.libs.web.zest-button';
-import ZestTabs, { ZestTabItem } from 'jattac.libs.web.zest-tabs';
+import AppTabs, { ZestTabItem } from '@/shared/components/AppTabs';
 import { api, sseUrl } from '@/shared/ApiService';
 import { useElapsedTimer, fmtElapsed } from '@/shared/hooks/useElapsedTimer';
 
@@ -60,6 +61,7 @@ interface Props {
 }
 
 export default function ProjectDetailPanel({ projectId, onBack }: Props) {
+  const router = useRouter();
   const [project, setProject] = useState<IProject | null>(null);
   const [versions, setVersions] = useState<IServiceVersion[]>([]);
   const [summary, setSummary] = useState<ProjectSummary | null>(null);
@@ -114,6 +116,14 @@ export default function ProjectDetailPanel({ projectId, onBack }: Props) {
       .catch(() => toast.error('Project not found.'))
       .finally(() => setLoading(false));
   }, [projectId]);
+
+  // Deep links from the Backups control room: /projects/?detail=<id>&tab=database
+  useEffect(() => {
+    if (!project) return;
+    const requested = router.query.tab;
+    if (typeof requested !== 'string') return;
+    if (projectTabs(project).some(t => t.value === requested)) setActiveTab(requested as Tab);
+  }, [router.query.tab, project?.id]);
 
   // Keep activeTab valid when tabs change (e.g. project has no database)
   useEffect(() => {
@@ -343,7 +353,7 @@ export default function ProjectDetailPanel({ projectId, onBack }: Props) {
           {' / '}{project.name}
         </p>
 
-        <ZestTabs
+        <AppTabs
           id="project-detail"
           items={withDeployTab(projectTabs(project), project)}
           activeValue={activeTab}
@@ -445,7 +455,7 @@ export default function ProjectDetailPanel({ projectId, onBack }: Props) {
                 </div>
                 {showBuildLog && (
                   buildLogLoading
-                    ? <p style={{ fontSize: 12, color: '#637389', fontFamily: "'JetBrains Mono', monospace" }}>Loading…</p>
+                    ? <p style={{ fontSize: 12, color: '#637389', fontFamily: "var(--font-mono), monospace" }}>Loading…</p>
                     : <LogViewer lines={buildLogLines} />
                 )}
               </section>
@@ -461,16 +471,16 @@ export default function ProjectDetailPanel({ projectId, onBack }: Props) {
                   {deployments.map((dep, idx) => (
                     <div key={dep.id} style={{ display: 'flex', alignItems: 'center', gap: 12,
                       padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 11, color: '#637389', flexShrink: 0, fontFamily: "'JetBrains Mono', monospace" }}>
+                      <span style={{ fontSize: 11, color: '#637389', flexShrink: 0, fontFamily: "var(--font-mono), monospace" }}>
                         {formatDateTime(dep.deployedAt)}
                       </span>
-                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#C9A84C', flexShrink: 0 }}>
+                      <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: 12, color: '#C9A84C', flexShrink: 0 }}>
                         {dep.gitTag || '—'}
                       </span>
                       {dep.versions.map(v => (
                         <span key={v.serviceName} style={{ fontSize: 11, background: 'rgba(74,127,168,0.15)',
                           border: '1px solid rgba(74,127,168,0.3)', borderRadius: 4,
-                          padding: '2px 6px', color: '#7AACE0', fontFamily: "'JetBrains Mono', monospace" }}>
+                          padding: '2px 6px', color: '#7AACE0', fontFamily: "var(--font-mono), monospace" }}>
                           {v.serviceName}:{v.newVersion}
                         </span>
                       ))}
@@ -551,7 +561,7 @@ export default function ProjectDetailPanel({ projectId, onBack }: Props) {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                       {inferResult.detected.map((d, i) => (
                         <span key={i} style={{ fontSize: 12, color: '#A8B8CC',
-                          fontFamily: "'JetBrains Mono', monospace" }}>
+                          fontFamily: "var(--font-mono), monospace" }}>
                           {d}
                         </span>
                       ))}
@@ -586,7 +596,7 @@ export default function ProjectDetailPanel({ projectId, onBack }: Props) {
                 {!fixingContainer ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
                     <span style={{ fontSize: 12, color: '#637389' }}>Container:</span>
-                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12,
+                    <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: 12,
                       color: project.database.containerName ? '#C9A84C' : '#B84040' }}>
                       {project.database.containerName || '(not set)'}
                     </span>
@@ -608,7 +618,7 @@ export default function ProjectDetailPanel({ projectId, onBack }: Props) {
                         onChange={e => setSelectedContainer(e.target.value)}
                         style={{ background: '#131D30', border: '1px solid rgba(255,255,255,0.12)',
                           borderRadius: 6, padding: '6px 10px', color: '#C9D6E3',
-                          fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>
+                          fontFamily: "var(--font-mono), monospace", fontSize: 12 }}>
                         <option value="">— pick container —</option>
                         {containerOptions.map(c => (
                           <option key={c.name} value={c.name}>
@@ -664,14 +674,14 @@ export default function ProjectDetailPanel({ projectId, onBack }: Props) {
                   onChange={e => setLogContainer(e.target.value)}
                   style={{ background: '#131D30', border: '1px solid rgba(255,255,255,0.12)',
                     borderRadius: 6, padding: '6px 10px', color: '#C9D6E3',
-                    fontFamily: "'JetBrains Mono', monospace", fontSize: 12, minWidth: 220 }}>
+                    fontFamily: "var(--font-mono), monospace", fontSize: 12, minWidth: 220 }}>
                   <option value="">— pick container —</option>
                   {logContainers.map(c => (
                     <option key={c.name} value={c.name}>{c.name}  ({c.image})</option>
                   ))}
                 </select>
               ) : (
-                <span style={{ fontSize: 12, color: '#637389', fontFamily: "'JetBrains Mono', monospace" }}>
+                <span style={{ fontSize: 12, color: '#637389', fontFamily: "var(--font-mono), monospace" }}>
                   {logLoadingContainers ? 'Detecting…' : 'No containers detected yet'}
                 </span>
               )}
@@ -730,7 +740,7 @@ export default function ProjectDetailPanel({ projectId, onBack }: Props) {
             <h2 className={styles.sectionTitle}>SSH Terminal</h2>
             <p style={{ marginBottom: 16, fontSize: 13, color: '#637389' }}>
               Run arbitrary commands on{' '}
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", color: '#C9D6E3' }}>
+              <span style={{ fontFamily: "var(--font-mono), monospace", color: '#C9D6E3' }}>
                 {project.server.username}@{project.server.host}
               </span>
             </p>

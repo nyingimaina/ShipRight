@@ -86,9 +86,8 @@ describe('TailnetsPage', () => {
 
     render(<TailnetsPage />);
     await screen.findByText('Acme');
+    fireEvent.click(screen.getByRole('button', { name: /Set up Tailscale/i }));
 
-    // The guide opens by default so a new person sees the rules before anything else.
-    expect(screen.getByRole('button', { name: /Set up Tailscale/i })).toBeInTheDocument();
     expect(screen.getAllByText(/tcp:22/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/tag:shipright/).length).toBeGreaterThan(0);
 
@@ -101,6 +100,7 @@ describe('TailnetsPage', () => {
   it('explains where each value comes from and links straight into the Tailscale admin console', async () => {
     render(<TailnetsPage />);
     await screen.findByText('Acme');
+    fireEvent.click(screen.getByRole('button', { name: /Set up Tailscale/i }));
 
     expect(screen.getAllByText(/Generate auth key/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/tagOwners/i).length).toBeGreaterThan(0);

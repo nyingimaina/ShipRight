@@ -8,6 +8,7 @@ import {
   RiEditLine,
   RiLogoutCircleLine,
   RiMapPinTimeLine,
+  RiDownloadCloud2Line,
   RiMoonLine,
   RiPaletteLine,
   RiTeamLine,
@@ -18,6 +19,7 @@ import AppShell from '@/modules/AppShell/AppShell';
 import ThemeToggle from '@/shared/theme/ThemeToggle';
 import { authApi, useAuthStore, type CompanyChoice } from '@/shared/auth';
 import { DEFAULT_TIME_ZONE, localTimeIn, timeZoneChoices, timeZoneLabel } from '@/shared/time';
+import { installHint, useInstallPrompt } from '@/shared/pwa/useInstallPrompt';
 import styles from './Styles/Settings.module.css';
 
 const ROLE_COPY: Record<string, string> = {
@@ -40,6 +42,7 @@ export default function SettingsPage() {
   const [newCompany, setNewCompany] = useState('');
   const [busyCompany, setBusyCompany] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
+  const { canPrompt, installed, prompt } = useInstallPrompt();
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 30_000);
@@ -201,6 +204,40 @@ export default function SettingsPage() {
                 <ThemeToggle />
               </div>
               <p className={styles.hint}>Saved in this browser, so each device can look different.</p>
+            </section>
+
+            <section className={styles.card} aria-labelledby="install-heading">
+              <div className={styles.cardHead}>
+                <span className={styles.cardIcon} aria-hidden="true"><RiDownloadCloud2Line size={18} /></span>
+                <div>
+                  <h2 id="install-heading">Install ShipRight</h2>
+                  <p>A proper app window on desktop, or an icon on your phone.</p>
+                </div>
+              </div>
+
+              {installed ? (
+                <div className={styles.installed}>
+                  <span className={styles.currentPill}><RiCheckLine size={11} /> Installed</span>
+                  <span className={styles.hint}>You are already running the installed app.</span>
+                </div>
+              ) : (
+                <>
+                  <p className={styles.hint}>{installHint()}</p>
+                  {canPrompt && (
+                    <button
+                      type="button"
+                      className={styles.installButton}
+                      onClick={() => {
+                        void prompt().then((accepted) => {
+                          if (accepted) toast.success('ShipRight is installing.');
+                        });
+                      }}
+                    >
+                      <RiDownloadCloud2Line size={16} /> Install app
+                    </button>
+                  )}
+                </>
+              )}
             </section>
 
             <section className={`${styles.card} ${styles.companyCard}`} aria-labelledby="companies-heading">

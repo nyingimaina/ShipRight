@@ -191,7 +191,7 @@
 }
 
 .inlineCode {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono), monospace;
   font-size: 0.74rem;
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
@@ -265,7 +265,7 @@
   margin: 0;
   padding: 10px 12px;
   overflow-x: auto;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono), monospace;
   font-size: 0.72rem;
   line-height: 1.55;
   color: var(--text-primary);

@@ -43,6 +43,8 @@ public static class BackupCoverageRouter
                     keepCount = project.Database.BackupRetainCount,
                     keepDays = project.Database.BackupRetainDays,
                     cron = definition?.Cron,
+                    timeZone = definition?.TimeZone,
+                    scheduleId = definition?.RuntimeScheduleId,
                     nextFireAt = runtime?.NextFireAt,
                     lastFiredAt = runtime?.LastFiredAt,
                 };

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Net.Http.Headers;
 
 namespace ShipRight.Shared;
@@ -13,11 +14,22 @@ public static class StaticAssetCaching
     private const string HashedAssets = "public, max-age=31536000, immutable";
     private const string AlwaysRevalidate = "no-cache";
 
+    // Browsers are strict about the manifest type; some servers' default table does not know the extension.
+    private static readonly FileExtensionContentTypeProvider ContentTypes = CreateContentTypes();
+
+    private static FileExtensionContentTypeProvider CreateContentTypes()
+    {
+        var provider = new FileExtensionContentTypeProvider();
+        provider.Mappings[".webmanifest"] = "application/manifest+json";
+        return provider;
+    }
+
     public static string CacheControlFor(string path) =>
         path.StartsWith("/_next/static/", StringComparison.OrdinalIgnoreCase) ? HashedAssets : AlwaysRevalidate;
 
     public static StaticFileOptions Options() => new()
     {
+        ContentTypeProvider = ContentTypes,
         OnPrepareResponse = context =>
             context.Context.Response.Headers[HeaderNames.CacheControl] =
                 CacheControlFor(context.Context.Request.Path.Value ?? "/"),
@@ -29,6 +41,7 @@ public static class StaticAssetCaching
     /// </summary>
     public static StaticFileOptions FallbackOptions() => new()
     {
+        ContentTypeProvider = ContentTypes,
         OnPrepareResponse = context =>
             context.Context.Response.Headers[HeaderNames.CacheControl] = AlwaysRevalidate,
     };

@@ -25,7 +25,7 @@
   text-transform: uppercase;
   letter-spacing: 0.06em;
   padding: 8px 10px 3px;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono), monospace;
 }
 
 .sidebarItem {
@@ -42,7 +42,7 @@
   padding: 6px 10px;
   color: var(--text-secondary);
   font-size: 12px;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono), monospace;
   text-align: left;
   transition: background 0.1s;
 }
@@ -76,12 +76,12 @@
   font-size: 12px;
   padding: 2px 4px;
   border-radius: 3px;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono), monospace;
 }
 
 .crumbPart:hover { background: var(--accent-dim); }
 .crumbSep { color: var(--text-muted); font-size: 12px; }
-.crumbCurrent { color: var(--text-secondary); font-size: 12px; font-family: 'JetBrains Mono', monospace; }
+.crumbCurrent { color: var(--text-secondary); font-size: 12px; font-family: var(--font-mono), monospace; }
 
 .list { height: 260px; overflow-y: auto; flex: 1; }
 
@@ -101,7 +101,7 @@
 .entryDir { color: var(--accent); }
 .entrySelected { background: rgba(var(--accent-rgb), 0.15); outline: 1px solid rgba(var(--accent-rgb), 0.4); border-radius: 4px; }
 .entryIcon { font-size: 14px; flex-shrink: 0; }
-.entryName { flex: 1; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+.entryName { flex: 1; font-family: var(--font-mono), monospace; font-size: 12px; }
 
 .footer {
   display: flex;
@@ -115,7 +115,7 @@
 .selectedPath {
   font-size: 11px;
   color: var(--text-muted);
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono), monospace;
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;

@@ -15,7 +15,12 @@ jest.mock('jattac.libs.web.zest-sidekick-menu', () => ({
       data-surface={props.zest?.visualOptions?.surface}
       data-motion={props.zest?.motionOptions?.intensity}
     >
-      {items.map((item: any) => <span key={item.id}>{item.label}</span>)}
+      {items.map((item: any) => (
+        <span key={item.id}>
+          {item.label}
+          {item.children?.map((child: any) => <span key={child.id}>{child.label}</span>)}
+        </span>
+      ))}
       <header>{headerContent}</header>
       <footer>{footerContent}</footer>
     </nav>
@@ -74,7 +79,7 @@ describe('AppShell version', () => {
     const css = readFileSync(path.join(__dirname, '..', 'Styles', 'AppShell.module.css'), 'utf8');
     const content = css.match(/\.content\s*\{([^}]*)\}/)?.[1] ?? '';
 
-    expect(content).toMatch(/padding:\s*calc\(72px \+ env\(safe-area-inset-top, 0px\)\)/);
+    expect(content).toMatch(/padding:\s*calc\(76px \+ env\(safe-area-inset-top, 0px\)\)/);
     expect(content).toMatch(/max-width:\s*1320px/);
 
     const { container } = render(<AppShell><p>page</p></AppShell>);

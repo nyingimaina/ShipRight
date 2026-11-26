@@ -29,7 +29,7 @@
 .statusPending        { background: rgba(var(--text-muted-rgb,99,115,137),0.12); color: var(--text-muted); }
 .statusDeploying      { background: var(--accent-dim);  color: var(--accent); }
 
-.mono { font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+.mono { font-family: var(--font-mono), monospace; font-size: 12px; }
 
 .drawerOverlay {
   position: fixed;

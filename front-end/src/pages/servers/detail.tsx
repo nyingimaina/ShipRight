@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
-import ZestTabs, { ZestTabItem } from 'jattac.libs.web.zest-tabs';
+import AppTabs, { ZestTabItem } from '@/shared/components/AppTabs';
 import AppShell from '@/modules/AppShell/AppShell';
 import ServerActionsTab from '@/modules/ServerDetail/ServerActionsTab';
 import Spinner from '@/shared/components/Busy/Spinner';
@@ -65,7 +65,7 @@ export default function ServerDetailPage() {
                 <h1 className={styles.heading}>{title}</h1>
                 <span className={styles.sub}>{server.username}@{server.host}</span>
               </div>
-              <ZestTabs id="server-detail" items={TABS} activeValue={tab} onChange={setTab} />
+              <AppTabs id="server-detail" items={TABS} activeValue={tab} onChange={setTab} />
               <div className={styles.panel}>
                 {tab === 'actions' && <ServerActionsTab serverId={server.id!} serverName={title} />}
                 {tab === 'stats' && <ServerStatsTab server={server} />}

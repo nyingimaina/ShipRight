@@ -115,7 +115,7 @@
   padding: 3px 10px;
   border-radius: 999px;
   font-size: 12px;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono), monospace;
 }
 
 .chipMore { composes: chip; color: var(--text-muted); }

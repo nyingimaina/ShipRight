@@ -1,5 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import toast from 'react-hot-toast';
+import { fireEvent, render, screen } from '@testing-library/react';
 import BackupsPage from '@/pages/backups';
 import { api } from '@/shared/ApiService';
 
@@ -29,54 +28,35 @@ jest.mock('react-hot-toast', () => ({
   default: { success: jest.fn(), error: jest.fn() },
 }));
 jest.mock('@/shared/ApiService', () => ({
-  api: { get: jest.fn(), post: jest.fn(), put: jest.fn(), delete: jest.fn(), uploadForm: jest.fn() },
+  api: { get: jest.fn(), post: jest.fn(), uploadForm: jest.fn() },
   apiUrl: (path: string) => path,
 }));
 
 const get = (api as any).get as jest.Mock;
-const post = (api as any).post as jest.Mock;
-const put = (api as any).put as jest.Mock;
 const uploadForm = (api as any).uploadForm as jest.Mock;
 
-const backupFile = {
-  fileName: 'shop_2026-11-25_02-00-00_schedule.sql.zst.enc',
+const coverageProject = (over: object = {}) => ({
+  projectId: 'p1',
+  projectName: 'Shop',
   databaseName: 'shop',
-  format: 'sql',
-  compression: 'zstd',
-  compressionLevel: 12,
-  encryption: 'aes256gcm',
-  keyId: 'key-1',
-  originalBytes: 4 * 1024 * 1024,
+  backupCount: 1,
+  lastBackupAt: '2026-11-25T02:00:00Z',
   storedBytes: 512 * 1024,
-  ratio: 8,
-  sha256: 'abc123',
-  createdAt: '2026-11-25T02:00:00Z',
-  source: 'schedule',
-  scheduleId: null,
-  durationMs: 4200,
-  rank: 1,
-  projectedDeleteAt: '2026-12-05T02:00:00Z',
-};
-
-const project = (over: object = {}) => ({
-  id: 'p1',
-  name: 'Shop',
-  timeZone: 'UTC',
-  database: {
-    provider: 'MariaDb',
-    containerName: 'shop-db',
-    databaseName: 'shop',
-    rootUser: 'root',
-    backupRetainCount: 10,
-  },
+  originalBytes: 4 * 1024 * 1024,
+  keepCount: 10,
+  keepDays: 0,
+  cron: '0 2 * * *',
+  timeZone: 'Africa/Nairobi',
+  scheduleId: 's1',
+  nextFireAt: '2026-11-26T02:00:00Z',
+  lastFiredAt: '2026-11-25T02:00:00Z',
   ...over,
 });
 
 beforeEach(() => {
   jest.clearAllMocks();
   get.mockImplementation((url: string) => {
-    if (url === '/api/projects') return Promise.resolve([project()]);
-    if (url === '/api/scheduler/schedules') return Promise.resolve({ jobs: [], count: 0, capturedAt: '' });
+    if (url === '/api/backups/coverage') return Promise.resolve({ projects: [coverageProject()], capturedAt: '' });
     if (url.startsWith('/api/scheduler/history')) return Promise.resolve({ records: [], count: 0 });
     if (url === '/api/scheduler/inflight') return Promise.resolve({ inflight: null });
     if (url === '/api/scheduler/overflow') return Promise.resolve({ items: [], count: 0 });
@@ -88,60 +68,28 @@ beforeEach(() => {
     if (url === '/api/backups/recovery-key') return Promise.resolve({
       keys: [{ id: 'key-1', createdAt: '2026-11-25T02:00:00Z', active: true }],
     });
-    if (url.startsWith('/api/projects/p1/db/backups')) return Promise.resolve({
-      files: [backupFile], keepCount: 10, keepDays: 0, cadenceSeconds: 86400,
-    });
     return Promise.resolve(null);
   });
-  post.mockResolvedValue({ scheduleId: 's1', message: 'Schedule registered.' });
-  put.mockResolvedValue({});
+  uploadForm.mockResolvedValue({ token: 'abc123', fileName: 'shop.sql' });
 });
 
 describe('BackupsPage', () => {
-  it('gives an Admin a visible way to add a backup schedule', async () => {
+  it('shows coverage per database project and links into that project’s own backups', async () => {
     render(<BackupsPage />);
 
-    expect(await screen.findByText('No backup schedules configured.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Schedule backup' })).toBeInTheDocument();
+    expect(await screen.findByText('Shop')).toBeInTheDocument();
+    expect(screen.getByText('Protected')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Open backups/i }))
+      .toHaveAttribute('href', '/projects?detail=p1&tab=database');
+    expect(screen.queryByRole('button', { name: 'Schedule backup' })).toBeNull();
   });
 
-  it('opens a friendly schedule form and posts the chosen project and daily cron', async () => {
-    render(<BackupsPage />);
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Schedule backup' })).toBeEnabled());
-    fireEvent.click(screen.getByRole('button', { name: 'Schedule backup' }));
-
-    const dialog = await screen.findByRole('dialog', { name: 'Schedule a backup' });
-    fireEvent.change(within(dialog).getByLabelText('Project'), { target: { value: 'p1' } });
-    fireEvent.change(within(dialog).getByLabelText('Schedule'), { target: { value: 'daily-2' } });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Schedule backup' }));
-
-    await waitFor(() => expect(post).toHaveBeenCalledWith('/api/scheduler/schedules', {
-      projectId: 'p1',
-      cronExpression: '0 2 * * *',
-      timeZone: 'Africa/Nairobi',
-    }));
-    expect(toast.success).toHaveBeenCalledWith('Backup scheduled.');
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Schedule a backup' })).toBeNull());
-  });
-
-  it('shows the real scheduling failure as an alert and keeps the form open', async () => {
-    post.mockRejectedValueOnce(new Error('That cron expression is not valid.'));
-    render(<BackupsPage />);
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Schedule backup' })).toBeEnabled());
-    fireEvent.click(screen.getByRole('button', { name: 'Schedule backup' }));
-
-    const dialog = await screen.findByRole('dialog', { name: 'Schedule a backup' });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Schedule backup' }));
-
-    expect(await screen.findByRole('alert')).toHaveTextContent('That cron expression is not valid.');
-    expect(screen.getByRole('dialog', { name: 'Schedule a backup' })).toBeInTheDocument();
-    expect(toast.success).not.toHaveBeenCalled();
-  });
-
-  it('explains when no project has a database instead of offering a broken form', async () => {
+  it('flags a project with no schedule and no backups', async () => {
     get.mockImplementation((url: string) => {
-      if (url === '/api/projects') return Promise.resolve([project({ database: undefined })]);
-      if (url === '/api/scheduler/schedules') return Promise.resolve({ jobs: [], count: 0, capturedAt: '' });
+      if (url === '/api/backups/coverage') return Promise.resolve({
+        projects: [coverageProject({ backupCount: 0, lastBackupAt: null, cron: null, scheduleId: null })],
+        capturedAt: '',
+      });
       if (url.startsWith('/api/scheduler/history')) return Promise.resolve({ records: [], count: 0 });
       if (url === '/api/scheduler/inflight') return Promise.resolve({ inflight: null });
       if (url === '/api/scheduler/overflow') return Promise.resolve({ items: [], count: 0 });
@@ -150,40 +98,33 @@ describe('BackupsPage', () => {
 
     render(<BackupsPage />);
 
-    expect(await screen.findByText(/Add a database to a project before scheduling backups/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Schedule backup' })).toBeDisabled();
+    expect(await screen.findByText('Unprotected')).toBeInTheDocument();
+    expect(screen.getByText('1 unprotected')).toBeInTheDocument();
   });
 
-  it('expands a project to show sizes, retention and a download for each backup', async () => {
+  it('keeps history as a cross-project view, linking each run back to its project', async () => {
+    get.mockImplementation((url: string) => {
+      if (url === '/api/backups/coverage') return Promise.resolve({ projects: [coverageProject()], capturedAt: '' });
+      if (url.startsWith('/api/scheduler/history/summary')) return Promise.resolve(null);
+      if (url.startsWith('/api/scheduler/history')) return Promise.resolve({
+        records: [{
+          id: 'h1', projectId: 'p1', projectName: 'Shop', databaseName: 'shop', status: 'completed',
+          startedAt: '2026-11-25T02:00:00Z', completedAt: '2026-11-25T02:00:04Z', durationMs: 4200,
+          errorMessage: null, backupSizeBytes: 512 * 1024, backupFileName: 'shop.sql.zst.enc',
+          scheduleId: 's1', correlationId: 'c1',
+        }],
+        count: 1,
+      });
+      if (url === '/api/scheduler/inflight') return Promise.resolve({ inflight: null });
+      if (url === '/api/scheduler/overflow') return Promise.resolve({ items: [], count: 0 });
+      return Promise.resolve(null);
+    });
+
     render(<BackupsPage />);
-    await screen.findByText('Shop');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Expand backups for Shop' }));
-
-    expect(await screen.findByText('shop_2026-11-25_02-00-00_schedule.sql.zst.enc')).toBeInTheDocument();
-    expect(screen.getAllByText(/4\.0 MB raw/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/512\.0 KB stored/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/#1 of 10/).length).toBeGreaterThan(0);
-    expect(screen.getByRole('button', { name: 'Download' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Download .zst' })).toBeInTheDocument();
-  });
-
-  it('saves the retention policy chosen on the project row', async () => {
-    render(<BackupsPage />);
-    await screen.findByText('Shop');
-    fireEvent.click(screen.getByRole('button', { name: 'Expand backups for Shop' }));
-
-    fireEvent.change(screen.getByLabelText('Backups to keep for Shop'), { target: { value: '4' } });
-    fireEvent.change(screen.getByLabelText('Age limit in days for Shop'), { target: { value: '30' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save policy' }));
-
-    await waitFor(() => expect(put).toHaveBeenCalledWith('/api/projects/p1/db/backup-policy', {
-      keepCount: 4,
-      keepDays: 30,
-      compressionLevel: 12,
-      encrypt: true,
-    }));
-    expect(toast.success).toHaveBeenCalledWith('Backup policy saved.');
+    const link = await screen.findByRole('link', { name: 'Shop' });
+    expect(link).toHaveAttribute('href', '/projects?detail=p1&tab=database');
+    expect(screen.getByText('shop.sql.zst.enc')).toBeInTheDocument();
   });
 
   it('offers the recovery key file and lists the active key', async () => {
@@ -198,8 +139,6 @@ describe('BackupsPage', () => {
   });
 
   it('offers a decrypt tool for backup files copied off the host', async () => {
-    uploadForm.mockResolvedValue({ token: 'abc123', fileName: 'shop.sql' });
-
     render(<BackupsPage />);
     await screen.findByText('Shop');
 
@@ -207,13 +146,12 @@ describe('BackupsPage', () => {
     fireEvent.change(screen.getByLabelText('Backup file to decrypt'), { target: { files: [file] } });
     fireEvent.click(screen.getByRole('button', { name: 'Decrypt and download' }));
 
-    await waitFor(() => expect(uploadForm).toHaveBeenCalledWith('/api/backups/decrypt', expect.any(FormData)));
+    expect(uploadForm).toHaveBeenCalledWith('/api/backups/decrypt', expect.any(FormData));
   });
 
   it('warns when backups sit inside the app data directory', async () => {
     get.mockImplementation((url: string) => {
-      if (url === '/api/projects') return Promise.resolve([project()]);
-      if (url === '/api/scheduler/schedules') return Promise.resolve({ jobs: [], count: 0, capturedAt: '' });
+      if (url === '/api/backups/coverage') return Promise.resolve({ projects: [coverageProject()], capturedAt: '' });
       if (url.startsWith('/api/scheduler/history')) return Promise.resolve({ records: [], count: 0 });
       if (url === '/api/scheduler/inflight') return Promise.resolve({ inflight: null });
       if (url === '/api/scheduler/overflow') return Promise.resolve({ items: [], count: 0 });
@@ -227,5 +165,20 @@ describe('BackupsPage', () => {
     render(<BackupsPage />);
 
     expect(await screen.findByText(/would delete them/i)).toBeInTheDocument();
+  });
+
+  it('explains when no project has a database yet', async () => {
+    get.mockImplementation((url: string) => {
+      if (url === '/api/backups/coverage') return Promise.resolve({ projects: [], capturedAt: '' });
+      if (url.startsWith('/api/scheduler/history')) return Promise.resolve({ records: [], count: 0 });
+      if (url === '/api/scheduler/inflight') return Promise.resolve({ inflight: null });
+      if (url === '/api/scheduler/overflow') return Promise.resolve({ items: [], count: 0 });
+      return Promise.resolve(null);
+    });
+
+    render(<BackupsPage />);
+
+    expect(await screen.findByText('No database projects yet')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Go to Projects' })).toHaveAttribute('href', '/projects');
   });
 });

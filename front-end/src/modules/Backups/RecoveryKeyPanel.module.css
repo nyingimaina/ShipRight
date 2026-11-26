@@ -71,7 +71,7 @@
   border-top: 1px solid rgba(255, 255, 255, 0.04);
 }
 
-.keyRow code { color: var(--accent); font-family: 'JetBrains Mono', monospace; }
+.keyRow code { color: var(--accent); font-family: var(--font-mono), monospace; }
 
 .active {
   color: var(--success);

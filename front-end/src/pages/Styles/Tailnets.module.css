@@ -119,7 +119,7 @@
 
 .fieldHelp code,
 .steps code {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono), monospace;
   font-size: 0.72rem;
   background: var(--bg-input);
   border: 1px solid var(--border-subtle);
@@ -182,7 +182,7 @@
 
 .copyRow code,
 .snippetNote code {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono), monospace;
   font-size: 0.72rem;
   background: var(--bg-input);
   border: 1px solid var(--border-subtle);
@@ -197,7 +197,7 @@
   border: 1px solid var(--border-subtle);
   background: var(--bg-input);
   color: var(--text-primary);
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono), monospace;
   font-size: 0.72rem;
   line-height: 1.5;
   overflow-x: auto;

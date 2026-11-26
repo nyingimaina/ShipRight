@@ -140,7 +140,7 @@ export default function TailnetsPage() {
           <ZestButton onClick={load} zest={{ buttonStyle: 'outline', semanticType: 'refresh' }}>Refresh</ZestButton>
         </header>
 
-        <TailscaleSetupGuide defaultOpen={items.length === 0} />
+        <TailscaleSetupGuide defaultOpen={false} />
 
         <div className={styles.grid}>
           {items.length === 0 && (

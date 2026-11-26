@@ -132,8 +132,10 @@ public static class SchedulerRouter
                 .Where(d => d.RuntimeScheduleId is not null)
                 .ToDictionary(d => d.RuntimeScheduleId!.Value);
 
+            // The scheduler snapshot is process-wide; only the schedules saved for this company may be shown.
+            var visible = byRuntime.Keys.ToHashSet();
             var snapshot = scheduler.GetSnapshot();
-            var jobs = snapshot.Jobs.Select(j =>
+            var jobs = snapshot.Jobs.Where(j => visible.Contains(j.ScheduleId)).Select(j =>
             {
                 byRuntime.TryGetValue(j.ScheduleId, out var definition);
                 return new
@@ -215,8 +217,12 @@ public static class SchedulerRouter
         {
             var scheduler = context.RequestServices
                 .GetRequiredService<TempoScheduler<BackupJob>>();
-            scheduler.Unregister(scheduleId);
             var store = context.RequestServices.GetRequiredService<IBackupScheduleStore>();
+            // Only the company that owns the saved schedule may unregister its runtime job.
+            if (store.GetByRuntimeIdAsync(scheduleId).GetAwaiter().GetResult() is null)
+                return Results.NotFound(new { isError = true, message = "That backup schedule no longer exists." });
+
+            scheduler.Unregister(scheduleId);
             store.DeleteByRuntimeIdAsync(scheduleId).GetAwaiter().GetResult();
             Log.Information("Schedule {ScheduleId} unregistered and removed", scheduleId);
             return Results.Ok(new { message = "Schedule removed." });
@@ -401,8 +407,10 @@ public static class SchedulerRouter
                 .Where(d => d.RuntimeScheduleId is not null)
                 .ToDictionary(d => d.RuntimeScheduleId!.Value);
 
+            // The scheduler snapshot is process-wide; only the schedules saved for this company may be shown.
+            var visible = byRuntime.Keys.ToHashSet();
             var snapshot = scheduler.GetSnapshot();
-            var jobs = snapshot.Jobs.Select(j =>
+            var jobs = snapshot.Jobs.Where(j => visible.Contains(j.ScheduleId)).Select(j =>
             {
                 byRuntime.TryGetValue(j.ScheduleId, out var definition);
                 return new
@@ -484,8 +492,12 @@ public static class SchedulerRouter
         {
             var scheduler = context.RequestServices
                 .GetRequiredService<TempoScheduler<BackupJob>>();
-            scheduler.Unregister(scheduleId);
             var store = context.RequestServices.GetRequiredService<IBackupScheduleStore>();
+            // Only the company that owns the saved schedule may unregister its runtime job.
+            if (store.GetByRuntimeIdAsync(scheduleId).GetAwaiter().GetResult() is null)
+                return Results.NotFound(new { isError = true, message = "That backup schedule no longer exists." });
+
+            scheduler.Unregister(scheduleId);
             store.DeleteByRuntimeIdAsync(scheduleId).GetAwaiter().GetResult();
             Log.Information("Schedule {ScheduleId} unregistered and removed", scheduleId);
             return Results.Ok(new { message = "Schedule removed." });

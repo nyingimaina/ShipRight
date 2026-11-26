@@ -540,7 +540,7 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
               <p style={{ margin: '0 0 8px', fontSize: 11, color: '#637389' }}>
                 Use these substitutions for image tags so ShipRight can inject versions at deploy time:
               </p>
-              <table style={{ borderCollapse: 'collapse', width: '100%', fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>
+              <table style={{ borderCollapse: 'collapse', width: '100%', fontFamily: "var(--font-mono), monospace", fontSize: 11 }}>
                 <thead>
                   <tr>
                     <th style={{ textAlign: 'left', color: '#637389', paddingBottom: 4, fontWeight: 400 }}>Service</th>
@@ -559,7 +559,7 @@ export default function ProjectConfigForm({ initial, onSave, onCancel, projectId
                 </tbody>
               </table>
               <p style={{ margin: '8px 0 0', fontSize: 11, color: '#637389' }}>
-                Example: <span style={{ color: '#A8B8CC', fontFamily: "'JetBrains Mono', monospace" }}>
+                Example: <span style={{ color: '#A8B8CC', fontFamily: "var(--font-mono), monospace" }}>
                   image: nyingi/app:{'${APP_TAG:-latest}'}
                 </span>
               </p>

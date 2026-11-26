@@ -42,7 +42,7 @@
 .detectedIcon { color: var(--success); flex-shrink: 0; }
 .detectedText { flex: 1; }
 .detectedPath {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono), monospace;
   font-size: 11px;
   color: var(--text-muted);
   margin-top: 2px;
@@ -85,7 +85,7 @@
   border-radius: 3px;
   background: rgba(var(--accent-rgb), 0.15);
   color: var(--accent);
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono), monospace;
   font-weight: 600;
 }
 
@@ -102,7 +102,7 @@
 .fieldValue {
   font-size: 12px;
   color: var(--text-secondary);
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono), monospace;
   background: var(--bg-elevated);
   padding: 6px 10px;
   border-radius: 4px;
@@ -120,7 +120,7 @@
 .summaryGrid { display: flex; flex-direction: column; gap: 8px; }
 .summaryRow  { display: flex; gap: 12px; font-size: 13px; }
 .summaryLabel { color: var(--text-muted); min-width: 120px; }
-.summaryValue { color: var(--text-secondary); font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+.summaryValue { color: var(--text-secondary); font-family: var(--font-mono), monospace; font-size: 12px; }
 
 .errorText { color: var(--error); font-size: 12px; }
 

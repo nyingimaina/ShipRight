@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0B1120" />
+    <title>ShipRight — offline</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; min-height: 100dvh; display: grid; place-items: center; padding: 28px;
+        background:
+          radial-gradient(circle at 20% -10%, rgba(201,168,76,0.12), transparent 28rem),
+          #0B1120;
+        color: #F0F2F5; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      main { max-width: 380px; text-align: center; }
+      .mark {
+        width: 64px; height: 64px; margin: 0 auto 18px; border: 1px solid rgba(201,168,76,0.45);
+        border-radius: 50%; display: grid; place-items: center; color: #C9A84C; font-size: 20px; font-weight: 800;
+        letter-spacing: -0.03em;
+      }
+      h1 { margin: 0 0 6px; font-size: 1.35rem; letter-spacing: -0.03em; }
+      p { margin: 0 0 18px; color: #A8B8CC; font-size: 0.88rem; line-height: 1.55; }
+      a {
+        display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; border-radius: 12px;
+        background: #C9A84C; color: #08120b; font-size: 0.86rem; font-weight: 700; text-decoration: none;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="mark" aria-hidden="true">SR</div>
+      <h1>You're offline</h1>
+      <p>ShipRight could not reach the server. The connection will come back on its own — try again in a moment.</p>
+      <a href="/projects">Try again</a>
+    </main>
+  </body>
+</html>

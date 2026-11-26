@@ -8,6 +8,8 @@ RUN npm run build
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS backend
 WORKDIR /build
+# The repo-level version props make /api/health and the assembly agree with the web version.
+COPY Directory.Build.props ./Directory.Build.props
 COPY back-end/ShipRight.Server/ShipRight.Server.csproj ./ShipRight.Server/
 COPY back-end/ShipRight.RuntimeConfig/ShipRight.RuntimeConfig.csproj ./ShipRight.RuntimeConfig/
 RUN dotnet restore ShipRight.Server/ShipRight.Server.csproj
@@ -21,7 +23,7 @@ RUN dotnet publish ShipRight.Server/ShipRight.Server.csproj \
     --self-contained false
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS runtime
-RUN apk add --no-cache curl openssh-client tailscale
+RUN apk add --no-cache curl openssh-client tailscale tzdata
 WORKDIR /app
 COPY --from=backend /publish .
 EXPOSE 5200

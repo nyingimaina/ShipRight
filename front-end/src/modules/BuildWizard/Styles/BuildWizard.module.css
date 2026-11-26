@@ -86,7 +86,7 @@
 }
 
 .versionServiceName { font-weight: 600; min-width: 80px; color: var(--text-primary); }
-.versionCurrent     { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text-muted); min-width: 60px; }
+.versionCurrent     { font-family: var(--font-mono), monospace; font-size: 12px; color: var(--text-muted); min-width: 60px; }
 .versionArrow       { color: var(--text-muted); }
 .versionInputWrap   { flex: 1; }
 .versionCreateRow   { display: flex; gap: 6px; align-items: center; }
@@ -148,8 +148,8 @@
 .stepFailed  { color: var(--error); }
 
 .stepIcon            { font-size: 14px; }
-.stepDuration        { font-size: 10px; opacity: 0.55; margin-left: 2px; font-family: 'JetBrains Mono', monospace; }
-.stepServiceProgress { font-size: 10px; color: var(--accent); margin-left: 6px; font-family: 'JetBrains Mono', monospace; white-space: nowrap; }
+.stepDuration        { font-size: 10px; opacity: 0.55; margin-left: 2px; font-family: var(--font-mono), monospace; }
+.stepServiceProgress { font-size: 10px; color: var(--accent); margin-left: 6px; font-family: var(--font-mono), monospace; white-space: nowrap; }
 
 @keyframes shipright-spin { to { transform: rotate(360deg); } }
 
@@ -173,7 +173,7 @@
   padding: 4px 0 2px;
   font-size: 12px;
   color: var(--text-muted);
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono), monospace;
   flex-shrink: 0;
   flex-wrap: wrap;
 }
@@ -252,7 +252,7 @@
 .checkboxRow:hover               { background: var(--bg-elevated); }
 .checkboxRow input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; flex-shrink: 0; }
 .checkboxLabel  { display: flex; flex-direction: column; }
-.checkboxName   { font-size: 13px; color: var(--text-secondary); font-weight: 500; font-family: 'JetBrains Mono', monospace; }
+.checkboxName   { font-size: 13px; color: var(--text-secondary); font-weight: 500; font-family: var(--font-mono), monospace; }
 .checkboxHint   { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
 
 /* Deploy section */
@@ -268,7 +268,7 @@
 }
 
 .deployInfo { font-size: 13px; color: var(--text-secondary); }
-.deployTag  { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--success); }
+.deployTag  { font-family: var(--font-mono), monospace; font-size: 12px; color: var(--success); }
 
 @keyframes successPop {
   0%   { transform: scale(0.95); opacity: 0.7; }

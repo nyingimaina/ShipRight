@@ -46,7 +46,7 @@
 }
 .viewerHead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 13px; }
 .pre {
-  flex: 1; margin: 0; overflow: auto; font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+  flex: 1; margin: 0; overflow: auto; font-family: var(--font-mono), ui-monospace, Menlo, Consolas, monospace;
   font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; color: var(--text-secondary);
 }
 

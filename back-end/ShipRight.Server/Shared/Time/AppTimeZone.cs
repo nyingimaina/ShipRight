@@ -39,6 +39,14 @@ public static class AppTimeZone
             return true;
         }
 
+        // Nairobi has no daylight saving, so its rule is safe even on a minimal container that ships without tzdata.
+        // The image now installs tzdata too; this keeps the default valid on any host.
+        if (string.Equals(trimmed, DefaultId, StringComparison.OrdinalIgnoreCase))
+        {
+            zone = TimeZoneInfo.CreateCustomTimeZone(DefaultId, TimeSpan.FromHours(3), DefaultId, DefaultId);
+            return true;
+        }
+
         return false;
     }
 

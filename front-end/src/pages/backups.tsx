@@ -1,29 +1,34 @@
 import Head from 'next/head';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import ZestButton from 'jattac.libs.web.zest-button';
 import AppShell from '@/modules/AppShell/AppShell';
-import BackupScheduleDialog from '@/modules/Backups/BackupScheduleDialog';
-import BackupFiles from '@/modules/Backups/BackupFiles';
-import BackupPolicyEditor from '@/modules/Backups/BackupPolicyEditor';
 import RecoveryKeyPanel from '@/modules/Backups/RecoveryKeyPanel';
 import DecryptBackupPanel from '@/modules/Backups/DecryptBackupPanel';
 import { BackupStorageInfo, fmtBytes } from '@/modules/Backups/backupTypes';
 import { api } from '@/shared/ApiService';
-import { IProject } from '@/shared/types/IProject';
-import { formatDateTime } from '@/shared/time';
+import { formatDateTime, formatRelative } from '@/shared/time';
 import styles from './Styles/Backups.module.css';
 
-interface ScheduleJob {
-  scheduleId: string; definitionId?: string; projectId?: string; projectName?: string;
-  cron?: string; timeZone?: string;
-  jobName: string; scheduleType: string;
-  scheduleDescription: string; lastFiredAt: string | null;
-  nextFireAt: string | null; inFlightCount: number;
-  totalFired: number; totalMissed: number; lastDrift: string | null;
+interface CoverageProject {
+  projectId: string;
+  projectName: string;
+  databaseName: string;
+  backupCount: number;
+  lastBackupAt: string | null;
+  storedBytes: number;
+  originalBytes: number;
+  keepCount: number;
+  keepDays: number;
+  cron?: string | null;
+  timeZone?: string | null;
+  scheduleId?: string | null;
+  nextFireAt: string | null;
+  lastFiredAt: string | null;
 }
 
-interface SchedulesResponse { jobs: ScheduleJob[]; count: number; capturedAt: string; }
+interface CoverageResponse { projects: CoverageProject[]; capturedAt: string; }
 
 interface HistoryRecord {
   id: string; projectId: string; projectName: string; databaseName: string;
@@ -37,12 +42,6 @@ interface HistoryResponse { records: HistoryRecord[]; count: number; }
 
 interface BackupSummary { totalRuns: number; successfulRuns: number; failedRuns: number; successRate: number; avgDurationMs: number; totalSizeBytes: number; }
 
-interface SnapshotResponse {
-  totalPending: number; throughputPerSecond: number; totalProcessed: number;
-  totalFailures: number; healthStatus: string; isDispatcherRunning: boolean;
-  pendingByTenant: Record<string, number>; capturedAt: string;
-}
-
 interface InflightResponse {
   inflight: { projectId: string; projectName: string; databaseName: string; scheduledAt: string; startedAt: string; elapsedMs: number; } | null;
 }
@@ -51,14 +50,7 @@ interface OverflowRecord { projectId: string; projectName: string; failedAt: str
 interface OverflowResponse { items: OverflowRecord[]; count: number; }
 
 function ago(dateStr: string): string {
-  const ms = Date.now() - new Date(dateStr).getTime();
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}s ago`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
+  return formatRelative(dateStr);
 }
 
 function fmtMs(ms: number): string {
@@ -67,43 +59,42 @@ function fmtMs(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-function projectSchedule(schedules: ScheduleJob[], project: IProject): ScheduleJob | undefined {
-  const suffix = project.name.replace(/\s+/g, '');
-  return schedules.find(s => s.jobName.replace(/^Backup-/, '').replace(/\s+/g, '') === suffix);
+function coverageState(project: CoverageProject): { label: string; tone: string } {
+  if (project.scheduleId && project.backupCount > 0) return { label: 'Protected', tone: styles.statusHealthy };
+  if (project.scheduleId) return { label: 'Waiting for first run', tone: styles.statusWaiting };
+  if (project.backupCount > 0) return { label: 'Manual only', tone: styles.statusManual };
+  return { label: 'Unprotected', tone: styles.statusUnprotected };
+}
+
+function projectBackupsHref(projectId: string): string {
+  return `/projects?detail=${projectId}&tab=database`;
 }
 
 export default function BackupsPage() {
-  const [schedules, setSchedules] = useState<ScheduleJob[]>([]);
+  const [coverage, setCoverage] = useState<CoverageProject[]>([]);
   const [history, setHistory] = useState<HistoryRecord[]>([]);
   const [summary, setSummary] = useState<BackupSummary | null>(null);
   const [inflight, setInflight] = useState<InflightResponse['inflight']>(null);
   const [overflow, setOverflow] = useState<OverflowRecord[]>([]);
-  const [projects, setProjects] = useState<IProject[]>([]);
   const [storage, setStorage] = useState<BackupStorageInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
-  const [scheduleOpen, setScheduleOpen] = useState(false);
-  const [editingSchedule, setEditingSchedule] = useState<ScheduleJob | null>(null);
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [revision, setRevision] = useState(0);
 
   const load = useCallback(async () => {
     try {
-      const [s, h, sm, i, o, p, st] = await Promise.all([
-        api.get<SchedulesResponse>('/api/scheduler/schedules').catch(() => ({ jobs: [], count: 0, capturedAt: '' })),
+      const [c, h, sm, i, o, st] = await Promise.all([
+        api.get<CoverageResponse>('/api/backups/coverage').catch(() => ({ projects: [], capturedAt: '' })),
         api.get<HistoryResponse>('/api/scheduler/history?limit=50').catch(() => ({ records: [], count: 0 })),
         api.get<BackupSummary>('/api/scheduler/history/summary').catch(() => null),
         api.get<InflightResponse>('/api/scheduler/inflight').catch(() => ({ inflight: null })),
         api.get<OverflowResponse>('/api/scheduler/overflow').catch(() => ({ items: [], count: 0 })),
-        api.get<IProject[]>('/api/projects').catch(() => []),
         api.get<BackupStorageInfo>('/api/backups/storage').catch(() => null),
       ]);
-      setSchedules(s.jobs);
+      setCoverage(c.projects);
       setHistory(h.records);
       setSummary(sm);
       setInflight(i.inflight);
       setOverflow(o.items);
-      setProjects(p);
       setStorage(st);
     } finally {
       setLoading(false);
@@ -112,35 +103,18 @@ export default function BackupsPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const databaseProjects = useMemo(
-    () => projects.filter((p) => p.database?.databaseName),
-    [projects],
-  );
-
-  const deleteSchedule = async (scheduleId: string) => {
-    await api.delete(`/api/scheduler/schedules/${scheduleId}`);
-    load();
-  };
-
   const replayOverflow = async () => {
     await api.post('/api/scheduler/replay', {});
+    toast.success('Overflow replay started.');
     load();
-  };
-
-  const backupNow = async (project: IProject) => {
-    try {
-      await api.post(`/api/projects/${project.id}/db/backup`, {});
-      toast.success(`Backup started for ${project.name}.`);
-      setRevision(r => r + 1);
-      setExpanded(prev => ({ ...prev, [project.id]: true }));
-    } catch (error) {
-      toast.error((error as { message?: string })?.message ?? 'Could not start the backup.');
-    }
   };
 
   const filteredHistory = statusFilter
     ? history.filter(r => r.status === statusFilter)
     : history;
+
+  const scheduled = coverage.filter(c => c.scheduleId).length;
+  const unprotected = coverage.filter(c => !c.scheduleId && c.backupCount === 0).length;
 
   return (
     <>
@@ -148,25 +122,27 @@ export default function BackupsPage() {
       <AppShell>
         <header className={styles.header}>
           <div>
-            <h1 className={styles.heading}>Automated Backups</h1>
-            <p className={styles.sub}>Scheduled database backups, history, and overflow recovery.</p>
+            <h1 className={styles.heading}>Backups</h1>
+            <p className={styles.sub}>
+              Coverage and health across every database. Each project owns its policy, schedules and files — open the
+              project to change them.
+            </p>
           </div>
           <div className={styles.actions}>
             <ZestButton onClick={load} zest={{ buttonStyle: 'outline', semanticType: 'refresh' }}>
               {loading ? 'Loading.' : 'Refresh'}
             </ZestButton>
-            <ZestButton
-              onClick={() => setScheduleOpen(true)}
-              disabled={databaseProjects.length === 0}
-              zest={{ semanticType: 'add', visualOptions: { variant: 'standard' } }}
-            >
-              Schedule backup
-            </ZestButton>
           </div>
         </header>
 
-        {!loading && databaseProjects.length === 0 && (
-          <p className={styles.hint}>Add a database to a project before scheduling backups.</p>
+        {!loading && coverage.length === 0 && (
+          <div className={styles.emptyState}>
+            <div className={styles.emptyTitle}>No database projects yet</div>
+            <p className={styles.emptyText}>
+              Add a database to a project, then open that project&apos;s Database tab to choose its backup policy and schedule.
+            </p>
+            <Link href="/projects" className={styles.emptyLink}>Go to Projects</Link>
+          </div>
         )}
 
         {storage?.insideDataDirectory && (
@@ -180,9 +156,9 @@ export default function BackupsPage() {
           <div className={styles.inflightBanner}>
             <span className={styles.statusDot + ' ' + styles.statusPending} />
             <div>
-              <div className={styles.inflightLabel}>Backup In Progress</div>
+              <div className={styles.inflightLabel}>Backup in progress</div>
               <div className={styles.inflightInfo}>
-                {inflight.projectName} - {inflight.databaseName} ({fmtMs(inflight.elapsedMs)})
+                {inflight.projectName} · {inflight.databaseName} ({fmtMs(inflight.elapsedMs)})
               </div>
             </div>
           </div>
@@ -190,12 +166,17 @@ export default function BackupsPage() {
 
         <div className={styles.cards}>
           <div className={styles.card}>
-            <div className={styles.cardLabel}>Schedules</div>
-            <div className={styles.cardValue}>{schedules.length}</div>
-            <div className={styles.cardSub}>active cron jobs</div>
+            <div className={styles.cardLabel}>Database projects</div>
+            <div className={styles.cardValue}>{coverage.length}</div>
+            <div className={styles.cardSub}>{unprotected === 0 ? 'all have a plan' : `${unprotected} unprotected`}</div>
           </div>
           <div className={styles.card}>
-            <div className={styles.cardLabel}>Success Rate</div>
+            <div className={styles.cardLabel}>Scheduled</div>
+            <div className={styles.cardValue}>{scheduled}</div>
+            <div className={styles.cardSub}>of {coverage.length} projects</div>
+          </div>
+          <div className={styles.card}>
+            <div className={styles.cardLabel}>Success rate</div>
             <div className={styles.cardValue}>{summary?.successRate ?? 100}%</div>
             <div className={styles.cardSub}>{summary?.successfulRuns ?? 0} ok / {summary?.totalRuns ?? 0} total</div>
           </div>
@@ -205,79 +186,80 @@ export default function BackupsPage() {
             <div className={styles.cardSub}>last 30 days</div>
           </div>
           <div className={styles.card}>
-            <div className={styles.cardLabel}>Overflow</div>
-            <div className={styles.cardValue}>{overflow.length}</div>
-            <div className={styles.cardSub}>items awaiting replay</div>
-          </div>
-          <div className={styles.card}>
             <div className={styles.cardLabel}>Storage</div>
             <div className={styles.cardValue}>{storage ? fmtBytes(storage.usedBytes) : '—'}</div>
             <div className={styles.cardSub}>
-              {storage
-                ? `${storage.count} files · ${fmtBytes(storage.availableBytes)} free`
-                : 'not available'}
+              {storage ? `${storage.count} files · ${fmtBytes(storage.availableBytes)} free` : 'not available'}
             </div>
           </div>
         </div>
 
-        <div className={styles.section}>
-          <div className={styles.sectionTitle}>Projects</div>
-          {databaseProjects.length === 0 ? (
-            <div className={styles.empty}>No projects with a database yet.</div>
-          ) : (
-            <div className={styles.coverageList}>
-              {databaseProjects.map(project => {
-                const schedule = projectSchedule(schedules, project);
-                const open = expanded[project.id] ?? false;
+        {coverage.length > 0 && (
+          <div className={styles.section}>
+            <div className={styles.sectionHead}>
+              <div>
+                <div className={styles.sectionTitle}>Project coverage</div>
+                <p className={styles.sectionSub}>Open a project to manage its backups where they belong.</p>
+              </div>
+            </div>
+            <div className={styles.coverageGrid}>
+              {coverage.map(project => {
+                const state = coverageState(project);
                 return (
-                  <div key={project.id} className={styles.coverageRow}>
-                    <div className={styles.coverageMain}>
-                      <button
-                        type="button"
-                        className={styles.chevron}
-                        aria-expanded={open}
-                        aria-controls={`backups-${project.id}`}
-                        aria-label={`${open ? 'Collapse' : 'Expand'} backups for ${project.name}`}
-                        onClick={() => setExpanded(prev => ({ ...prev, [project.id]: !open }))}
-                      >
-                        {open ? '▾' : '▸'}
-                      </button>
+                  <article key={project.projectId} className={styles.coverageCard}>
+                    <div className={styles.coverageTop}>
                       <div className={styles.coverageNames}>
-                        <span className={styles.coverageName}>{project.name}</span>
-                        <span className={styles.coverageDb}>{project.database?.databaseName}</span>
+                        <span className={styles.coverageName}>{project.projectName}</span>
+                        <span className={styles.coverageDb}>{project.databaseName}</span>
                       </div>
-                      <span className={styles.coverageMeta}>
-                        {schedule ? schedule.scheduleDescription : 'No schedule'}
-                      </span>
-                      <span className={styles.coverageMeta}>
-                        Keep {project.database?.backupRetainCount ?? 10}
-                        {(project.database?.backupRetainDays ?? 0) > 0
-                          ? ` · ${project.database?.backupRetainDays}d max`
-                          : ''}
-                      </span>
-                      <ZestButton
-                        onClick={() => backupNow(project)}
-                        zest={{ buttonStyle: 'outline', semanticType: 'submit', visualOptions: { size: 'sm' } }}
-                      >
-                        Backup now
-                      </ZestButton>
+                      <span className={`${styles.coverageBadge} ${state.tone}`}>{state.label}</span>
                     </div>
-                    {open && (
-                      <div className={styles.expanded} id={`backups-${project.id}`}>
-                        <BackupPolicyEditor project={project} onSaved={load} />
-                        <BackupFiles
-                          key={`${project.id}-${revision}-${project.database?.backupRetainCount}-${project.database?.backupRetainDays}`}
-                          projectId={project.id}
-                          onChanged={() => { setRevision(r => r + 1); load(); }}
-                        />
+
+                    <div className={styles.coverageFacts}>
+                      <div className={styles.fact}>
+                        <span className={styles.factLabel}>Last backup</span>
+                        <span className={styles.factValue}>
+                          {project.lastBackupAt ? formatRelative(project.lastBackupAt) : 'Never'}
+                        </span>
+                        {project.lastBackupAt && (
+                          <span className={styles.factHint}>{formatDateTime(project.lastBackupAt)}</span>
+                        )}
                       </div>
-                    )}
-                  </div>
+                      <div className={styles.fact}>
+                        <span className={styles.factLabel}>Stored</span>
+                        <span className={styles.factValue}>{project.backupCount} files</span>
+                        <span className={styles.factHint}>{fmtBytes(project.storedBytes)} on disk</span>
+                      </div>
+                      <div className={styles.fact}>
+                        <span className={styles.factLabel}>Schedule</span>
+                        <span className={styles.factValue}>{project.cron || 'Not scheduled'}</span>
+                        <span className={styles.factHint}>
+                          {project.cron
+                            ? `${(project.timeZone || 'Africa/Nairobi').replace(/_/g, ' ')}${project.nextFireAt ? ` · next ${formatDateTime(project.nextFireAt)}` : ''}`
+                            : 'Set one in the project'}
+                        </span>
+                      </div>
+                      <div className={styles.fact}>
+                        <span className={styles.factLabel}>Retention</span>
+                        <span className={styles.factValue}>Keep {project.keepCount}</span>
+                        <span className={styles.factHint}>
+                          {project.keepDays > 0 ? `and at most ${project.keepDays} days` : 'count only'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className={styles.coverageActions}>
+                      <Link href={projectBackupsHref(project.projectId)} className={styles.manageLink}>
+                        Open backups
+                        <span aria-hidden="true"> →</span>
+                      </Link>
+                    </div>
+                  </article>
                 );
               })}
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         <div className={styles.section}>
           <RecoveryKeyPanel />
@@ -290,71 +272,12 @@ export default function BackupsPage() {
           </div>
         </div>
 
-        <div className={styles.section}>
-          <div className={styles.sectionTitle}>Schedules</div>          {schedules.length === 0 ? (
-            <div className={styles.emptyState}>
-              <div className={styles.emptyTitle}>No backup schedules configured.</div>
-              <p className={styles.emptyText}>Pick a project with a database and choose how often ShipRight should back it up.</p>
-              {databaseProjects.length > 0 && (
-                <ZestButton
-                  onClick={() => setScheduleOpen(true)}
-                  zest={{ semanticType: 'add', visualOptions: { variant: 'standard' } }}
-                >
-                  Schedule your first backup
-                </ZestButton>
-              )}
-            </div>
-          ) : (
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Project</th>
-                    <th>Schedule</th>
-                    <th>Last Fired</th>
-                    <th>Next Fire</th>
-                    <th>Fired</th>
-                    <th>Missed</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {schedules.map(s => (
-                    <tr key={s.scheduleId}>
-                      <td>{s.projectName ?? s.jobName.replace('Backup-', '')}</td>
-                      <td style={{ color: '#A8B8CC', fontSize: 12 }}>
-                        {s.cron ? `${s.cron} · ${(s.timeZone ?? '').replace(/_/g, ' ')}` : s.scheduleDescription}
-                      </td>
-                      <td style={{ color: '#637389', fontSize: 12 }}>{s.lastFiredAt ? ago(s.lastFiredAt) : '-'}</td>
-                      <td style={{ fontSize: 12 }}>{s.nextFireAt ? formatDateTime(s.nextFireAt) : '-'}</td>
-                      <td style={{ color: '#A8B8CC' }}>{s.totalFired}</td>
-                      <td style={{ color: s.totalMissed > 0 ? '#F44336' : '#637389' }}>{s.totalMissed}</td>
-                      <td>
-                        <div className={styles.scheduleActions}>
-                          <ZestButton onClick={() => setEditingSchedule(s)}
-                            zest={{ buttonStyle: 'outline', semanticType: 'edit', visualOptions: { size: 'sm' } }}>
-                            Edit
-                          </ZestButton>
-                          <ZestButton onClick={() => deleteSchedule(s.scheduleId)}
-                            zest={{ buttonStyle: 'outline', visualOptions: { size: 'sm' } }}>
-                            Remove
-                          </ZestButton>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
         {overflow.length > 0 && (
           <div className={styles.section}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <div className={styles.sectionTitle}>Overflow (Failed Backups)</div>
+            <div className={styles.sectionHeadRow}>
+              <div className={styles.sectionTitle}>Overflow (failed backups)</div>
               <ZestButton onClick={replayOverflow} zest={{ visualOptions: { variant: 'standard', size: 'sm' } }}>
-                Replay All
+                Replay all
               </ZestButton>
             </div>
             <div className={styles.tableWrap}>
@@ -362,14 +285,16 @@ export default function BackupsPage() {
                 <thead>
                   <tr>
                     <th>Project</th>
-                    <th>Failed At</th>
+                    <th>Failed at</th>
                     <th>Error</th>
                   </tr>
                 </thead>
                 <tbody>
                   {overflow.map((r, i) => (
                     <tr key={i}>
-                      <td>{r.projectName}</td>
+                      <td>
+                        <Link href={projectBackupsHref(r.projectId)} className={styles.rowLink}>{r.projectName}</Link>
+                      </td>
                       <td style={{ color: '#637389', fontSize: 12 }}>{ago(r.failedAt)}</td>
                       <td style={{ color: '#F44336', fontSize: 12, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.errorMessage}</td>
                     </tr>
@@ -381,7 +306,7 @@ export default function BackupsPage() {
         )}
 
         <div className={styles.section}>
-          <div className={styles.sectionTitle}>History</div>
+          <div className={styles.sectionTitle}>Recent activity</div>
           <div className={styles.filters}>
             <div className={styles.filterGroup}>
               <span className={styles.filterLabel}>Status</span>
@@ -412,7 +337,9 @@ export default function BackupsPage() {
                 <tbody>
                   {filteredHistory.map(r => (
                     <tr key={r.id}>
-                      <td>{r.projectName}</td>
+                      <td>
+                        <Link href={projectBackupsHref(r.projectId)} className={styles.rowLink}>{r.projectName}</Link>
+                      </td>
                       <td style={{ color: '#A8B8CC', fontSize: 12 }}>{r.databaseName}</td>
                       <td>
                         <span className={styles.statusDot + ' ' + (r.status === 'completed' ? styles.statusOk : styles.statusFail)} />
@@ -434,28 +361,6 @@ export default function BackupsPage() {
             </div>
           )}
         </div>
-
-        {scheduleOpen && (
-          <BackupScheduleDialog
-            projects={projects}
-            onClose={() => setScheduleOpen(false)}
-            onScheduled={load}
-          />
-        )}
-
-        {editingSchedule && (
-          <BackupScheduleDialog
-            projects={projects}
-            initial={{
-              scheduleId: editingSchedule.scheduleId,
-              projectId: editingSchedule.projectId ?? projects.find((p) => p.name === editingSchedule.projectName)?.id,
-              cron: editingSchedule.cron,
-              timeZone: editingSchedule.timeZone,
-            }}
-            onClose={() => setEditingSchedule(null)}
-            onScheduled={load}
-          />
-        )}
       </AppShell>
     </>
   );

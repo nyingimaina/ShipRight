@@ -55,7 +55,7 @@
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
   padding: 12px 16px;
-  font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+  font-family: var(--font-mono), ui-monospace, Menlo, Consolas, monospace;
   font-size: 12px;
   line-height: 1.7;
   min-height: 160px;

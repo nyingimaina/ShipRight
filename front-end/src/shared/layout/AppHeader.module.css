@@ -10,10 +10,12 @@
   align-items: center;
   justify-content: flex-end;
   gap: 16px;
-  min-height: 64px;
+  /* The library hamburger is 30×22 with 12px padding and a 1px border, fixed 14px from the top: exactly 48px tall,
+     so its centre is 38px. The bar is 76px and centres its content on that same line. */
+  height: calc(76px + env(safe-area-inset-top, 0px));
+  min-height: calc(76px + env(safe-area-inset-top, 0px));
   box-sizing: border-box;
-  padding: 10px 20px;
-  padding-left: 76px;
+  padding: env(safe-area-inset-top, 0px) 20px 0 76px;
   border-bottom: 1px solid var(--border-subtle);
   background: color-mix(in srgb, var(--bg-elevated) 88%, transparent);
   backdrop-filter: blur(16px) saturate(1.2);
@@ -95,9 +97,9 @@
 @media (max-width: 700px) {
   .bar {
     gap: 6px;
-    min-height: 56px;
-    padding: 7px 10px 7px 64px;
-    padding-top: calc(7px + env(safe-area-inset-top, 0px));
+    height: calc(76px + env(safe-area-inset-top, 0px));
+    min-height: calc(76px + env(safe-area-inset-top, 0px));
+    padding: env(safe-area-inset-top, 0px) 10px 0 64px;
     font-size: 10.5px;
   }
 
@@ -152,7 +154,7 @@
 
 @media (max-width: 380px) {
   .bar {
-    padding-left: 58px;
+    padding-left: 76px;
     gap: 4px;
   }
 

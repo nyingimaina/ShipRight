@@ -167,7 +167,7 @@ export default function CompanySwitcher() {
             </button>
           </div>
         </div>,
-        document.body,
+        document.getElementById('app-root') ?? document.body,
       )}
     </>
   );

@@ -65,7 +65,9 @@ describe('AppHeader', () => {
     expect(bar).toMatch(/left:\s*0/);
     expect(bar).toMatch(/right:\s*0/);
     expect(bar).toMatch(/z-index:\s*900/);
-    expect(bar).toMatch(/padding-left:\s*76px/);
+    // 76px puts the bar's centre on the hamburger's centre (14px offset + 48px height = 38px).
+    expect(bar).toMatch(/height:\s*calc\(76px/);
+    expect(bar).toMatch(/padding:\s*env\(safe-area-inset-top, 0px\) 20px 0 76px/);
 
     render(<AppHeader />);
     expect(screen.getByRole('banner')).toHaveClass(styles.bar);

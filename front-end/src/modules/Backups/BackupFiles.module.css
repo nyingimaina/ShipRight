@@ -55,7 +55,7 @@
 }
 
 .name {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono), monospace;
   font-size: 12px;
   color: var(--accent);
   min-width: 0;

@@ -166,7 +166,7 @@ export default function SshKeySection({ projectId, apiBase: apiBaseProp, allowSa
                 style={{
                   width: '100%', marginTop: 8, background: '#0D1623', color: '#A8B8CC',
                   border: '1px solid rgba(255,255,255,0.08)', borderRadius: 6, padding: '8px',
-                  fontFamily: "'JetBrains Mono', monospace", fontSize: 12,
+                  fontFamily: "var(--font-mono), monospace", fontSize: 12,
                   boxSizing: 'border-box', resize: 'none',
                 }}
               />

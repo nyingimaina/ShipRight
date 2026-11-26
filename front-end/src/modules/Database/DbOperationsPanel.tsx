@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import ZestButton from 'jattac.libs.web.zest-button';
-import ZestTabs, { ZestTabItem } from 'jattac.libs.web.zest-tabs';
+import AppTabs, { ZestTabItem } from '@/shared/components/AppTabs';
 import BackupFiles from '@/modules/Backups/BackupFiles';
 import LogViewer from '@/modules/BuildWizard/LogViewer';
 import { api, sseUrl } from '@/shared/ApiService';
@@ -109,7 +109,7 @@ export default function DbOperationsPanel({ apiBase, dbConfig, projectId }: Prop
 
   return (
     <div>
-      <ZestTabs
+      <AppTabs
         id="db-ops"
         items={tabItems}
         activeValue={activeTab}

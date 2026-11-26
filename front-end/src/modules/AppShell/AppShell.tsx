@@ -1,5 +1,5 @@
 import { useRouter } from "next/router";
-import SidekickMenu from "jattac.libs.web.zest-sidekick-menu";
+import SidekickMenu, { type ISidekickMenuItem } from "jattac.libs.web.zest-sidekick-menu";
 import {
   RiStackLine,
   RiTimeLine,
@@ -24,6 +24,7 @@ import styles from "./Styles/AppShell.module.css";
 import { useServerVersion, useServerMode } from "@/shared/serverInfo";
 import { useInRootShell } from "@/shared/layout/ShellContext";
 import CompanySwitcher from "./CompanySwitcher";
+import InstallBanner from "@/shared/pwa/InstallBanner";
 
 interface Props {
   children: React.ReactNode;
@@ -53,128 +54,113 @@ export default function AppShell({ children }: Props) {
     router.push("/login");
   };
 
-  const menuItems = [
-    {
-      id: "projects",
-      label: "Projects",
-      icon: <RiStackLine size={18} />,
-      searchTerms: "projects",
-      description: "Your apps and their environments",
-      onClick: () => router.push("/projects"),
-    },
-    {
-      id: "team",
-      label: "Team",
-      icon: <RiTeamLine size={18} />,
-      searchTerms: "team people teammates",
-      onClick: () => router.push("/team"),
-    },
+  // The menu is a hierarchy, not a list: the two things a person works with first, then the tools grouped by what
+  // they do. Groups collapse, so the pane never becomes a wall of unrelated destinations.
+  const go = (path: string) => () => router.push(path);
+
+  const menuItems: ISidekickMenuItem[] = [
     {
       id: "servers",
       label: "Servers",
       icon: <RiServerLine size={18} />,
-      searchTerms: "servers hosts ssh",
-      description: "Hosts ShipRight can deploy to",
-      onClick: () => router.push("/servers"),
+      searchTerms: "servers hosts ssh machines",
+      description: "The machines ShipRight owns",
+      onClick: go("/servers"),
     },
     {
-      id: "tailnets",
-      label: "Tailscale",
-      icon: <RiLinksLine size={18} />,
-      searchTerms: "tailscale tailnet vpn private network",
-      description: "Optional private networks",
-      onClick: () => router.push("/tailnets"),
+      id: "projects",
+      label: "Projects",
+      icon: <RiStackLine size={18} />,
+      searchTerms: "projects apps environments",
+      description: "What runs on your servers",
+      onClick: go("/projects"),
     },
     {
       id: "resources",
       label: "Resources",
       icon: <RiBox3Line size={18} />,
-      searchTerms: "resources shared reusable registry script",
+      searchTerms: "resources shared registry script credential keys",
       description: "Shared keys, registries and scripts",
-      onClick: () => router.push("/resources"),
+      onClick: go("/resources"),
     },
     {
-      id: "pipelines",
-      label: "Pipelines",
+      id: "ship",
+      label: "Ship",
       icon: <RiListCheck size={18} />,
-      searchTerms: "pipelines build deploy scripts",
-      description: "Reusable build and deploy flows",
-      onClick: () => router.push("/pipelines"),
+      searchTerms: "ship build deploy pipelines backups history watch",
+      description: "Build, back up and follow deploys",
+      children: [
+        { id: "pipelines", label: "Pipelines", icon: <RiListCheck size={17} />, searchTerms: "pipelines build deploy scripts", onClick: go("/pipelines") },
+        { id: "backups", label: "Backups", icon: <RiCalendarCheckLine size={17} />, searchTerms: "backups schedules databases", onClick: go("/backups") },
+        { id: "watch-branch", label: "Watch Branch", icon: <RiGitBranchLine size={17} />, searchTerms: "watch branch auto build ci", onClick: go("/watch-branch") },
+        { id: "history", label: "History", icon: <RiTimeLine size={17} />, searchTerms: "history builds deploys", onClick: go("/history") },
+      ],
     },
     {
-      id: "terminal",
-      label: "Terminal",
-      icon: <RiTerminalBoxLine size={18} />,
-      searchTerms: "terminal ssh",
-      onClick: () => router.push("/terminal"),
+      id: "operate",
+      label: "Operate",
+      icon: <RiHeartPulseLine size={18} />,
+      searchTerms: "operate monitoring terminal databases health",
+      description: "Look inside and fix what is running",
+      children: [
+        { id: "monitoring", label: "Monitoring", icon: <RiHeartPulseLine size={17} />, searchTerms: "monitoring health cpu ram disk", onClick: go("/monitoring") },
+        { id: "terminal", label: "Terminal", icon: <RiTerminalBoxLine size={17} />, searchTerms: "terminal ssh shell", onClick: go("/terminal") },
+        { id: "databases", label: "Databases", icon: <RiDatabase2Line size={17} />, searchTerms: "databases db sql query", onClick: go("/databases") },
+      ],
     },
     {
-      id: "databases",
-      label: "Databases",
-      icon: <RiDatabase2Line size={18} />,
-      searchTerms: "databases db sql",
-      onClick: () => router.push("/databases"),
+      id: "workspace",
+      label: "Workspace",
+      icon: <RiBox3Line size={18} />,
+      searchTerms: "workspace tailscale team people",
+      description: "Private networks and the people using them",
+      children: [
+        { id: "tailnets", label: "Tailscale", icon: <RiLinksLine size={17} />, searchTerms: "tailscale tailnet vpn private network", onClick: go("/tailnets") },
+        { id: "team", label: "Team", icon: <RiTeamLine size={17} />, searchTerms: "team people teammates roles", onClick: go("/team") },
+      ],
     },
     {
-      id: "history",
-      label: "History",
-      icon: <RiTimeLine size={18} />,
-      searchTerms: "history builds",
-      onClick: () => router.push("/history"),
-    },
-    {
-      id: "backups",
-      label: "Backups",
-      icon: <RiCalendarCheckLine size={18} />,
-      searchTerms: "backups scheduler",
-      description: "Scheduled database backups",
-      onClick: () => router.push("/backups"),
+      id: "settings",
+      label: "Settings",
+      icon: <RiSettings3Line size={18} />,
+      searchTerms: "settings preferences time zone companies appearance account install",
+      description: "Your time zone, look, companies and app",
+      onClick: go("/settings"),
     },
     {
       id: "utilities",
       label: "Utilities",
       icon: <RiHardDriveLine size={18} />,
       searchTerms: "utilities disk space clean prune docker free storage",
-      onClick: () => router.push("/utilities"),
-    },
-    {
-      id: "watch-branch",
-      label: "Watch Branch",
-      icon: <RiGitBranchLine size={18} />,
-      searchTerms: "watch branch auto build ci",
-      onClick: () => router.push("/watch-branch"),
-    },
-    {
-      id: "monitoring",
-      label: "Monitoring",
-      icon: <RiHeartPulseLine size={18} />,
-      searchTerms: "monitoring health metrics cpu ram disk",
-      onClick: () => router.push("/monitoring"),
-    },
-    {
-      id: "settings",
-      label: "Settings",
-      icon: <RiSettings3Line size={18} />,
-      searchTerms: "settings preferences time zone companies appearance account",
-      description: "Your time zone, look and companies",
-      onClick: () => router.push("/settings"),
+      onClick: go("/utilities"),
     },
   ];
+
+  const allowed = (id: string) => {
+    if (!isAdmin && (id === "team" || id === "tailnets")) return false;
+    // The Utilities page manages the Windows build machine (WSL, diskpart); it has no meaning in cloud mode.
+    if (mode === "cloud" && id === "utilities") return false;
+    // Settings holds a person's sign-in preferences; desktop mode has no signed-in person.
+    if (mode === "desktop" && id === "settings") return false;
+    return true;
+  };
+
+  const visibleItems = menuItems.flatMap((item): ISidekickMenuItem[] => {
+    if (!allowed(item.id)) return [];
+    if (item.children) {
+      const children = item.children.filter((child) => allowed(child.id));
+      return children.length > 0 ? [{ ...item, children }] : [];
+    }
+    return [item];
+  });
 
   return (
     <>
       <SidekickMenu
-        items={menuItems.filter((item) => {
-          if (!isAdmin && (item.id === "team" || item.id === "tailnets")) return false;
-          // The Utilities page manages the Windows build machine (WSL, diskpart); it has no meaning in cloud mode.
-          if (mode === "cloud" && item.id === "utilities") return false;
-          // Settings holds a person's sign-in preferences; desktop mode has no signed-in person.
-          if (mode === "desktop" && item.id === "settings") return false;
-          return true;
-        })}
+        items={visibleItems}
+        navigationStyle="accordion"
         searchEnabled={false}
-        favouritesEnabled
-        favouritesOptions={{ maxItems: 8, minToShowTab: 3, windowDays: 30 }}
+        favouritesEnabled={false}
         side="left"
         swipeEnabled
         railCollapsible
@@ -208,6 +194,7 @@ export default function AppShell({ children }: Props) {
       <main className={styles.content}>
         <div className={styles.page}>{children}</div>
       </main>
+      <InstallBanner />
     </>
   );
 }

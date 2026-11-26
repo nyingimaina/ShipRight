@@ -55,7 +55,7 @@
 .itemBody { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .itemName { font-size: 13px; font-weight: 600; }
 .path {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono), monospace;
   font-size: 11px;
   color: var(--text-muted);
   word-break: break-all;
@@ -71,7 +71,7 @@
   padding: 10px 12px;
   background: var(--bg-elevated);
   border-radius: 6px;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono), monospace;
   font-size: 11px;
   overflow-x: auto;
   white-space: pre;

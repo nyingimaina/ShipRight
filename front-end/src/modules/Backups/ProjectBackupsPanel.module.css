@@ -122,7 +122,7 @@
 }
 
 .cron {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono), monospace;
   font-size: 0.8rem;
   font-weight: 650;
   color: var(--text-primary);

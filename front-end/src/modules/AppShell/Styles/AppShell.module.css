@@ -4,7 +4,7 @@
     radial-gradient(circle at 12% -10%, rgba(var(--accent-rgb), 0.10), transparent 34rem),
     radial-gradient(circle at 92% 4%, rgba(var(--info-rgb), 0.08), transparent 30rem),
     var(--bg-base);
-  padding: calc(72px + env(safe-area-inset-top, 0px)) clamp(14px, 4vw, 40px) calc(32px + env(safe-area-inset-bottom, 0px));
+  padding: calc(76px + env(safe-area-inset-top, 0px)) clamp(14px, 4vw, 40px) calc(32px + env(safe-area-inset-bottom, 0px));
   max-width: 1320px;
   margin: 0 auto;
   color: var(--text-primary);
@@ -14,8 +14,14 @@
   min-width: 0;
 }
 
+
+
 .header {
-  padding: 16px 12px;
+  min-height: 62px;
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
   border-bottom: 1px solid var(--border-subtle);
 }
 
