@@ -85,4 +85,90 @@ public class SerializedDatabaseHelperTests
         Assert.AreEqual(1, inner.MaxConcurrentOps, "Two commands executed concurrently on the shared connection.");
         Assert.AreEqual(0, inner.NestingViolations, "Two transactions were active at the same time.");
     }
+
+    private sealed class ScriptedHelper : IDatabaseHelper<Guid>
+    {
+        public Func<Task<int>> Execute { get; init; } = () => Task.FromResult(1);
+        public Action? Begin { get; init; }
+        public Action? Commit { get; init; }
+        public bool Disposed { get; private set; }
+
+        public void BeginTransaction() => Begin?.Invoke();
+        public void CommitTransaction() => Commit?.Invoke();
+        public void RollBackTransaction() { }
+
+        public Task<int> ExecuteAsync(string sql, object param = null) => Execute();
+        public Task<T> ExecuteScalarAsync<T>(string sql, object param = null) => Task.FromResult(default(T))!;
+        public Task<ImmutableList<TModel>> GetManyAsync<TModel>(string query, Dictionary<string, object> parameters = null)
+            => Task.FromResult(ImmutableList<TModel>.Empty);
+        public Task<TModel> GetSingleAsync<TModel>(string query, Dictionary<string, object> parameters = null)
+            where TModel : ModelBase<Guid> => Task.FromResult<TModel>(null)!;
+        public Task SaveAsync<TModel>(TModel model, bool isUpdate) where TModel : ModelBase<Guid> => Task.CompletedTask;
+        public void Dispose() => Disposed = true;
+    }
+
+    private static InvalidOperationException ConnectionLost() => new("The connection is not open.");
+
+    [TestMethod]
+    public async Task ConnectionFailure_OnQuery_ReconnectsAndRetriesOnce()
+    {
+        var created = 0;
+        var first = new ScriptedHelper { Execute = () => throw ConnectionLost() };
+        var second = new ScriptedHelper();
+        var helper = new SerializedDatabaseHelper<Guid>(() =>
+            ++created == 1 ? first : second);
+
+        var result = await helper.ExecuteAsync("select 1");
+
+        Assert.AreEqual(1, result);
+        Assert.AreEqual(2, created, "a fresh integrator is created after the connection is lost");
+        Assert.IsTrue(first.Disposed);
+    }
+
+    [TestMethod]
+    public void ConnectionFailure_OnBegin_ReconnectsAndStartsTheTransaction()
+    {
+        var created = 0;
+        var first = new ScriptedHelper { Begin = () => throw ConnectionLost() };
+        var second = new ScriptedHelper();
+        var helper = new SerializedDatabaseHelper<Guid>(() =>
+            ++created == 1 ? first : second);
+
+        helper.BeginTransaction();
+        helper.CommitTransaction();
+
+        Assert.AreEqual(2, created);
+    }
+
+    [TestMethod]
+    public async Task OtherFailures_AreNotRetried()
+    {
+        var created = 0;
+        var first = new ScriptedHelper { Execute = () => throw new InvalidOperationException("duplicate key") };
+        var helper = new SerializedDatabaseHelper<Guid>(() =>
+            ++created == 1 ? first : new ScriptedHelper());
+
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => helper.ExecuteAsync("insert ..."));
+
+        Assert.AreEqual(1, created, "a bad query must not be retried on a new connection");
+    }
+
+    [TestMethod]
+    public async Task CommitConnectionFailure_DoesNotOverReleaseTheGate()
+    {
+        var created = 0;
+        var first = new ScriptedHelper { Commit = () => throw ConnectionLost() };
+        var second = new ScriptedHelper();
+        var helper = new SerializedDatabaseHelper<Guid>(() =>
+            ++created == 1 ? first : second);
+
+        helper.BeginTransaction();
+        Assert.ThrowsException<InvalidOperationException>(() => helper.CommitTransaction());
+
+        // The middleware calls rollback after a failed commit; that must be a no-op, not a SemaphoreFullException.
+        helper.RollBackTransaction();
+
+        Assert.AreEqual(1, await helper.ExecuteAsync("select 1"));
+        Assert.AreEqual(2, created);
+    }
 }

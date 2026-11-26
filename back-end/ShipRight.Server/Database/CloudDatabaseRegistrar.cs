@@ -19,9 +19,10 @@ public static class CloudDatabaseRegistrar
         services.Configure<DatabaseConnectionSettings>(config.GetSection("DatabaseConnectionSettings"));
         services.Configure<DatabaseSettings>(config.GetSection("DatabaseConnectionSettings"));
         services.AddSingleton<IConnectionProvider, DatabaseConnectionProvider>();
-        services.AddSingleton<DatabaseHelper<Guid>>();
         services.AddSingleton<IDatabaseHelper<Guid>>(sp =>
-            new SerializedDatabaseHelper<Guid>(sp.GetRequiredService<DatabaseHelper<Guid>>()));
+            // A fresh integrator per reconnect: the library holds one connection forever and never reopens it.
+            new SerializedDatabaseHelper<Guid>(() =>
+                ActivatorUtilities.CreateInstance<DatabaseHelper<Guid>>(sp)));
         services.AddSingleton<MigrationRunner>();
     }
 }
