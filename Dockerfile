@@ -8,11 +8,12 @@ RUN npm run build
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS backend
 WORKDIR /build
-# The repo-level version props make /api/health and the assembly agree with the web version.
-COPY Directory.Build.props ./Directory.Build.props
 COPY back-end/ShipRight.Server/ShipRight.Server.csproj ./ShipRight.Server/
 COPY back-end/ShipRight.RuntimeConfig/ShipRight.RuntimeConfig.csproj ./ShipRight.RuntimeConfig/
 RUN dotnet restore ShipRight.Server/ShipRight.Server.csproj
+# Copied after restore so a version bump never invalidates the package cache. It makes /api/health and the
+# assembly agree with the web version.
+COPY Directory.Build.props ./Directory.Build.props
 COPY back-end/ShipRight.Server/ ./ShipRight.Server/
 COPY back-end/ShipRight.RuntimeConfig/ ./ShipRight.RuntimeConfig/
 COPY --from=frontend /build/frontend/out/ ./ShipRight.Server/wwwroot/
