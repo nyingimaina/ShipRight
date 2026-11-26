@@ -60,10 +60,17 @@ public class SerializedDatabaseHelper<TIdentifier> : IDatabaseHelper<TIdentifier
         {
             _inner.CommitTransaction();
         }
-        catch (Exception ex) when (IsConnectionFailure(ex))
+        catch (Exception ex)
         {
-            // The transaction died with the connection; a fresh connection cannot commit it.
-            ReplaceInner(ex);
+            // A failed commit must not leave the library's transaction open, or every later begin would be refused.
+            try { _inner.RollBackTransaction(); }
+            catch (Exception rollback)
+            {
+                if (IsConnectionFailure(rollback)) ReplaceInner(rollback);
+                else Log.Warning(rollback, "Database rollback after a failed commit also failed");
+            }
+
+            if (IsConnectionFailure(ex)) ReplaceInner(ex);
             throw;
         }
         finally

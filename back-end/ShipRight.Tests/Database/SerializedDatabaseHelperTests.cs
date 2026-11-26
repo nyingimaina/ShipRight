@@ -91,11 +91,13 @@ public class SerializedDatabaseHelperTests
         public Func<Task<int>> Execute { get; init; } = () => Task.FromResult(1);
         public Action? Begin { get; init; }
         public Action? Commit { get; init; }
+        public Action? Rollback { get; init; }
         public bool Disposed { get; private set; }
+        public int RollbackCount { get; private set; }
 
         public void BeginTransaction() => Begin?.Invoke();
         public void CommitTransaction() => Commit?.Invoke();
-        public void RollBackTransaction() { }
+        public void RollBackTransaction() { Rollback?.Invoke(); RollbackCount++; }
 
         public Task<int> ExecuteAsync(string sql, object param = null) => Execute();
         public Task<T> ExecuteScalarAsync<T>(string sql, object param = null) => Task.FromResult(default(T))!;
@@ -170,5 +172,21 @@ public class SerializedDatabaseHelperTests
 
         Assert.AreEqual(1, await helper.ExecuteAsync("select 1"));
         Assert.AreEqual(2, created);
+    }
+
+    [TestMethod]
+    public async Task CommitFailure_RollsBackSoTheNextRequestCanUseTheConnection()
+    {
+        var inner = new ScriptedHelper
+        {
+            Commit = () => throw new InvalidOperationException("commit failed"),
+        };
+        var helper = new SerializedDatabaseHelper<Guid>(inner);
+
+        helper.BeginTransaction();
+        Assert.ThrowsException<InvalidOperationException>(() => helper.CommitTransaction());
+
+        Assert.AreEqual(1, inner.RollbackCount, "the open transaction is cleared after a failed commit");
+        Assert.AreEqual(1, await helper.ExecuteAsync("select 1"));
     }
 }
