@@ -54,7 +54,8 @@
     0 1px 3px rgba(0, 0, 0, 0.22),
     0 6px 18px -10px rgba(0, 0, 0, 0.45),
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  z-index: 0;
+  /* The pill is a positioned child; at z-index 0 it would paint above the tab's own text. */
+  z-index: -1;
 }
 
 .arrowLeft,
