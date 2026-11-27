@@ -24,10 +24,54 @@ const plan = (over: Record<string, unknown> = {}) => ({
   warnings: [],
   deployBlockers: [],
   deployReady: true,
-  steps: [{ id: 'save-server', title: 'Save the server', detail: 'ShipRight records where the app will run.' }],
+  steps: [],
   ok: true,
   ...over,
 });
+
+const inspection = {
+  url: 'https://github.com/acme/shop',
+  provider: 'github',
+  owner: 'acme',
+  name: 'shop',
+  defaultBranch: 'main',
+  private: false,
+  repoId: 123,
+  branches: ['main', 'dev'],
+  composeFiles: ['deploy/docker-compose.yml'],
+  dockerfiles: ['Dockerfile'],
+  services: [{ name: 'api', image: 'acme/shop-api', dockerfile: 'Dockerfile', context: '.' }],
+  suggestedComposeFile: 'deploy/docker-compose.yml',
+  notes: [],
+};
+
+const applyResponse = {
+  plan: plan(),
+  result: {
+    ok: true,
+    projectId: 'shipright',
+    serverId: 'srv-1',
+    publicKey: 'ssh-ed25519 AAAA test',
+    problems: [],
+    nextSteps: ['Run a dry run to check the server without changing it.'],
+  },
+};
+
+const dryRun = {
+  ok: true,
+  problems: [],
+  warnings: [],
+  commands: [{ step: 'fetch', command: 'git fetch' }],
+};
+
+const next = () => fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+const toStep2 = (preset: 'self' | 'custom' = 'self') => {
+  if (preset === 'custom') {
+    fireEvent.change(screen.getByLabelText(/^deployment$/i), { target: { value: 'custom' } });
+  }
+  next();
+};
 
 const fillAddress = () => {
   fireEvent.change(screen.getByLabelText(/public address/i), { target: { value: 'staging.example.com' } });
@@ -43,12 +87,14 @@ describe('BootstrapDeployment', () => {
     expect(screen.getByText(/bootstrap runs in the desktop app/i)).toBeInTheDocument();
   });
 
-  it('previews the self preset and shows what still needs attention', async () => {
+  it('previews the self preset at the review step', async () => {
     mockApi.post.mockResolvedValue(plan({ ok: false, problems: ['Enter the server address.'] }) as never);
     render(<BootstrapDeployment cloud={false} />);
 
+    toStep2();
+    next();
     fillAddress();
-    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+    next();
 
     expect((await screen.findAllByText('Enter the server address.')).length).toBeGreaterThan(0);
     expect(mockApi.post).toHaveBeenCalledWith('/api/bootstrap/plan', expect.objectContaining({
@@ -60,22 +106,32 @@ describe('BootstrapDeployment', () => {
     }));
   });
 
-  it('will not write anything before a clean preview', () => {
+  it('will not write anything before a clean preview', async () => {
+    mockApi.post.mockResolvedValue(plan({ ok: false, problems: ['Enter the server address.'] }) as never);
     render(<BootstrapDeployment cloud={false} />);
 
-    expect(screen.getByRole('button', { name: 'Create deployment' })).toBeDisabled();
-    expect(screen.getAllByText(/preview first/i).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('button', { name: 'Create deployment' })).toBeNull();
+
+    toStep2();
+    next();
+    fillAddress();
+    next();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Create deployment' })).toBeDisabled());
+    expect(screen.getByText(/writes nothing until the preview is clean/i)).toBeInTheDocument();
   });
 
-  it('accepts a public address alone and shows what can be added later', async () => {
+  it('accepts a public address alone and shows what is deferred', async () => {
     mockApi.post.mockResolvedValue(plan({
       deployReady: false,
       deployBlockers: ['Add the user ShipRight signs in as.'],
     }) as never);
     render(<BootstrapDeployment cloud={false} />);
 
+    toStep2();
+    next();
     fireEvent.change(screen.getByLabelText(/public address/i), { target: { value: '203.0.113.10' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+    next();
 
     expect(await screen.findByText('Saved now, deploy later')).toBeInTheDocument();
     expect(screen.getByText('Add the user ShipRight signs in as.')).toBeInTheDocument();
@@ -87,46 +143,13 @@ describe('BootstrapDeployment', () => {
     }));
   });
 
-  it('writes another app from scratch, not just this product', async () => {
-    mockApi.post.mockResolvedValue(plan() as never);
-    render(<BootstrapDeployment cloud={false} />);
-
-    fireEvent.change(screen.getByLabelText(/what are you deploying/i), { target: { value: 'custom' } });
-    fireEvent.change(screen.getByLabelText(/public address/i), { target: { value: '203.0.113.10' } });
-    fireEvent.change(screen.getByLabelText(/project name/i), { target: { value: 'shop' } });
-    fireEvent.change(screen.getByLabelText(/^repository/i), { target: { value: 'git@github.com:acme/shop.git' } });
-    fireEvent.change(screen.getByLabelText('Service 1 image'), { target: { value: 'acme/shop-api' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
-
-    await waitFor(() => expect(mockApi.post).toHaveBeenCalledWith('/api/bootstrap/plan', expect.objectContaining({
-      preset: 'None',
-      projectName: 'shop',
-      repoUrl: 'git@github.com:acme/shop.git',
-      services: expect.arrayContaining([expect.objectContaining({ name: 'app', image: 'acme/shop-api' })]),
-    })));
-  });
-
-  it('reads a repository and fills the branch and compose file', async () => {
+  it('reads a repository, fills the source and carries its identity', async () => {
     mockApi.post
-      .mockResolvedValueOnce({
-        url: 'https://github.com/acme/shop',
-        provider: 'github',
-        owner: 'acme',
-        name: 'shop',
-        defaultBranch: 'main',
-        private: false,
-        repoId: 123,
-        branches: ['main', 'dev'],
-        composeFiles: ['deploy/docker-compose.yml'],
-        dockerfiles: ['Dockerfile'],
-        services: [{ name: 'api', image: 'acme/shop-api', dockerfile: 'Dockerfile', context: '.' }],
-        suggestedComposeFile: 'deploy/docker-compose.yml',
-        notes: [],
-      } as never)
+      .mockResolvedValueOnce(inspection as never)
       .mockResolvedValueOnce(plan() as never);
     render(<BootstrapDeployment cloud={false} />);
 
-    fireEvent.change(screen.getByLabelText(/what are you deploying/i), { target: { value: 'custom' } });
+    toStep2('custom');
     fireEvent.change(screen.getByLabelText(/^repository/i), { target: { value: 'https://github.com/acme/shop' } });
     fireEvent.click(screen.getByRole('button', { name: 'Check repository' }));
 
@@ -140,7 +163,9 @@ describe('BootstrapDeployment', () => {
     expect(mockApi.post).toHaveBeenCalledWith('/api/git/inspect', { url: 'https://github.com/acme/shop' });
 
     fireEvent.change(screen.getByLabelText(/path prefix/i), { target: { value: 'apps/shop' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+    next();
+    fireEvent.change(screen.getByLabelText(/public address/i), { target: { value: '203.0.113.10' } });
+    next();
 
     await waitFor(() => expect(mockApi.post).toHaveBeenLastCalledWith('/api/bootstrap/plan', expect.objectContaining({
       providerRepoId: '123',
@@ -151,36 +176,26 @@ describe('BootstrapDeployment', () => {
   it('fills the folder from the user and leaves it editable', () => {
     render(<BootstrapDeployment cloud={false} />);
 
+    toStep2();
+    next();
     fireEvent.change(screen.getByLabelText(/^user/i), { target: { value: 'deploy' } });
 
     expect(screen.getByLabelText(/folder on the server/i)).toHaveValue('/home/deploy/shipright');
   });
 
-  it('creates the deployment after a clean preview and shows the key and the next step', async () => {
+  it('creates the deployment after a clean preview and checks the server', async () => {
     mockApi.post
       .mockResolvedValueOnce(plan() as never)
-      .mockResolvedValueOnce({
-        plan: plan(),
-        result: {
-          ok: true,
-          projectId: 'shipright',
-          serverId: 'srv-1',
-          publicKey: 'ssh-ed25519 AAAA test',
-          problems: [],
-          nextSteps: ['Run a dry run to check the server without changing it.'],
-        },
-      } as never)
-      .mockResolvedValueOnce({
-        ok: true,
-        problems: [],
-        warnings: [],
-        commands: [{ step: 'fetch', command: 'git fetch' }],
-      } as never);
+      .mockResolvedValueOnce(applyResponse as never)
+      .mockResolvedValueOnce(dryRun as never);
     render(<BootstrapDeployment cloud={false} />);
 
+    toStep2();
+    next();
     fillAddress();
-    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
-    await screen.findByText('Ready to create');
+    next();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Create deployment' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Create deployment' }));
 
     expect(await screen.findByText('Deployment written')).toBeInTheDocument();
@@ -203,12 +218,15 @@ describe('BootstrapDeployment', () => {
       .mockRejectedValueOnce({ message: 'ShipRight could not write that deployment.' });
     render(<BootstrapDeployment cloud={false} />);
 
+    toStep2();
+    next();
     fillAddress();
-    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
-    await screen.findByText('Ready to create');
+    next();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Create deployment' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Create deployment' }));
 
     expect(await screen.findByText(/could not write that deployment/i)).toBeInTheDocument();
-    expect(screen.getByText(/preview again/i)).toBeInTheDocument();
+    expect(screen.getByText(/fix the field, then try again/i)).toBeInTheDocument();
   });
 });

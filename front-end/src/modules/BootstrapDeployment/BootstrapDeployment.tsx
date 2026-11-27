@@ -14,6 +14,7 @@ import {
 import styles from './BootstrapDeployment.module.css';
 
 type Preset = 'self' | 'custom';
+type Step = 1 | 2 | 3 | 4;
 
 interface ServiceRow {
   name: string;
@@ -39,19 +40,26 @@ const parseEnv = (text: string): Record<string, string> => {
   return env;
 };
 
+const STEPS: { id: Step; label: string }[] = [
+  { id: 1, label: 'What' },
+  { id: 2, label: 'Source' },
+  { id: 3, label: 'Server' },
+  { id: 4, label: 'Review' },
+];
+
 interface Props {
   /** Cloud installs do not map the bootstrap routes: they change a person's own machine and a server. */
   cloud: boolean;
 }
 
 /**
- * Writes a complete deployment from scratch: the server, the project and the build-on-server settings. The address
- * is the only thing required; the user, key, folder and domain can all be added later. It previews first and never
- * deploys.
+ * Writes a deployment in four short steps: what, source, server, review. The address is the only required target
+ * fact; everything else can be added later. It previews before writing and never deploys.
  */
 export default function BootstrapDeployment({ cloud }: Props) {
   const router = useRouter();
 
+  const [step, setStep] = useState<Step>(1);
   const [preset, setPreset] = useState<Preset>('self');
 
   const [host, setHost] = useState('');
@@ -68,21 +76,21 @@ export default function BootstrapDeployment({ cloud }: Props) {
   const [pathPrefix, setPathPrefix] = useState('');
   const [services, setServices] = useState<ServiceRow[]>([emptyService()]);
   const [envText, setEnvText] = useState('');
+
   const [gitInfo, setGitInfo] = useState<GitInspection | null>(null);
   const [gitBusy, setGitBusy] = useState(false);
   const [gitError, setGitError] = useState<string | null>(null);
-  const [dryRun, setDryRun] = useState<JitDryRun | null>(null);
-  const [dryBusy, setDryBusy] = useState(false);
 
-  const [advanced, setAdvanced] = useState(false);
   const [plan, setPlan] = useState<BootstrapPlan | null>(null);
   const [result, setResult] = useState<BootstrapApplyResult | null>(null);
   const [busy, setBusy] = useState<'preview' | 'apply' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [dryRun, setDryRun] = useState<JitDryRun | null>(null);
+  const [dryBusy, setDryBusy] = useState(false);
 
   const suggestedFolder = useMemo(
-    () => (username.trim() ? `/home/${username.trim()}/shipright` : ''),
-    [username],
+    () => (username.trim() ? `/home/${username.trim()}/${slug(projectName || 'shipright')}` : ''),
+    [username, projectName],
   );
 
   const clear = () => {
@@ -100,6 +108,20 @@ export default function BootstrapDeployment({ cloud }: Props) {
     setServices((prev) => prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)));
     clear();
   };
+
+  const sourceReady = preset === 'self' ||
+    (projectName.trim().length > 0 &&
+      repoUrl.trim().length > 0 &&
+      composeFile.trim().length > 0 &&
+      services.some((row) => row.name.trim() && row.image.trim() && row.dockerfile.trim()));
+
+  const canLeave = step === 1
+    ? true
+    : step === 2
+      ? sourceReady
+      : step === 3
+        ? host.trim().length > 0
+        : plan?.ok === true;
 
   const buildRequest = (): BootstrapRequest => {
     const target = {
@@ -171,8 +193,7 @@ export default function BootstrapDeployment({ cloud }: Props) {
     }
   };
 
-  const inspectRepo = async () => {
-    setGitBusy(true);
+  const inspectRepo = async () => {    setGitBusy(true);
     setGitError(null);
     try {
       const info = await api.post<GitInspection>('/api/git/inspect', { url: repoUrl.trim() });
@@ -202,6 +223,16 @@ export default function BootstrapDeployment({ cloud }: Props) {
     }
   };
 
+  const goNext = () => {
+    if (!canLeave) return;
+    if (step === 3) {
+      setStep(4);
+      void preview();
+      return;
+    }
+    setStep((current) => Math.min(4, current + 1) as Step);
+  };
+
   const checkServer = async () => {
     if (!result?.projectId) return;
     setDryBusy(true);
@@ -217,7 +248,8 @@ export default function BootstrapDeployment({ cloud }: Props) {
   };
 
   if (cloud) {
-    return (      <section className={styles.card}>
+    return (
+      <section className={styles.card}>
         <h1 className={styles.title}>Bootstrap runs in the desktop app</h1>
         <p className={styles.lead}>
           Writing a deployment from scratch changes this computer and a server over SSH. Open the ShipRight
@@ -314,7 +346,7 @@ export default function BootstrapDeployment({ cloud }: Props) {
               Open the server
             </ZestButton>
             <ZestButton
-              onClick={() => { setResult(null); setPlan(null); }}
+              onClick={() => { setResult(null); setPlan(null); setStep(1); }}
               zest={{ buttonStyle: 'text', semanticType: 'cancel' }}
             >
               Set up another
@@ -328,128 +360,81 @@ export default function BootstrapDeployment({ cloud }: Props) {
   return (
     <section className={styles.wrap}>
       <header className={styles.header}>
-        <h1 className={styles.title}>Set up a deployment from scratch</h1>
+        <h1 className={styles.title}>Set up a deployment</h1>
         <p className={styles.lead}>
-          Start with the public address. Add the user, key and domain whenever you like — nothing is required beyond
-          the address.
+          A few short steps. Only the public address is required; the user, key and domain can be added later.
         </p>
       </header>
 
-      <div className={styles.card}>
-        <label className={styles.field}>
-          <span className={styles.label}>What are you deploying?</span>
-          <select
-            className={styles.input}
-            value={preset}
-            onChange={(e) => { setPreset(e.target.value as Preset); clear(); }}
+      <ol className={styles.stepper} aria-label="Deployment steps">
+        {STEPS.map((item) => (
+          <li
+            key={item.id}
+            className={`${styles.stepItem} ${step === item.id ? styles.stepCurrent : ''} ${step > item.id ? styles.stepDone : ''}`}
+            aria-current={step === item.id ? 'step' : undefined}
           >
-            <option value="self">ShipRight (this product)</option>
-            <option value="custom">Another app</option>
-          </select>
-        </label>
+            <span className={styles.stepNumber}>{step > item.id ? '✓' : item.id}</span>
+            <span className={styles.stepLabel}>{item.label}</span>
+          </li>
+        ))}
+      </ol>
 
-        <div className={styles.grid}>
-          <label className={styles.field}>
-            <span className={styles.label}>Public address</span>
-            <input
-              className={styles.input}
-              value={host}
-              onChange={onChange(setHost)}
-              placeholder="203.0.113.10"
-              autoComplete="off"
-            />
-            <span className={styles.hint}>The server&apos;s public IP is enough to start.</span>
-          </label>
+      <div className={styles.card}>
+        {step === 1 && (
+          <div className={styles.stepBody}>
+            <h2 className={styles.subtitle}>What are you deploying?</h2>
+            <p className={styles.lead}>Choose this product or another app. You can change this later.</p>
+            <label className={styles.field}>
+              <span className={styles.label}>Deployment</span>
+              <select
+                className={styles.input}
+                value={preset}
+                onChange={(e) => { setPreset(e.target.value as Preset); clear(); }}
+              >
+                <option value="self">ShipRight (this product)</option>
+                <option value="custom">Another app</option>
+              </select>
+            </label>
+          </div>
+        )}
 
-          <label className={styles.field}>
-            <span className={styles.label}>User (optional)</span>
-            <input
-              className={styles.input}
-              value={username}
-              onChange={(e) => {
-                const value = e.target.value;
-                setUsername(value);
-                if (!folder.trim() && value.trim())
-                  setFolder(`/home/${value.trim()}/${slug(projectName || 'shipright')}`);
-                clear();
-              }}
-              placeholder="add it later"
-              autoComplete="off"
-            />
-            <span className={styles.hint}>The account ShipRight signs in as. Add it when you are ready.</span>
-          </label>
+        {step === 2 && preset === 'self' && (
+          <div className={styles.stepBody}>
+            <h2 className={styles.subtitle}>Where is ShipRight built from?</h2>
+            <p className={styles.lead}>
+              The ShipRight repository, compose file and app service are filled in. Leave these empty unless you
+              deploy a fork.
+            </p>
+            <div className={styles.grid}>
+              <label className={styles.field}>
+                <span className={styles.label}>Repository (optional)</span>
+                <input
+                  className={styles.input}
+                  value={repoUrl}
+                  onChange={onChange(setRepoUrl)}
+                  placeholder="the ShipRight repository"
+                  autoComplete="off"
+                />
+              </label>
+              <label className={styles.field}>
+                <span className={styles.label}>Branch (optional)</span>
+                <input
+                  className={styles.input}
+                  value={branch}
+                  onChange={onChange(setBranch)}
+                  placeholder="master"
+                  autoComplete="off"
+                />
+              </label>
+            </div>
+          </div>
+        )}
 
-          <label className={styles.field}>
-            <span className={styles.label}>Folder on the server (optional)</span>
-            <input
-              className={styles.input}
-              value={folder}
-              onChange={onChange(setFolder)}
-              placeholder={suggestedFolder || '/home/<user>/<app>'}
-              autoComplete="off"
-            />
-            <span className={styles.hint}>Leave it empty to use a sensible folder once a user is set.</span>
-          </label>
+        {step === 2 && preset === 'custom' && (
+          <div className={styles.stepBody}>
+            <h2 className={styles.subtitle}>Where is the app built from?</h2>
+            <p className={styles.lead}>Point at a repository, then check it to fill the branch and services.</p>
 
-          <label className={styles.field}>
-            <span className={styles.label}>Domain (optional)</span>
-            <input
-              className={styles.input}
-              value={domain}
-              onChange={onChange(setDomain)}
-              placeholder="add it later"
-              autoComplete="off"
-            />
-            <span className={styles.hint}>Without one, the app is reachable by address over HTTP.</span>
-          </label>
-
-          <label className={styles.field}>
-            <span className={styles.label}>SSH key (optional)</span>
-            <input
-              className={styles.input}
-              value={sshKeyPath}
-              onChange={onChange(setSshKeyPath)}
-              placeholder="ShipRight makes one when a user is set"
-              autoComplete="off"
-            />
-            <span className={styles.hint}>Leave it empty and ShipRight creates a key once it knows the user.</span>
-          </label>
-        </div>
-
-        {preset === 'self' ? (
-          <>
-            <button type="button" className={styles.toggle} onClick={() => setAdvanced((v) => !v)}>
-              {advanced ? 'Hide advanced' : 'Advanced'}
-            </button>
-
-            {advanced && (
-              <div className={styles.grid}>
-                <label className={styles.field}>
-                  <span className={styles.label}>Repository (optional)</span>
-                  <input
-                    className={styles.input}
-                    value={repoUrl}
-                    onChange={onChange(setRepoUrl)}
-                    placeholder="the ShipRight repository"
-                    autoComplete="off"
-                  />
-                </label>
-
-                <label className={styles.field}>
-                  <span className={styles.label}>Branch</span>
-                  <input
-                    className={styles.input}
-                    value={branch}
-                    onChange={onChange(setBranch)}
-                    placeholder="master"
-                    autoComplete="off"
-                  />
-                </label>
-              </div>
-            )}
-          </>
-        ) : (
-          <>
             <div className={styles.grid}>
               <label className={styles.field}>
                 <span className={styles.label}>Project name</span>
@@ -459,8 +444,7 @@ export default function BootstrapDeployment({ cloud }: Props) {
                   onChange={(e) => {
                     const value = e.target.value;
                     setProjectName(value);
-                    if (!composeProject.trim())
-                      setComposeProject(value.trim() ? slug(value) : '');
+                    if (!composeProject.trim()) setComposeProject(value.trim() ? slug(value) : '');
                     clear();
                   }}
                   placeholder="shop"
@@ -533,7 +517,7 @@ export default function BootstrapDeployment({ cloud }: Props) {
               >
                 {gitBusy ? 'Checking…' : 'Check repository'}
               </ZestButton>
-              <span className={styles.hint}>Reads the branch, compose file and Dockerfiles from GitHub.</span>
+              <span className={styles.hint}>Reads the branch, compose file and services from GitHub.</span>
             </div>
 
             {gitError && (
@@ -553,9 +537,6 @@ export default function BootstrapDeployment({ cloud }: Props) {
                 </span>
                 {gitInfo.composeFiles.length > 0 && (
                   <span className={styles.hint}>Compose files: {gitInfo.composeFiles.join(', ')}</span>
-                )}
-                {gitInfo.dockerfiles.length > 0 && (
-                  <span className={styles.hint}>Dockerfiles: {gitInfo.dockerfiles.join(', ')}</span>
                 )}
                 {gitInfo.services.length > 0 && (
                   <span className={styles.hint}>
@@ -630,80 +611,195 @@ export default function BootstrapDeployment({ cloud }: Props) {
               />
               <span className={styles.hint}>One KEY=value per line. Add secrets later if you prefer.</span>
             </label>
-          </>
+          </div>
+        )}
+
+        {step === 3 && (
+          <div className={styles.stepBody}>
+            <h2 className={styles.subtitle}>Where should it run?</h2>
+            <p className={styles.lead}>The public address is enough. The rest can be added later.</p>
+
+            <div className={styles.grid}>
+              <label className={styles.field}>
+                <span className={styles.label}>Public address</span>
+                <input
+                  className={styles.input}
+                  value={host}
+                  onChange={onChange(setHost)}
+                  placeholder="203.0.113.10"
+                  autoComplete="off"
+                />
+                <span className={styles.hint}>The server&apos;s public IP is enough to start.</span>
+              </label>
+
+              <label className={styles.field}>
+                <span className={styles.label}>User (optional)</span>
+                <input
+                  className={styles.input}
+                  value={username}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setUsername(value);
+                    if (!folder.trim() && value.trim()) setFolder(suggestedFolder || `/home/${value.trim()}/shipright`);
+                    clear();
+                  }}
+                  placeholder="add it later"
+                  autoComplete="off"
+                />
+                <span className={styles.hint}>The account ShipRight signs in as. Add it when you are ready.</span>
+              </label>
+
+              <label className={styles.field}>
+                <span className={styles.label}>Folder on the server (optional)</span>
+                <input
+                  className={styles.input}
+                  value={folder}
+                  onChange={onChange(setFolder)}
+                  placeholder={suggestedFolder || '/home/<user>/<app>'}
+                  autoComplete="off"
+                />
+                <span className={styles.hint}>Leave it empty to use a sensible folder once a user is set.</span>
+              </label>
+
+              <label className={styles.field}>
+                <span className={styles.label}>Domain (optional)</span>
+                <input
+                  className={styles.input}
+                  value={domain}
+                  onChange={onChange(setDomain)}
+                  placeholder="add it later"
+                  autoComplete="off"
+                />
+                <span className={styles.hint}>Without one, the app is reachable by address over HTTP.</span>
+              </label>
+
+              <label className={styles.field}>
+                <span className={styles.label}>SSH key (optional)</span>
+                <input
+                  className={styles.input}
+                  value={sshKeyPath}
+                  onChange={onChange(setSshKeyPath)}
+                  placeholder="ShipRight makes one when a user is set"
+                  autoComplete="off"
+                />
+                <span className={styles.hint}>Leave it empty and ShipRight creates a key once it knows the user.</span>
+              </label>
+            </div>
+          </div>
+        )}
+
+        {step === 4 && (
+          <div className={styles.stepBody}>
+            <h2 className={styles.subtitle}>Review</h2>
+            <p className={styles.lead}>Check the shape, then create. Nothing runs on the server yet.</p>
+
+            <div className={styles.summary}>
+              <span className={styles.label}>{preset === 'self' ? 'ShipRight' : projectName || 'Another app'}</span>
+              <span className={styles.hint}>
+                {repoUrl || (preset === 'self' ? 'the ShipRight repository' : 'no repository yet')} · {branch}
+              </span>
+              <span className={styles.hint}>
+                {preset === 'self'
+                  ? 'app (ShipRight preset)'
+                  : services.filter((s) => s.name.trim()).map((s) => s.name).join(', ') || 'no services yet'}
+              </span>
+              <span className={styles.hint}>
+                {host || 'no address yet'}{domain ? ` · ${domain}` : ' · address only'}
+              </span>
+            </div>
+
+            {busy === 'preview' && <span className={styles.hint}>Checking the configuration…</span>}
+
+            {plan && plan.problems.length > 0 && (
+              <ul className={styles.problems}>
+                {plan.problems.map((problem) => <li key={problem}>{problem}</li>)}
+              </ul>
+            )}
+
+            {plan && plan.deployBlockers.length > 0 && (
+              <div className={styles.deferred}>
+                <span className={styles.label}>Saved now, deploy later</span>
+                <ul className={styles.warnings}>
+                  {plan.deployBlockers.map((item) => <li key={item}>{item}</li>)}
+                </ul>
+              </div>
+            )}
+
+            {plan && plan.warnings.length > 0 && (
+              <ul className={styles.warnings}>
+                {plan.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+              </ul>
+            )}
+
+            {plan && plan.steps.length > 0 && (
+              <ol className={styles.steps}>
+                {plan.steps.map((item) => (
+                  <li key={item.id}>
+                    <strong>{item.title}</strong>
+                    <span className={styles.hint}>{item.detail}</span>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
         )}
 
         {error && (
           <div className={styles.problem} role="alert">
             <strong>Not ready.</strong> {error}
-            <span className={styles.hint}>Fix the field above, then preview again.</span>
+            <span className={styles.hint}>Fix the field, then try again.</span>
           </div>
         )}
 
         <div className={styles.actions}>
-          <ZestButton
-            onClick={preview}
-            disabled={busy !== null}
-            zest={{ buttonStyle: 'outline', semanticType: 'submit', visualOptions: { variant: 'standard' } }}
-          >
-            {busy === 'preview' ? 'Checking…' : 'Preview'}
-          </ZestButton>
-          <ZestButton
-            onClick={apply}
-            disabled={busy !== null || !plan?.ok}
-            zest={{ semanticType: 'submit', visualOptions: { variant: 'standard' } }}
-          >
-            {busy === 'apply' ? 'Writing…' : 'Create deployment'}
-          </ZestButton>
+          {step > 1 && (
+            <ZestButton
+              onClick={() => setStep((current) => Math.max(1, current - 1) as Step)}
+              zest={{ buttonStyle: 'text', semanticType: 'cancel' }}
+            >
+              Back
+            </ZestButton>
+          )}
+          {step < 4 && (
+            <ZestButton
+              onClick={goNext}
+              disabled={!canLeave}
+              zest={{ semanticType: 'submit', visualOptions: { variant: 'standard' } }}
+            >
+              Continue
+            </ZestButton>
+          )}
+          {step === 4 && (
+            <>
+              <ZestButton
+                onClick={preview}
+                disabled={busy !== null}
+                zest={{ buttonStyle: 'outline', semanticType: 'refresh', visualOptions: { size: 'sm' } }}
+              >
+                {busy === 'preview' ? 'Checking…' : 'Refresh preview'}
+              </ZestButton>
+              <ZestButton
+                onClick={apply}
+                disabled={busy !== null || !plan?.ok}
+                zest={{ semanticType: 'submit', visualOptions: { variant: 'standard' } }}
+              >
+                {busy === 'apply' ? 'Writing…' : 'Create deployment'}
+              </ZestButton>
+            </>
+          )}
         </div>
 
-        {!plan?.ok && (
+        {step < 4 && !canLeave && (
           <span className={styles.hint}>
-            Preview first. ShipRight writes nothing until the plan is clean.
+            {step === 2
+              ? 'Add a project name, a repository and at least one service with an image.'
+              : 'Enter the server address to continue.'}
           </span>
         )}
+        {step === 4 && !plan?.ok && (
+          <span className={styles.hint}>ShipRight writes nothing until the preview is clean.</span>
+        )}
       </div>
-
-      {plan && (
-        <div className={styles.card}>
-          <h2 className={styles.subtitle}>{plan.ok ? 'Ready to create' : 'Still needs attention'}</h2>
-
-          <p className={styles.fact}>
-            This writes a server record, a project and the deploy settings on this computer. Nothing runs on the
-            server until you deploy.
-          </p>
-
-          {plan.problems.length > 0 && (
-            <ul className={styles.problems}>
-              {plan.problems.map((problem) => <li key={problem}>{problem}</li>)}
-            </ul>
-          )}
-
-          {plan.deployBlockers.length > 0 && (
-            <div className={styles.deferred}>
-              <span className={styles.label}>Saved now, deploy later</span>
-              <ul className={styles.warnings}>
-                {plan.deployBlockers.map((item) => <li key={item}>{item}</li>)}
-              </ul>
-            </div>
-          )}
-
-          {plan.warnings.length > 0 && (
-            <ul className={styles.warnings}>
-              {plan.warnings.map((warning) => <li key={warning}>{warning}</li>)}
-            </ul>
-          )}
-
-          <ol className={styles.steps}>
-            {plan.steps.map((step) => (
-              <li key={step.id}>
-                <strong>{step.title}</strong>
-                <span className={styles.hint}>{step.detail}</span>
-              </li>
-            ))}
-          </ol>
-        </div>
-      )}
     </section>
   );
 }
