@@ -337,3 +337,64 @@
   color: #fff;
   background: #34c759;
 }
+
+/* A dry run's plan, and the diagnostics link that survives a failed preflight. */
+.plan {
+  margin-top: 14px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.planFacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin-top: 10px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.planFacts code,
+.planCommands code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.planCommands {
+  margin: 8px 0 0;
+  padding-left: 22px;
+  max-height: 280px;
+  overflow: auto;
+  font-size: 12px;
+}
+
+.planCommands li {
+  margin-top: 8px;
+}
+
+.planCommands b {
+  display: block;
+  margin-bottom: 2px;
+  font-weight: 600;
+}
+
+.planCommands code {
+  display: block;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-secondary);
+}
+
+.planActions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.diagnosticLink {
+  color: var(--accent);
+  font-weight: 500;
+  text-underline-offset: 3px;
+}

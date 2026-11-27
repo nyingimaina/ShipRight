@@ -35,6 +35,28 @@ public static class JitCommands
                $"if [ \"$avail\" -lt {minFreeMb} ]; then echo \"[preflight] Not enough free disk space (${{avail}} MB; at least {minFreeMb} MB is needed). Free some space, then deploy again.\"; exit 1; fi";
     }
 
+    /// <summary>Reports free space without creating or changing anything (a dry run must not even make the folder).</summary>
+    public static string FreeDisk(JitTarget t)
+    {
+        var dir = Q(JitNames.Path(t.ProjectDir));
+        return $"avail=$(df -Pm {dir} 2>/dev/null | awk 'NR==2{{print $4}}'); " +
+               "if [ -z \"$avail\" ]; then avail=$(df -Pm / 2>/dev/null | awk 'NR==2{print $4}'); fi; " +
+               "echo \"[preflight] Free disk space: ${avail:-unknown} MB\"";
+    }
+
+    private static readonly global::System.Text.RegularExpressions.Regex FreeMb =
+        new(@"Free disk space:\s*(?<mb>[0-9]+)\s*MB", global::System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    public static int? TryParseFreeMb(IEnumerable<string> lines)
+    {
+        foreach (var line in lines)
+        {
+            var m = FreeMb.Match(line);
+            if (m.Success && int.TryParse(m.Groups["mb"].Value, out var mb)) return mb;
+        }
+        return null;
+    }
+
     /// <summary>The failure message deliberately does not repeat the address, which may contain a token.</summary>
     public static string CheckGit(string repoUrl) =>
         $"GIT_TERMINAL_PROMPT=0 timeout 30 git ls-remote --heads -- {Q(JitNames.RepoUrl(repoUrl))} >/dev/null 2>&1 || " +

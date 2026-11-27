@@ -371,7 +371,9 @@ static void RegisterDesktopServices(IServiceCollection services, string dataDir)
     services.AddSingleton<IJitConfigStore>(_ => new JsonJitConfigStore(dataDir));
     services.AddSingleton<IJitClock, SystemJitClock>();
     services.AddSingleton<JitLocalBranchGuard>();
+    services.AddSingleton<JitDeployAttemptStore>(_ => new JitDeployAttemptStore(dataDir));
     services.AddSingleton<JitDeployService>();
+    services.AddSingleton<JitDryRunService>();
     services.AddSingleton<MariaDbProvider>();
     services.AddSingleton<SqlServerProvider>();
     services.AddSingleton<IDbProviderResolver>(sp => new DbProviderResolver(

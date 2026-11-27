@@ -6,7 +6,7 @@ import styles from './Styles/JitDeploy.module.css';
 import StreamLog from '@/shared/components/StreamLog/StreamLog';
 import { api, sseUrl } from '@/shared/ApiService';
 import {
-  DEFAULT_JIT_CONFIG, JitConfig, JitConfigResponse, JitDependents, JitReleases, JitServiceHint,
+  DEFAULT_JIT_CONFIG, JitConfig, JitConfigResponse, JitDependents, JitDryRun, JitReleases, JitServiceHint,
   describeAge, phaseSummary, setDependentChoice, shortSha, validateJitConfig,
 } from './jitDeploy';
 import JitGitAccess from './JitGitAccess';
@@ -78,6 +78,10 @@ export default function JitDeployCard({ projectId }: Props) {
 
   const [op, setOp] = useState<{ status: OpStatus; logs: string[]; message: string }>({ status: 'idle', logs: [], message: '' });
   const [steps, setSteps] = useState<string[]>([]);
+  const [dryRun, setDryRun] = useState<JitDryRun | null>(null);
+  const [dryRunning, setDryRunning] = useState(false);
+  const [attempt, setAttempt] = useState<{ message: string; url: string | null } | null>(null);
+  const [diagnosticsUrl, setDiagnosticsUrl] = useState<string | null>(null);
   const esRef = useRef<EventSource | null>(null);
 
   const base = `/api/jit/${projectId}`;
@@ -223,12 +227,48 @@ export default function JitDeployCard({ projectId }: Props) {
     kindRef.current = path.endsWith('/restart-all') ? 'restart' : 'deploy';
     setOp({ status: 'running', logs: [], message: '' });
     setSteps([]);
+    setDryRun(null);
+    setAttempt(null);
+    setDiagnosticsUrl(null);
     try {
-      const res = await api.post<{ buildId: string }>(path, body);
+      const res = await api.post<{ buildId: string; diagnosticsUrl?: string | null }>(path, body);
+      setDiagnosticsUrl(res.diagnosticsUrl ?? null);
       stream(res.buildId);
     } catch (e) {
+      const err = e as { message?: string; diagnosticsUrl?: string | null };
+      const message = err?.message ?? 'Could not start.';
       setOp({ status: 'idle', logs: [], message: '' });
-      toast.error((e as { message?: string })?.message ?? 'Could not start.');
+      setAttempt({ message, url: err?.diagnosticsUrl ?? null });
+      if (err?.diagnosticsUrl) setDiagnosticsUrl(err.diagnosticsUrl);
+      toast.error(message);
+    }
+  };
+
+  /** Asks the server what it would do, without it doing any of it. Nothing on the target is written. */
+  const runDryRun = async () => {
+    esRef.current?.close();
+    setConfirmTag(null);
+    setConfirmRestart(false);
+    setOp({ status: 'idle', logs: [], message: '' });
+    setSteps([]);
+    setDryRun(null);
+    setAttempt(null);
+    setDiagnosticsUrl(null);
+    setDryRunning(true);
+    try {
+      const res = await api.post<JitDryRun>(`${base}/dry-run`, {
+        force, commit: commit.trim() || null, allowWithoutRollback: false, rebuildAll,
+      });
+      setDryRun(res);
+      setDiagnosticsUrl(res.diagnosticsUrl ?? null);
+    } catch (e) {
+      const err = e as { message?: string; diagnosticsUrl?: string | null };
+      const message = err?.message ?? 'Could not run the dry run.';
+      setAttempt({ message, url: err?.diagnosticsUrl ?? null });
+      if (err?.diagnosticsUrl) setDiagnosticsUrl(err.diagnosticsUrl);
+      toast.error(message);
+    } finally {
+      setDryRunning(false);
     }
   };
 
@@ -269,6 +309,7 @@ export default function JitDeployCard({ projectId }: Props) {
   const needsAttention = releases?.needsAttention === true;
   const canDeploy = saved.enabled && !dirty && !running && !needsAttention;
   const canRestart = saved.enabled && !running && !needsAttention && !!releases?.currentTag;
+  const canDryRun = saved.enabled && !dirty && !running && !dryRunning;
   const effectiveRestart = (service: string, dependent: string, fallback: boolean) =>
     cfg.dependentChoices.find(c => c.service === service && c.dependent === dependent)?.restart ?? fallback;
 
@@ -494,10 +535,66 @@ export default function JitDeployCard({ projectId }: Props) {
           <div className={styles.actions}>
             <ZestButton disabled={!canDeploy} zest={{ ...NOBUSY, semanticType: 'send' }} onClick={() =>
               askDeploy(`${base}/deploy`, { force, commit: commit.trim() || null, allowWithoutRollback: false, rebuildAll })}>Deploy now</ZestButton>
+            <ZestButton disabled={!canDryRun} onClick={runDryRun}
+              zest={{ ...NOBUSY, semanticType: 'view', buttonStyle: 'outline' }}>Dry run</ZestButton>
             <ZestButton disabled={!canRestart} onClick={() => { setConfirmTag(null); setConfirmRestart(true); }}
               zest={{ ...NOBUSY, semanticType: 'refresh', buttonStyle: 'outline' }}>Restart all services</ZestButton>
             {dirty && <span className={styles.muted}>Save your settings before deploying.</span>}
+            {dryRunning && <span className={styles.muted}>Checking what a deploy would do. Nothing on the server is being changed.</span>}
           </div>
+
+          {attempt && (
+            <div className={styles.confirmBad} role="alert">
+              <div>{attempt.message}</div>
+              {attempt.url && !dryRun && (
+                <p className={styles.mt8}>
+                  <a className={styles.diagnosticLink} href={attempt.url} download>Download diagnostics</a>
+                </p>
+              )}
+            </div>
+          )}
+
+          {dryRun && (
+            <div className={styles.plan} role="region" aria-label="Dry run plan">
+              <strong>{dryRun.ok ? 'Dry run: this deploy can start' : 'Dry run: this deploy would not start'}</strong>
+              <p className={styles.muted}>
+                Nothing on the server was changed.{' '}
+                {dryRun.targetChecked ? 'The server was read with read-only commands only.' : 'The server was not contacted.'}
+              </p>
+              {dryRun.guardSummary && <p className={styles.muted}>{dryRun.guardSummary}</p>}
+              {dryRun.error && <p role="alert" className={`${styles.message} ${styles.bad}`}>{dryRun.error}</p>}
+              <div className={styles.planFacts}>
+                {dryRun.commit && <span>Commit <code>{shortSha(dryRun.commit)}</code></span>}
+                {dryRun.tag && <span>Release <b>{dryRun.tag}</b></span>}
+                {dryRun.services.length > 0 && <span>Services {dryRun.services.join(', ')}</span>}
+                {dryRun.currentTag && <span>Running now {dryRun.currentTag}</span>}
+              </div>
+              {dryRun.warnings.length > 0 && (
+                <ul className={styles.warnings}>
+                  {dryRun.warnings.map((w, i) => <li key={i}>{w}</li>)}
+                </ul>
+              )}
+              {dryRun.problems.length > 0 && (
+                <ul className={`${styles.warnings} ${styles.bad}`}>
+                  {dryRun.problems.map((p, i) => <li key={i}>{p}</li>)}
+                </ul>
+              )}
+              {dryRun.commands.length > 0 && (
+                <details className={styles.mt10}>
+                  <summary>What a real deploy would run ({dryRun.commands.length} commands)</summary>
+                  <ol className={styles.planCommands}>
+                    {dryRun.commands.map((c, i) => (
+                      <li key={i}><b>{c.step}</b><code>{c.command}</code></li>
+                    ))}
+                  </ol>
+                </details>
+              )}
+              <div className={styles.planActions}>
+                {dryRun.diagnosticsUrl && <a className={styles.diagnosticLink} href={dryRun.diagnosticsUrl} download>Download diagnostics</a>}
+                <ZestButton onClick={() => setDryRun(null)} zest={{ ...NOBUSY, semanticType: 'close', buttonStyle: 'text' }}>Hide</ZestButton>
+              </div>
+            </div>
+          )}
 
           {op.status !== 'idle' && (
             <div className={styles.mt12}>
@@ -517,6 +614,11 @@ export default function JitDeployCard({ projectId }: Props) {
                 </p>
               )}
               {op.status === 'error' && <p role="alert" className={`${styles.message} ${styles.bad}`}>{op.message}</p>}
+              {diagnosticsUrl && (
+                <p className={styles.muted}>
+                  <a className={styles.diagnosticLink} href={diagnosticsUrl} download>Download deploy diagnostics</a>
+                </p>
+              )}
             </div>
           )}
 

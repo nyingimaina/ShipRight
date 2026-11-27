@@ -99,6 +99,32 @@ export interface JitDependents {
   note: string | null;
 }
 
+/** A command a real deploy would run, shown by a dry run and never executed by it. */
+export interface JitPlanCommand {
+  step: string;
+  command: string;
+}
+
+/** The result of a dry run: a plan, never a change. */
+export interface JitDryRun {
+  ok: boolean;
+  notFound?: boolean;
+  error: string | null;
+  attemptId: string | null;
+  diagnosticsUrl: string | null;
+  branch: string;
+  commit: string | null;
+  tag: string | null;
+  services: string[];
+  commands: JitPlanCommand[];
+  warnings: string[];
+  problems: string[];
+  currentTag: string | null;
+  phase: string | null;
+  guardSummary: string | null;
+  targetChecked: boolean;
+}
+
 // ── validation ───────────────────────────────────────────────────────────────
 
 const BRANCH = /^[A-Za-z0-9][A-Za-z0-9/_.-]*$/;

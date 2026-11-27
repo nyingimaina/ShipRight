@@ -51,7 +51,7 @@ public class JitDeployServiceTests
         public FakeClock Clock { get; } = new();
         public JitDeployService Service { get; }
 
-        public Rig(bool enabled = true, JitLocalBranchGuard? localBranchGuard = null)
+        public Rig(bool enabled = true, JitLocalBranchGuard? localBranchGuard = null, JitDeployAttemptStore? attempts = null)
         {
             ProjectStore.Items["p1"] = new ProjectConfig
             {
@@ -64,7 +64,7 @@ public class JitDeployServiceTests
                 Server = new ServerConfig { Host = "10.0.0.5", Username = "deploy", SshKeyPath = "/keys/k", RemoteWorkingDir = "/home/deploy/shop" },
             };
             ConfigStore.Items["p1"] = new JitDeployConfig { Enabled = enabled, RepoUrl = "git@github.com:o/r.git", ComposeProject = "shop" };
-            Service = new JitDeployService(ProjectStore, ConfigStore, BuildStore, Bus, Remote, Clock, new JitDeployLock(), null, localBranchGuard);
+            Service = new JitDeployService(ProjectStore, ConfigStore, BuildStore, Bus, Remote, Clock, new JitDeployLock(), null, localBranchGuard, null, attempts);
         }
 
         public Rig WithLocalRepo(string repoPath = @"D:\work\shop") =>
@@ -136,8 +136,51 @@ public class JitDeployServiceTests
     }
 
     [TestMethod]
-    public async Task CleanPushedBranch_StillDeploys()
+    public async Task PreflightFailure_LeavesADownloadableDiagnosticsFile()
     {
+        using var tree = new TempTree();
+        var store = new JitDeployAttemptStore(tree.Root);
+        var runner = new RecordingRunner()
+            .When((_, a) => a.Contains("remote") && a.Contains("get-url"), 0, "git@github.com:o/r.git\n")
+            .When((_, a) => a.Contains("fetch"), 0, "")
+            .When((_, a) => a.Contains("--abbrev-ref"), 0, "master\n")
+            .When((_, a) => a.Any(x => x.StartsWith("--porcelain", StringComparison.Ordinal)), 0, "M  Program.cs\n")
+            .When((_, a) => a.Contains("--verify"), 0, FakeRemote.Sha1 + "\n")
+            .When((_, a) => a.Contains("rev-list"), 0, "0 0\n");
+        var rig = new Rig(localBranchGuard: new JitLocalBranchGuard(runner), attempts: store).WithLocalRepo();
+
+        var start = await rig.Service.StartDeployAsync("p1", null, "tester");
+
+        Assert.IsNotNull(start.Error);
+        Assert.IsNotNull(start.AttemptId);
+        Assert.AreEqual($"/api/jit/p1/deploy-attempts/{start.AttemptId}/download", start.DiagnosticsUrl);
+        var text = await store.ReadAsync("p1", start.AttemptId!);
+        Assert.IsNotNull(text);
+        StringAssert.Contains(text, "Mode: Live deploy");
+        StringAssert.Contains(text, "Program.cs");
+        StringAssert.Contains(text, "Result: blocked");
+        Assert.AreEqual(0, rig.Remote.Commands.Count, "the target is never contacted when the preflight refuses");
+    }
+
+    [TestMethod]
+    public async Task AStartedDeploy_RecordsItsLogInTheDiagnosticsFile()
+    {
+        using var tree = new TempTree();
+        var store = new JitDeployAttemptStore(tree.Root);
+        var rig = new Rig(attempts: store);
+
+        var start = await rig.Service.StartDeployAsync("p1", null, "tester");
+        await start.Completion!;
+
+        var text = await store.ReadAsync("p1", start.AttemptId!);
+        Assert.IsNotNull(text);
+        StringAssert.Contains(text, "Outcome: Deployed");
+        StringAssert.Contains(text, "Deploy log");
+        StringAssert.Contains(text, "Release r1-aaaaaaa is live");
+    }
+
+    [TestMethod]
+    public async Task CleanPushedBranch_StillDeploys()    {
         var runner = new RecordingRunner()
             .When((_, a) => a.Contains("remote") && a.Contains("get-url"), 0, "git@github.com:o/r.git\n")
             .When((_, a) => a.Contains("--abbrev-ref"), 0, "master\n")

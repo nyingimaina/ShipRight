@@ -17,8 +17,14 @@ public static class JitDeployRoutes
             HandleGetConfigAsync(id, projects, configs));
         app.MapPut("/api/jit/{id}/config", (string id, JitDeployConfig body, IProjectStore projects, IJitConfigStore configs) =>
             HandleSaveConfigAsync(id, body, projects, configs));
-        app.MapPost("/api/jit/{id}/deploy", (string id, JitDeployOptions? options, ClaimsPrincipal user, JitDeployService svc) =>
-            HandleDeployAsync(id, options, Who(user), svc));
+        app.MapPost("/api/jit/{id}/deploy", (string id, JitDeployOptions? options, ClaimsPrincipal user, JitDeployService svc, JitDryRunService dry) =>
+            options?.DryRun == true
+                ? HandleDryRunAsync(id, options, Who(user), dry)
+                : HandleDeployAsync(id, options, Who(user), svc));
+        app.MapPost("/api/jit/{id}/dry-run", (string id, JitDeployOptions? options, ClaimsPrincipal user, JitDryRunService svc) =>
+            HandleDryRunAsync(id, options, Who(user), svc));
+        app.MapGet("/api/jit/{id}/deploy-attempts/{attemptId}/download", (string id, string attemptId, IProjectStore projects, JitDeployAttemptStore store) =>
+            HandleDownloadAttemptAsync(id, attemptId, projects, store));
         app.MapPost("/api/jit/{id}/recover", (string id, ClaimsPrincipal user, JitDeployService svc) =>
             HandleRecoverAsync(id, Who(user), svc));
         app.MapPost("/api/jit/{id}/restart-all", (string id, ClaimsPrincipal user, JitDeployService svc) =>
@@ -76,6 +82,25 @@ public static class JitDeployRoutes
     internal static async Task<IResult> HandleDeployAsync(string id, JitDeployOptions? options, string? initiator, JitDeployService svc) =>
         Started(await svc.StartDeployAsync(id, options, initiator), "Deploy started");
 
+    internal static async Task<IResult> HandleDryRunAsync(string id, JitDeployOptions? options, string? initiator, JitDryRunService svc)
+    {
+        var result = await svc.PlanAsync(id, options, initiator);
+        return result.NotFound
+            ? Results.NotFound(Err(result.Error ?? "Project not found."))
+            : Results.Ok(result);
+    }
+
+    internal static async Task<IResult> HandleDownloadAttemptAsync(
+        string id, string attemptId, IProjectStore projects, JitDeployAttemptStore store)
+    {
+        if (await projects.GetByIdAsync(id) is null) return Results.NotFound(Err($"Project '{id}' not found."));
+        var text = await store.ReadAsync(id, attemptId);
+        if (text is null)
+            return Results.NotFound(Err("That diagnostics file is no longer available. ShipRight keeps the newest 100 attempts for each project."));
+        return Results.File(global::System.Text.Encoding.UTF8.GetBytes(text), "text/plain; charset=utf-8",
+            $"shipright-deploy-{attemptId}.log");
+    }
+
     internal static async Task<IResult> HandleRecoverAsync(string id, string? initiator, JitDeployService svc) =>
         Started(await svc.StartRecoverAsync(id, initiator), "Recovery started");
 
@@ -101,7 +126,15 @@ public static class JitDeployRoutes
     private static IResult Started(JitStartResult r, string message)
     {
         if (r.NotFound) return Results.NotFound(Err(r.Error!));
-        if (r.Error is not null) return Results.BadRequest(new { isError = true, message = r.Error });
-        return Results.Accepted($"/api/builds/{r.Record!.Id}", new { buildId = r.Record.Id, status = r.Record.Status.ToString(), message });
+        if (r.Error is not null)
+            return Results.BadRequest(new
+            {
+                isError = true, message = r.Error, attemptId = r.AttemptId, diagnosticsUrl = r.DiagnosticsUrl,
+            });
+        return Results.Accepted($"/api/builds/{r.Record!.Id}", new
+        {
+            buildId = r.Record.Id, status = r.Record.Status.ToString(), message,
+            attemptId = r.AttemptId, diagnosticsUrl = r.DiagnosticsUrl,
+        });
     }
 }

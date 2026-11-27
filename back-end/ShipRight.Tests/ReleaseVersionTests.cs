@@ -14,6 +14,6 @@ public class ReleaseVersionTests
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
             .InformationalVersion;
 
-        Assert.AreEqual("4.12.3", version?.Split('+')[0]);
+        Assert.AreEqual("4.13.0", version?.Split('+')[0]);
     }
 }

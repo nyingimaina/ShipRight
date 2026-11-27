@@ -6,10 +6,19 @@ using ShipRight.Shared.SshRunner;
 
 namespace ShipRight.Modules.JitDeploy;
 
-public sealed record JitDeployOptions(bool Force = false, string? Commit = null, bool AllowWithoutRollback = false, bool RebuildAll = false);
+public sealed record JitDeployOptions(bool Force = false, string? Commit = null, bool AllowWithoutRollback = false, bool RebuildAll = false)
+{
+    /// <summary>Plan the deploy without changing anything anywhere. The deploy route and the dry-run route both honour it.</summary>
+    public bool DryRun { get; init; }
+}
 
 /// <summary>The record exists as soon as the deploy starts; <see cref="Completion"/> finishes when it is over.</summary>
-public sealed record JitStartResult(BuildRecord? Record, string? Error, Task? Completion, bool NotFound = false);
+public sealed record JitStartResult(BuildRecord? Record, string? Error, Task? Completion, bool NotFound = false)
+{
+    /// <summary>The diagnostics file for this attempt, when one was recorded.</summary>
+    public string? AttemptId { get; init; }
+    public string? DiagnosticsUrl { get; init; }
+}
 
 public sealed record JitDependentsView(IReadOnlyList<DependentPair> Pairs, string? Note, bool NotFound = false);
 
@@ -26,7 +35,8 @@ public sealed record JitReleasesView(
 public sealed class JitDeployService(
     IProjectStore projects, IJitConfigStore configs, IBuildStore builds, BuildEventBus bus,
     ISshRunner ssh, IJitClock clock, JitDeployLock? locks = null, ShipRight.Modules.Resources.Stores.ICredentialResourceStore? credentials = null,
-    JitLocalBranchGuard? localBranchGuard = null, Modules.Servers.IServerStore? servers = null)
+    JitLocalBranchGuard? localBranchGuard = null, Modules.Servers.IServerStore? servers = null,
+    JitDeployAttemptStore? attempts = null)
 {
     private readonly JitDeployer _deployer = new(ssh, clock, locks);
 
@@ -62,6 +72,24 @@ public sealed class JitDeployService(
         try { cfg = await configs.GetAsync(projectId); }
         catch (InvalidDataException ex) { return new(null, ex.Message, null); }
 
+        // Every source deploy leaves a diagnostics file behind, even when it is refused before any server work. A deploy
+        // that never starts is exactly the one a person most needs to be able to send on.
+        var attempt = buildingFromSource
+            ? new JitAttemptBuilder(attempts, project, cfg, initiator, dryRun: false, DateTime.UtcNow)
+            : null;
+
+        async Task<JitStartResult> FailAsync(string error, IReadOnlyList<string>? problems = null)
+        {
+            if (attempt is not null)
+            {
+                if (problems is { Count: > 0 }) attempt.AddProblems(problems);
+                else attempt.Problem(error);
+                attempt.WithOutcome("Not started", error);
+                await attempt.SaveAsync();
+            }
+            return new(null, error, null) { AttemptId = attempt?.Id, DiagnosticsUrl = attempt?.Url };
+        }
+
         // The server record owns the server-level variables. The project's embedded copy can be stale, so prefer the
         // record whenever one exists. Older callers with no server store keep the original behaviour.
         var serverEnv = project.Server.EnvFile;
@@ -73,7 +101,7 @@ public sealed class JitDeployService(
         }
 
         var map = JitEnvMapper.MapWithServerEnv(project, cfg, serverEnv, options.Commit, options.Force, options.AllowWithoutRollback);
-        if (!map.Ok) return new(null, JitServiceHelp.StartMessage(map.Problems), null);
+        if (!map.Ok) return await FailAsync(JitServiceHelp.StartMessage(map.Problems), map.Problems);
 
         // A source build takes origin/branch from the server. Refuse it here, before a build record or any SSH work,
         // if the matching local checkout still has uncommitted or unpushed changes. An explicit commit builds that
@@ -81,11 +109,20 @@ public sealed class JitDeployService(
         if (buildingFromSource && localBranchGuard is not null && string.IsNullOrWhiteSpace(options.Commit) && cfg is not null)
         {
             var local = await localBranchGuard.CheckAsync(project, cfg);
-            if (local.Problem is not null) return new(null, local.Problem, null);
+            if (attempt is not null)
+            {
+                attempt.WithGuard(local.Report).Warn(local.Warnings);
+            }
+            if (local.Problem is not null) return await FailAsync(local.Problem);
+        }
+        else if (buildingFromSource && !string.IsNullOrWhiteSpace(options.Commit))
+        {
+            attempt?.WithNotes("An explicit commit was given, so the local checkout guard was not run.");
         }
 
         var (withCredential, credentialError) = await JitCredentialResolver.ApplyAsync(map.Request!, cfg, credentials, projectId);
-        if (credentialError is not null) return new(null, credentialError, null);
+        if (credentialError is not null) return await FailAsync(credentialError);
+        if (withCredential?.GitCredential is { } gitSecret) attempt?.Secret(gitSecret.Token);
         var request = withCredential! with { RebuildAll = options.RebuildAll };
 
         var record = new BuildRecord
@@ -104,13 +141,23 @@ public sealed class JitDeployService(
         await builds.SaveAsync(record);
         bus.Register(record.Id);
 
-        var completion = Task.Run(() => ExecuteAsync(record, request, action));
-        return new(record, null, completion);
+        if (attempt is not null)
+        {
+            attempt.WithCommit(request.Commit)
+                .WithServices(request.Services.Select(s => s.Name))
+                .WithBuild(record.Id)
+                .WithOutcome("Started");
+            await attempt.SaveAsync();
+        }
+
+        var completion = Task.Run(() => ExecuteAsync(record, request, action, attempt));
+        return new(record, null, completion) { AttemptId = attempt?.Id, DiagnosticsUrl = attempt?.Url };
     }
 
     private async Task ExecuteAsync(
         BuildRecord record, JitDeployRequest request,
-        Func<JitDeployRequest, Func<string, Task>, CancellationToken, Task<JitDeployResult>> action)
+        Func<JitDeployRequest, Func<string, Task>, CancellationToken, Task<JitDeployResult>> action,
+        JitAttemptBuilder? attempt = null)
     {
         var ctx = new PipelineContext(record, bus);
         var started = DateTime.UtcNow;
@@ -134,6 +181,14 @@ public sealed class JitDeployService(
         record.AppendLogLine($"[Deployment finished: {record.Status}]");
         await builds.SaveAsync(record);
         await ctx.DeployCompletedAsync();
+
+        if (attempt is not null)
+        {
+            attempt.WithBuild(record.Id)
+                .WithBuildLog(record.GetLogOutput())
+                .WithOutcome(record.Status.ToString(), record.ErrorSummary);
+            await attempt.SaveAsync();
+        }
     }
 
     /// <summary>Persists why a deploy failed, not just that it did, so the server log is useful without the UI.</summary>
