@@ -1,0 +1,7 @@
+services:
+  web:
+    build: .
+    image: ${WEB_TAG:-shipright/hello:latest}
+    restart: unless-stopped
+    ports:
+      - "8088:80"
