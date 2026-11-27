@@ -182,6 +182,32 @@ public class BootstrapPlannerTests
     }
 
     [TestMethod]
+    public void Plan_RemembersTheRepositoryIdentity()
+    {
+        var plan = BootstrapPlanner.Plan(Request() with
+        {
+            ProviderRepoId = "1260547763",
+            PathPrefix = "apps/shop",
+        });
+
+        Assert.IsTrue(plan.Ok, All(plan));
+        Assert.IsNotNull(plan.Project.Source);
+        Assert.AreEqual(ProjectSourceKind.GitRepository, plan.Project.Source!.Kind);
+        Assert.AreEqual("git@github.com:acme/shop.git", plan.Project.Source.Location);
+        Assert.AreEqual("main", plan.Project.Source.Branch);
+        Assert.AreEqual("apps/shop", plan.Project.Source.PathPrefix);
+        Assert.AreEqual("1260547763", plan.Project.Source.ProviderRepoId);
+    }
+
+    [TestMethod]
+    public void Plan_RefusesAPathPrefixThatEscapesTheRepository()
+    {
+        var plan = BootstrapPlanner.Plan(Request() with { PathPrefix = "../secret" });
+
+        Assert.IsFalse(plan.Ok);
+    }
+
+    [TestMethod]
     public void Plan_IsStableForTheSameInput()
     {
         var request = Request();

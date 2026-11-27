@@ -29,6 +29,8 @@ export interface BootstrapRequest {
   domain?: string;
   healthCheckUrl?: string;
   projectId?: string;
+  providerRepoId?: string;
+  pathPrefix?: string;
   useDeployKey?: boolean;
   credentialResourceId?: string | null;
 }

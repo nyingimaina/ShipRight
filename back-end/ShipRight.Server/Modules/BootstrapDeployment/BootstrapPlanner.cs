@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using ShipRight.Modules.JitDeploy;
+using ShipRight.Modules.Platform;
 using ShipRight.Modules.Projects;
 using ShipRight.Modules.Setup;
 
@@ -33,6 +34,11 @@ public static class BootstrapPlanner
         var composeFile = (request.ComposeFile ?? string.Empty).Trim();
         if (composeFile.Length == 0) problems.Add("Choose the compose file inside the repository.");
         else Try(problems, "compose file", () => JitNames.RepoFile(composeFile));
+
+        var pathPrefix = (request.PathPrefix ?? string.Empty).Trim().Trim('/');
+        if (pathPrefix.Length > 0 &&
+            (pathPrefix.Split('/').Contains("..") || pathPrefix.Any(char.IsControl)))
+            problems.Add("The path prefix must stay inside the repository, without '..'.");
 
         var services = PlanServices(request.Services, problems);
         if (services.Count == 0) problems.Add("Add at least one service to build.");
@@ -97,6 +103,14 @@ public static class BootstrapPlanner
             ServerId = serverId,
             Server = server,
             Type = ProjectType.Pipeline,
+            // Remember where the files come from, including the provider id and monorepo folder, so a rename or
+            // transfer does not break the project later.
+            Source = new ProjectSource(
+                ProjectSourceKind.GitRepository,
+                repoUrl,
+                branch,
+                pathPrefix.Length > 0 ? pathPrefix : null,
+                string.IsNullOrWhiteSpace(request.ProviderRepoId) ? null : request.ProviderRepoId.Trim()),
             Services = [],
             GitRepos = [],
             Wsl = new WslConfig(),

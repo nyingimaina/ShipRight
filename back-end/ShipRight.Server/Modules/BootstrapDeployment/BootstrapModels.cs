@@ -51,6 +51,10 @@ public sealed record BootstrapRequest
 
     // Reuse an existing project id when updating a bootstrap that was written before.
     public string ProjectId { get; init; } = string.Empty;
+    /// <summary>The provider's repository id, so a rename or transfer does not break the project.</summary>
+    public string ProviderRepoId { get; init; } = string.Empty;
+    /// <summary>For a monorepo: the folder inside the repository this project uses.</summary>
+    public string PathPrefix { get; init; } = string.Empty;
     public bool UseDeployKey { get; init; } = true;
     public Guid? CredentialResourceId { get; init; }
 }

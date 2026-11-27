@@ -107,21 +107,23 @@ describe('BootstrapDeployment', () => {
   });
 
   it('reads a repository and fills the branch and compose file', async () => {
-    mockApi.post.mockResolvedValueOnce({
-      url: 'https://github.com/acme/shop',
-      provider: 'github',
-      owner: 'acme',
-      name: 'shop',
-      defaultBranch: 'main',
-      private: false,
-      repoId: 123,
-      branches: ['main', 'dev'],
-      composeFiles: ['deploy/docker-compose.yml'],
-      dockerfiles: ['Dockerfile'],
-      services: [{ name: 'api', image: 'acme/shop-api', dockerfile: 'Dockerfile', context: '.' }],
-      suggestedComposeFile: 'deploy/docker-compose.yml',
-      notes: [],
-    } as never);
+    mockApi.post
+      .mockResolvedValueOnce({
+        url: 'https://github.com/acme/shop',
+        provider: 'github',
+        owner: 'acme',
+        name: 'shop',
+        defaultBranch: 'main',
+        private: false,
+        repoId: 123,
+        branches: ['main', 'dev'],
+        composeFiles: ['deploy/docker-compose.yml'],
+        dockerfiles: ['Dockerfile'],
+        services: [{ name: 'api', image: 'acme/shop-api', dockerfile: 'Dockerfile', context: '.' }],
+        suggestedComposeFile: 'deploy/docker-compose.yml',
+        notes: [],
+      } as never)
+      .mockResolvedValueOnce(plan() as never);
     render(<BootstrapDeployment cloud={false} />);
 
     fireEvent.change(screen.getByLabelText(/what are you deploying/i), { target: { value: 'custom' } });
@@ -134,6 +136,14 @@ describe('BootstrapDeployment', () => {
     expect(screen.getByLabelText('Service 1 name')).toHaveValue('api');
     expect(screen.getByLabelText('Service 1 image')).toHaveValue('acme/shop-api');
     expect(mockApi.post).toHaveBeenCalledWith('/api/git/inspect', { url: 'https://github.com/acme/shop' });
+
+    fireEvent.change(screen.getByLabelText(/path prefix/i), { target: { value: 'apps/shop' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+
+    await waitFor(() => expect(mockApi.post).toHaveBeenLastCalledWith('/api/bootstrap/plan', expect.objectContaining({
+      providerRepoId: '123',
+      pathPrefix: 'apps/shop',
+    })));
   });
 
   it('creates the deployment after a clean preview and shows the key and the next step', async () => {

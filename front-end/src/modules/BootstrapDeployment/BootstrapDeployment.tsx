@@ -61,6 +61,7 @@ export default function BootstrapDeployment({ cloud }: Props) {
   const [branch, setBranch] = useState('master');
   const [composeFile, setComposeFile] = useState('docker-compose.yml');
   const [composeProject, setComposeProject] = useState('');
+  const [pathPrefix, setPathPrefix] = useState('');
   const [services, setServices] = useState<ServiceRow[]>([emptyService()]);
   const [envText, setEnvText] = useState('');
   const [gitInfo, setGitInfo] = useState<GitInspection | null>(null);
@@ -120,6 +121,8 @@ export default function BootstrapDeployment({ cloud }: Props) {
       branch: branch.trim() || 'master',
       composeFile: composeFile.trim() || 'docker-compose.yml',
       composeProject: composeProject.trim() || undefined,
+      providerRepoId: gitInfo?.repoId ? String(gitInfo.repoId) : undefined,
+      pathPrefix: pathPrefix.trim() || undefined,
       services: services
         .filter((row) => row.name.trim() || row.image.trim())
         .map((row) => ({
@@ -399,7 +402,7 @@ export default function BootstrapDeployment({ cloud }: Props) {
                 <input
                   className={styles.input}
                   value={repoUrl}
-                  onChange={onChange(setRepoUrl)}
+                  onChange={(e) => { setRepoUrl(e.target.value); setGitInfo(null); clear(); }}
                   placeholder="git@github.com:owner/repo.git"
                   autoComplete="off"
                 />
@@ -436,6 +439,18 @@ export default function BootstrapDeployment({ cloud }: Props) {
                   placeholder="derived from the name"
                   autoComplete="off"
                 />
+              </label>
+
+              <label className={styles.field}>
+                <span className={styles.label}>Path prefix (optional)</span>
+                <input
+                  className={styles.input}
+                  value={pathPrefix}
+                  onChange={onChange(setPathPrefix)}
+                  placeholder="apps/shop"
+                  autoComplete="off"
+                />
+                <span className={styles.hint}>For a monorepo: the folder this project uses.</span>
               </label>
             </div>
 
