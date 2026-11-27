@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import toast from 'react-hot-toast';
 import ZestButton from 'jattac.libs.web.zest-button';
 import { api } from '@/shared/ApiService';
+import type { JitDryRun } from '@/modules/JitDeploy/jitDeploy';
 import {
   BootstrapApplyResponse,
   BootstrapApplyResult,
@@ -22,6 +23,9 @@ interface ServiceRow {
 }
 
 const emptyService = (): ServiceRow => ({ name: 'app', image: '', dockerfile: 'Dockerfile', context: '.' });
+
+const slug = (value: string) =>
+  value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'app';
 
 const parseEnv = (text: string): Record<string, string> => {
   const env: Record<string, string> = {};
@@ -67,6 +71,8 @@ export default function BootstrapDeployment({ cloud }: Props) {
   const [gitInfo, setGitInfo] = useState<GitInspection | null>(null);
   const [gitBusy, setGitBusy] = useState(false);
   const [gitError, setGitError] = useState<string | null>(null);
+  const [dryRun, setDryRun] = useState<JitDryRun | null>(null);
+  const [dryBusy, setDryBusy] = useState(false);
 
   const [advanced, setAdvanced] = useState(false);
   const [plan, setPlan] = useState<BootstrapPlan | null>(null);
@@ -173,6 +179,13 @@ export default function BootstrapDeployment({ cloud }: Props) {
       setGitInfo(info);
       if (!branch.trim() || branch === 'master') setBranch(info.defaultBranch);
       if (info.suggestedComposeFile) setComposeFile(info.suggestedComposeFile);
+      if (!projectName.trim()) {
+        const suggested = slug(info.name);
+        setProjectName(suggested);
+        if (!composeProject.trim()) setComposeProject(suggested);
+      } else if (!composeProject.trim()) {
+        setComposeProject(slug(projectName));
+      }
       if (info.services.length > 0) {
         setServices(info.services.map((service) => ({
           name: service.name,
@@ -186,6 +199,20 @@ export default function BootstrapDeployment({ cloud }: Props) {
       setGitError(e?.message ?? 'ShipRight could not read that repository.');
     } finally {
       setGitBusy(false);
+    }
+  };
+
+  const checkServer = async () => {
+    if (!result?.projectId) return;
+    setDryBusy(true);
+    try {
+      const next = await api.post<JitDryRun>(`/api/jit/${result.projectId}/dry-run`, {});
+      setDryRun(next);
+    } catch (e: any) {
+      setDryRun(null);
+      setError(e?.message ?? 'The server check failed. Try again.');
+    } finally {
+      setDryBusy(false);
     }
   };
 
@@ -240,6 +267,38 @@ export default function BootstrapDeployment({ cloud }: Props) {
           <ol className={styles.steps}>
             {result.nextSteps.map((step) => <li key={step}>{step}</li>)}
           </ol>
+
+          <div className={styles.inlineActions}>
+            <ZestButton
+              onClick={checkServer}
+              disabled={dryBusy}
+              zest={{ buttonStyle: 'outline', semanticType: 'submit', visualOptions: { size: 'sm' } }}
+            >
+              {dryBusy ? 'Checking…' : 'Check the server'}
+            </ZestButton>
+            <span className={styles.hint}>Reads the server and the code without changing anything.</span>
+          </div>
+
+          {dryRun && (
+            <div className={styles.deferred}>
+              <span className={styles.label}>
+                {dryRun.ok ? 'The server is ready' : 'The server needs attention'}
+              </span>
+              {dryRun.problems.length > 0 && (
+                <ul className={styles.problems}>
+                  {dryRun.problems.map((problem) => <li key={problem}>{problem}</li>)}
+                </ul>
+              )}
+              {dryRun.warnings.length > 0 && (
+                <ul className={styles.warnings}>
+                  {dryRun.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+                </ul>
+              )}
+              {dryRun.commands.length > 0 && (
+                <span className={styles.hint}>{dryRun.commands.length} commands would run.</span>
+              )}
+            </div>
+          )}
 
           <div className={styles.actions}>
             <ZestButton
@@ -307,7 +366,13 @@ export default function BootstrapDeployment({ cloud }: Props) {
             <input
               className={styles.input}
               value={username}
-              onChange={onChange(setUsername)}
+              onChange={(e) => {
+                const value = e.target.value;
+                setUsername(value);
+                if (!folder.trim() && value.trim())
+                  setFolder(`/home/${value.trim()}/${slug(projectName || 'shipright')}`);
+                clear();
+              }}
               placeholder="add it later"
               autoComplete="off"
             />
@@ -391,7 +456,13 @@ export default function BootstrapDeployment({ cloud }: Props) {
                 <input
                   className={styles.input}
                   value={projectName}
-                  onChange={onChange(setProjectName)}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setProjectName(value);
+                    if (!composeProject.trim())
+                      setComposeProject(value.trim() ? slug(value) : '');
+                    clear();
+                  }}
                   placeholder="shop"
                   autoComplete="off"
                 />

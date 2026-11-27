@@ -131,6 +131,8 @@ describe('BootstrapDeployment', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Check repository' }));
 
     expect(await screen.findByText(/acme\/shop/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^project name/i)).toHaveValue('shop');
+    expect(screen.getByLabelText(/^compose project/i)).toHaveValue('shop');
     expect(screen.getByLabelText(/^branch/i)).toHaveValue('main');
     expect(screen.getByLabelText(/^compose file/i)).toHaveValue('deploy/docker-compose.yml');
     expect(screen.getByLabelText('Service 1 name')).toHaveValue('api');
@@ -146,6 +148,14 @@ describe('BootstrapDeployment', () => {
     })));
   });
 
+  it('fills the folder from the user and leaves it editable', () => {
+    render(<BootstrapDeployment cloud={false} />);
+
+    fireEvent.change(screen.getByLabelText(/^user/i), { target: { value: 'deploy' } });
+
+    expect(screen.getByLabelText(/folder on the server/i)).toHaveValue('/home/deploy/shipright');
+  });
+
   it('creates the deployment after a clean preview and shows the key and the next step', async () => {
     mockApi.post
       .mockResolvedValueOnce(plan() as never)
@@ -159,6 +169,12 @@ describe('BootstrapDeployment', () => {
           problems: [],
           nextSteps: ['Run a dry run to check the server without changing it.'],
         },
+      } as never)
+      .mockResolvedValueOnce({
+        ok: true,
+        problems: [],
+        warnings: [],
+        commands: [{ step: 'fetch', command: 'git fetch' }],
       } as never);
     render(<BootstrapDeployment cloud={false} />);
 
@@ -174,6 +190,11 @@ describe('BootstrapDeployment', () => {
       preset: 'ShipRightSelf',
       host: 'staging.example.com',
     }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Check the server' }));
+
+    expect(await screen.findByText('The server is ready')).toBeInTheDocument();
+    expect(mockApi.post).toHaveBeenLastCalledWith('/api/jit/shipright/dry-run', {});
   });
 
   it('says what happened and what to do when writing fails', async () => {
