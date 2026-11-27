@@ -74,6 +74,15 @@ export interface BootstrapApplyResponse {
   plan: BootstrapPlan;
 }
 
+export interface GitSuggestedService {
+  name: string;
+  image: string;
+  dockerfile: string;
+  context: string;
+  target?: string | null;
+  args?: Record<string, string> | null;
+}
+
 export interface GitInspection {
   url: string;
   provider: string;
@@ -85,6 +94,7 @@ export interface GitInspection {
   branches: string[];
   composeFiles: string[];
   dockerfiles: string[];
+  services: GitSuggestedService[];
   suggestedComposeFile: string | null;
   notes: string[];
 }

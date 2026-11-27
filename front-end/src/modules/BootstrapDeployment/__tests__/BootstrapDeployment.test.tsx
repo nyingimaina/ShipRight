@@ -118,6 +118,7 @@ describe('BootstrapDeployment', () => {
       branches: ['main', 'dev'],
       composeFiles: ['deploy/docker-compose.yml'],
       dockerfiles: ['Dockerfile'],
+      services: [{ name: 'api', image: 'acme/shop-api', dockerfile: 'Dockerfile', context: '.' }],
       suggestedComposeFile: 'deploy/docker-compose.yml',
       notes: [],
     } as never);
@@ -130,6 +131,8 @@ describe('BootstrapDeployment', () => {
     expect(await screen.findByText(/acme\/shop/)).toBeInTheDocument();
     expect(screen.getByLabelText(/^branch/i)).toHaveValue('main');
     expect(screen.getByLabelText(/^compose file/i)).toHaveValue('deploy/docker-compose.yml');
+    expect(screen.getByLabelText('Service 1 name')).toHaveValue('api');
+    expect(screen.getByLabelText('Service 1 image')).toHaveValue('acme/shop-api');
     expect(mockApi.post).toHaveBeenCalledWith('/api/git/inspect', { url: 'https://github.com/acme/shop' });
   });
 

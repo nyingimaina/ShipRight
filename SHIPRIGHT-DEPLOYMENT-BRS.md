@@ -2004,7 +2004,8 @@ Still owed before D1 is fully closed: persist flags and proposals, wire the AI a
 ### D2 — Onboarding slice (in progress)
 
 - **GitHub repository inspection**: read-only metadata, default branch, branches, compose files and Dockerfiles, without cloning. A token is optional for private repositories.
-- The bootstrap screen can fill the branch and compose file from a repository address.
+- **Service suggestions**: the suggested compose file is parsed with the existing compose reader, and its buildable services (name, image, Dockerfile, context) fill the bootstrap's services editor. Supporting services are listed separately.
+- The bootstrap screen can fill the branch, compose file and services from a repository address.
 - Still to do: attach the inspected repository to a project, the full deployment screen, the guided wizard and the option catalog.
 
 ### Phase 0 — Hakiri

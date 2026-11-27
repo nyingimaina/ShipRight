@@ -13,6 +13,7 @@ public class GitInspectorTests
             new("github", "acme", "shop", "main", false, "https://github.com/acme/shop", 123);
         public IReadOnlyList<GitBranch> Branches { get; init; } = [];
         public IReadOnlyList<GitTreeEntry> Tree { get; init; } = [];
+        public string? Compose { get; init; }
 
         public bool CanHandle(GitUrlInfo url) => url.Provider == "github";
 
@@ -27,7 +28,7 @@ public class GitInspectorTests
 
         public Task<string?> GetFileAsync(
             GitUrlInfo url, string reference, string path, string? token, CancellationToken ct) =>
-            Task.FromResult<string?>(null);
+            Task.FromResult(Compose);
     }
 
     private static GitTreeEntry Blob(string path) => new(path, "blob", 10);
@@ -86,6 +87,57 @@ public class GitInspectorTests
 
         Assert.IsNull(result.SuggestedComposeFile);
         StringAssert.Contains(string.Join(" ", result.Notes).ToLowerInvariant(), "no compose file");
+    }
+
+    [TestMethod]
+    public async Task SuggestsBuildableServicesFromTheComposeFile()
+    {
+        var provider = new FakeProvider
+        {
+            Tree = [Blob("docker-compose.yml"), Blob("Dockerfile")],
+            Compose = """
+                services:
+                  app:
+                    build: .
+                    image: ${APP_TAG:-shipright/app:latest}
+                  db:
+                    image: mariadb:11
+                """,
+        };
+
+        var result = await new GitInspector([provider]).InspectAsync("https://github.com/nyingi/shop", null);
+
+        var app = result.Services.Single();
+        Assert.AreEqual("app", app.Name);
+        Assert.AreEqual("shipright/app", app.Image);
+        Assert.AreEqual("Dockerfile", app.Dockerfile);
+        Assert.AreEqual(".", app.Context);
+        StringAssert.Contains(string.Join(" ", result.Notes).ToLowerInvariant(), "supporting");
+    }
+
+    [TestMethod]
+    public async Task ReadsAnObjectBuildWithItsOwnDockerfileAndContext()
+    {
+        var provider = new FakeProvider
+        {
+            Tree = [Blob("docker-compose.yml")],
+            Compose = """
+                services:
+                  api:
+                    build:
+                      context: ./api
+                      dockerfile: Dockerfile.api
+                    image: acme/shop-api:1.2
+                """,
+        };
+
+        var result = await new GitInspector([provider]).InspectAsync("https://github.com/acme/shop", null);
+
+        var api = result.Services.Single();
+        Assert.AreEqual("api", api.Name);
+        Assert.AreEqual("acme/shop-api", api.Image);
+        Assert.AreEqual("Dockerfile.api", api.Dockerfile);
+        Assert.AreEqual("./api", api.Context);
     }
 
     [TestMethod]

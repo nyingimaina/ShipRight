@@ -170,6 +170,14 @@ export default function BootstrapDeployment({ cloud }: Props) {
       setGitInfo(info);
       if (!branch.trim() || branch === 'master') setBranch(info.defaultBranch);
       if (info.suggestedComposeFile) setComposeFile(info.suggestedComposeFile);
+      if (info.services.length > 0) {
+        setServices(info.services.map((service) => ({
+          name: service.name,
+          image: service.image,
+          dockerfile: service.dockerfile || 'Dockerfile',
+          context: service.context || '.',
+        })));
+      }
       clear();
     } catch (e: any) {
       setGitError(e?.message ?? 'ShipRight could not read that repository.');
@@ -462,6 +470,11 @@ export default function BootstrapDeployment({ cloud }: Props) {
                 )}
                 {gitInfo.dockerfiles.length > 0 && (
                   <span className={styles.hint}>Dockerfiles: {gitInfo.dockerfiles.join(', ')}</span>
+                )}
+                {gitInfo.services.length > 0 && (
+                  <span className={styles.hint}>
+                    Services to build: {gitInfo.services.map((service) => service.name).join(', ')}
+                  </span>
                 )}
                 {gitInfo.notes.map((note) => (
                   <span className={styles.hint} key={note}>{note}</span>
