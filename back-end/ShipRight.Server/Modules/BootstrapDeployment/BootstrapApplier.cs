@@ -25,7 +25,7 @@ public sealed class BootstrapApplier(
             var server = await ResolveServerAsync(plan.Server, ct);
 
             string? publicKey = null;
-            if (server.ManagedSshKey && string.IsNullOrWhiteSpace(server.SshKeyPath))
+            if (server.ManagedSshKey && !string.IsNullOrWhiteSpace(server.Username) && string.IsNullOrWhiteSpace(server.SshKeyPath))
             {
                 var key = await keys.EnsureAsync(server.Id, ct);
                 server = server with
@@ -50,7 +50,7 @@ public sealed class BootstrapApplier(
                 ProjectId = project.Id,
                 ServerId = server.Id,
                 PublicKey = publicKey,
-                NextSteps = NextSteps(project.Id, publicKey),
+                NextSteps = NextSteps(project.Id, publicKey, server),
             };
         }
         catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
@@ -101,13 +101,23 @@ public sealed class BootstrapApplier(
         };
     }
 
-    private static IReadOnlyList<string> NextSteps(string projectId, string? publicKey)
+    private static IReadOnlyList<string> NextSteps(string projectId, string? publicKey, ServerConfig server)
     {
         var steps = new List<string>();
-        if (publicKey is not null)
+
+        if (string.IsNullOrWhiteSpace(server.Username))
+            steps.Add("Add the user ShipRight signs in as, then make or add a key on the server page.");
+        else if (publicKey is not null)
             steps.Add("Add the public key to the server's authorized keys, then run a dry run.");
         else
             steps.Add("Run a dry run to check the server without changing it.");
+
+        if (string.IsNullOrWhiteSpace(server.RemoteWorkingDir))
+            steps.Add("Choose the folder on the server before the first deploy.");
+
+        if (string.IsNullOrWhiteSpace(server.HealthCheckUrl))
+            steps.Add("Add a domain when you have one, then deploy again.");
+
         steps.Add($"Then deploy: POST /api/jit/{projectId}/deploy.");
         return steps;
     }

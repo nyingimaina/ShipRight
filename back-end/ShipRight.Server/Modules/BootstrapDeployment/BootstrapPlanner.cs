@@ -38,18 +38,18 @@ public static class BootstrapPlanner
         if (services.Count == 0) problems.Add("Add at least one service to build.");
 
         var host = (request.Host ?? string.Empty).Trim();
-        if (host.Length == 0) problems.Add("Enter the server's address.");
+        if (host.Length == 0) problems.Add("Enter the server's address (its public IP is enough).");
 
+        // A sign-in user is optional at bootstrap time: the address alone can be saved, and the person can add the
+        // user, key and folder later. The missing pieces become deploy blockers, not reasons to refuse the write.
         var username = (request.Username ?? string.Empty).Trim();
-        if (username.Length == 0) problems.Add("Enter the user ShipRight signs in as.");
 
         var workingDir = (request.RemoteWorkingDir ?? string.Empty).Trim();
         if (workingDir.Length == 0 && username.Length > 0 && name.Length > 0)
             workingDir = username == "root"
                 ? $"/root/{Slug(name)}"
                 : $"/home/{username}/{Slug(name)}";
-        if (workingDir.Length == 0) problems.Add("Enter the folder on the server.");
-        else Try(problems, "server folder", () => JitNames.Path(workingDir));
+        if (workingDir.Length > 0) Try(problems, "server folder", () => JitNames.Path(workingDir));
 
         var keyPath = (request.SshKeyPath ?? string.Empty).Trim();
         var managedKey = keyPath.Length == 0;
@@ -61,8 +61,16 @@ public static class BootstrapPlanner
             : request.ComposeProject.Trim();
         Try(problems, "compose project name", () => JitNames.Project(composeProject));
 
+        var deployBlockers = new List<string>();
+        if (username.Length == 0) deployBlockers.Add("Add the user ShipRight signs in as.");
+        if (workingDir.Length == 0) deployBlockers.Add("Choose the folder on the server.");
+        if (username.Length == 0 && keyPath.Length == 0)
+            deployBlockers.Add("Add an SSH key once a user is set (ShipRight can make one).");
+
+        if (username.Length == 0)
+            warnings.Add("Saved without a sign-in user: add one later and ShipRight will connect over SSH.");
         if (request.Preset == BootstrapPreset.ShipRightSelf && string.IsNullOrWhiteSpace(request.Domain))
-            problems.Add("Enter the domain people will visit (for example staging.example.com).");
+            warnings.Add("Saved without a domain: until you add one, the app is reachable by address over HTTP.");
 
         var serverId = string.IsNullOrWhiteSpace(request.ServerId) ? Guid.NewGuid().ToString() : request.ServerId.Trim();
         var projectId = string.IsNullOrWhiteSpace(request.ProjectId) ? Slug(name) : request.ProjectId.Trim();
@@ -117,7 +125,11 @@ public static class BootstrapPlanner
             Jit = jit,
             Problems = problems,
             Warnings = warnings,
-            Steps = BuildSteps(managedKey),
+            DeployBlockers = deployBlockers,
+            Steps = BuildSteps(
+                makeKey: managedKey && username.Length > 0,
+                needsSsh: username.Length == 0,
+                needsDomain: request.Preset == BootstrapPreset.ShipRightSelf && string.IsNullOrWhiteSpace(request.Domain)),
         };
     }
 
@@ -195,20 +207,30 @@ public static class BootstrapPlanner
         return string.Join("\n", lines);
     }
 
-    private static IReadOnlyList<BootstrapStep> BuildSteps(bool managedKey)
+    private static IReadOnlyList<BootstrapStep> BuildSteps(bool makeKey, bool needsSsh, bool needsDomain)
     {
         var steps = new List<BootstrapStep>
         {
             new("save-server", "Save the server", "ShipRight records where the app will run."),
         };
 
-        if (managedKey)
+        if (needsSsh)
+        {
+            steps.Add(new("add-ssh", "Add SSH later",
+                "Open the server and add the user and key when you are ready."));
+        }
+        else if (makeKey)
         {
             steps.Add(new("generate-key", "Make a key", "ShipRight creates a key for this server."));
             steps.Add(new("authorize-key", "Authorize the key", "Add the public key to the server once."));
         }
 
         steps.Add(new("save-project", "Write the project", "ShipRight writes the project and deployment settings from scratch."));
+
+        if (needsDomain)
+            steps.Add(new("add-domain", "Add a domain later",
+                "Until then the app is reachable by address over HTTP."));
+
         steps.Add(new("dry-run", "Dry run", "Check the plan against the server without changing it."));
         steps.Add(new("deploy", "Deploy", "Build and start on the server."));
         return steps;

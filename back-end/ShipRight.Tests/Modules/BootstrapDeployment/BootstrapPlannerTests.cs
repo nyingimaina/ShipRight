@@ -102,14 +102,15 @@ public class BootstrapPlannerTests
     }
 
     [TestMethod]
-    public void Plan_ReportsEveryMissingTargetFieldInPlainWords()
+    public void Plan_RequiresOnlyTheAddressAndTheRepository()
     {
         var plan = BootstrapPlanner.Plan(Request() with { Host = "", Username = "", RepoUrl = "" });
 
         Assert.IsFalse(plan.Ok);
-        StringAssert.Contains(string.Join(" ", plan.Problems).ToLowerInvariant(), "address");
-        StringAssert.Contains(string.Join(" ", plan.Problems).ToLowerInvariant(), "user");
-        StringAssert.Contains(string.Join(" ", plan.Problems).ToLowerInvariant(), "git");
+        var problems = string.Join(" ", plan.Problems).ToLowerInvariant();
+        StringAssert.Contains(problems, "address");
+        StringAssert.Contains(problems, "git");
+        Assert.IsFalse(problems.Contains("user"), "A sign-in user is optional at bootstrap time.");
     }
 
     [TestMethod]
@@ -225,16 +226,55 @@ public class BootstrapPlannerTests
     }
 
     [TestMethod]
-    public void SelfPreset_WithoutADomain_SaysWhatIsMissing()
+    public void Plan_ForAnotherApp_NeedsOnlyTheAddressPlusItsOwnFacts()
+    {
+        var plan = BootstrapPlanner.Plan(new BootstrapRequest
+        {
+            ProjectName = "shop",
+            RepoUrl = "git@github.com:acme/shop.git",
+            Services = [new BootstrapService { Name = "api", Image = "acme/shop-api", Dockerfile = "Dockerfile" }],
+            Host = "203.0.113.10",
+        });
+
+        Assert.IsTrue(plan.Ok, All(plan));
+        Assert.AreEqual("shop", plan.Project.Name);
+        Assert.AreEqual("api", plan.Jit.ComposeServices.Single().Name);
+        Assert.IsFalse(plan.DeployReady);
+        Assert.IsTrue(plan.DeployBlockers.Count > 0);
+    }
+
+    [TestMethod]
+    public void SelfPreset_WithoutADomain_IsStillSavedAndSaysWhatIsDeferred()
     {
         var plan = BootstrapPlanner.Plan(ShipRightSelfTemplate.Create(
-            host: "staging.example.com",
-            username: "deploy",
-            remoteWorkingDir: "/home/deploy/shipright",
+            host: "203.0.113.10",
+            username: "",
+            remoteWorkingDir: "",
             domain: ""));
 
-        Assert.IsFalse(plan.Ok);
-        StringAssert.Contains(string.Join(" ", plan.Problems).ToLowerInvariant(), "domain");
+        Assert.IsTrue(plan.Ok, All(plan));
+        StringAssert.Contains(string.Join(" ", plan.Warnings).ToLowerInvariant(), "domain");
+        Assert.AreEqual("http://localhost:5200/api/health", plan.Server.HealthCheckUrl);
+    }
+
+    [TestMethod]
+    public void Plan_WithOnlyAPublicAddress_IsAcceptedAndSaysWhatIsDeferred()
+    {
+        var plan = BootstrapPlanner.Plan(ShipRightSelfTemplate.Create(
+            host: "203.0.113.10",
+            username: "",
+            remoteWorkingDir: "",
+            domain: ""));
+
+        Assert.IsTrue(plan.Ok, All(plan));
+        Assert.AreEqual("203.0.113.10", plan.Server.Host);
+        Assert.AreEqual("", plan.Server.Username);
+        Assert.AreEqual("", plan.Server.RemoteWorkingDir);
+        Assert.IsFalse(plan.DeployReady);
+        Assert.IsTrue(plan.DeployBlockers.Count > 0);
+        StringAssert.Contains(plan.Jit.EnvText, "SHIPRIGHT__PUBLIC_URL=http://203.0.113.10:8080");
+        Assert.IsTrue(plan.Steps.Any(s => s.Id == "add-ssh"));
+        Assert.IsTrue(plan.Steps.Any(s => s.Id == "add-domain"));
     }
 
     [TestMethod]

@@ -68,8 +68,10 @@ public sealed record BootstrapPlan
     public JitDeployConfig Jit { get; init; } = new();
     public IReadOnlyList<string> Problems { get; init; } = [];
     public IReadOnlyList<string> Warnings { get; init; } = [];
+    public IReadOnlyList<string> DeployBlockers { get; init; } = [];
     public IReadOnlyList<BootstrapStep> Steps { get; init; } = [];
     public bool Ok => Problems.Count == 0;
+    public bool DeployReady => DeployBlockers.Count == 0;
 }
 
 /// <summary>What the applier wrote, and what the person should do next.</summary>

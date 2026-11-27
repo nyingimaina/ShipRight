@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import BootstrapDeployment from '../BootstrapDeployment';
 import { api } from '@/shared/ApiService';
 
@@ -22,13 +22,15 @@ const plan = (over: Record<string, unknown> = {}) => ({
   jit: {},
   problems: [],
   warnings: [],
+  deployBlockers: [],
+  deployReady: true,
   steps: [{ id: 'save-server', title: 'Save the server', detail: 'ShipRight records where the app will run.' }],
   ok: true,
   ...over,
 });
 
-const fillTarget = () => {
-  fireEvent.change(screen.getByLabelText(/server address/i), { target: { value: 'staging.example.com' } });
+const fillAddress = () => {
+  fireEvent.change(screen.getByLabelText(/public address/i), { target: { value: 'staging.example.com' } });
   fireEvent.change(screen.getByLabelText(/domain/i), { target: { value: 'staging.shipright.example.com' } });
 };
 
@@ -45,15 +47,15 @@ describe('BootstrapDeployment', () => {
     mockApi.post.mockResolvedValue(plan({ ok: false, problems: ['Enter the server address.'] }) as never);
     render(<BootstrapDeployment cloud={false} />);
 
-    fillTarget();
+    fillAddress();
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
 
     expect((await screen.findAllByText('Enter the server address.')).length).toBeGreaterThan(0);
     expect(mockApi.post).toHaveBeenCalledWith('/api/bootstrap/plan', expect.objectContaining({
       preset: 'ShipRightSelf',
       host: 'staging.example.com',
-      username: 'ubuntu',
-      remoteWorkingDir: '/home/ubuntu/shipright',
+      username: '',
+      remoteWorkingDir: '',
       domain: 'staging.shipright.example.com',
     }));
   });
@@ -63,6 +65,45 @@ describe('BootstrapDeployment', () => {
 
     expect(screen.getByRole('button', { name: 'Create deployment' })).toBeDisabled();
     expect(screen.getAllByText(/preview first/i).length).toBeGreaterThan(0);
+  });
+
+  it('accepts a public address alone and shows what can be added later', async () => {
+    mockApi.post.mockResolvedValue(plan({
+      deployReady: false,
+      deployBlockers: ['Add the user ShipRight signs in as.'],
+    }) as never);
+    render(<BootstrapDeployment cloud={false} />);
+
+    fireEvent.change(screen.getByLabelText(/public address/i), { target: { value: '203.0.113.10' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+
+    expect(await screen.findByText('Saved now, deploy later')).toBeInTheDocument();
+    expect(screen.getByText('Add the user ShipRight signs in as.')).toBeInTheDocument();
+    expect(mockApi.post).toHaveBeenCalledWith('/api/bootstrap/plan', expect.objectContaining({
+      host: '203.0.113.10',
+      username: '',
+      remoteWorkingDir: '',
+      domain: '',
+    }));
+  });
+
+  it('writes another app from scratch, not just this product', async () => {
+    mockApi.post.mockResolvedValue(plan() as never);
+    render(<BootstrapDeployment cloud={false} />);
+
+    fireEvent.change(screen.getByLabelText(/what are you deploying/i), { target: { value: 'custom' } });
+    fireEvent.change(screen.getByLabelText(/public address/i), { target: { value: '203.0.113.10' } });
+    fireEvent.change(screen.getByLabelText(/project name/i), { target: { value: 'shop' } });
+    fireEvent.change(screen.getByLabelText(/^repository/i), { target: { value: 'git@github.com:acme/shop.git' } });
+    fireEvent.change(screen.getByLabelText('Service 1 image'), { target: { value: 'acme/shop-api' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+
+    await waitFor(() => expect(mockApi.post).toHaveBeenCalledWith('/api/bootstrap/plan', expect.objectContaining({
+      preset: 'None',
+      projectName: 'shop',
+      repoUrl: 'git@github.com:acme/shop.git',
+      services: expect.arrayContaining([expect.objectContaining({ name: 'app', image: 'acme/shop-api' })]),
+    })));
   });
 
   it('creates the deployment after a clean preview and shows the key and the next step', async () => {
@@ -81,7 +122,7 @@ describe('BootstrapDeployment', () => {
       } as never);
     render(<BootstrapDeployment cloud={false} />);
 
-    fillTarget();
+    fillAddress();
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
     await screen.findByText('Ready to create');
     fireEvent.click(screen.getByRole('button', { name: 'Create deployment' }));
@@ -101,7 +142,7 @@ describe('BootstrapDeployment', () => {
       .mockRejectedValueOnce({ message: 'ShipRight could not write that deployment.' });
     render(<BootstrapDeployment cloud={false} />);
 
-    fillTarget();
+    fillAddress();
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
     await screen.findByText('Ready to create');
     fireEvent.click(screen.getByRole('button', { name: 'Create deployment' }));

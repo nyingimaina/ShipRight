@@ -40,7 +40,9 @@ public static class ShipRightSelfTemplate
         SshKeyPath = sshKeyPath ?? string.Empty,
         RemoteWorkingDir = remoteWorkingDir,
         Domain = domain,
-        HealthCheckUrl = string.IsNullOrWhiteSpace(domain) ? string.Empty : $"https://{domain}/api/health",
+        HealthCheckUrl = string.IsNullOrWhiteSpace(domain)
+            ? "http://localhost:5200/api/health"
+            : $"https://{domain}/api/health",
         Env = env is null
             ? new Dictionary<string, string>(StringComparer.Ordinal)
             : new Dictionary<string, string>(env, StringComparer.Ordinal),
@@ -89,6 +91,18 @@ public static class ShipRightSelfTemplate
             Add("SHIPRIGHT__SMTP_FROM", $"no-reply@{domain}");
             if (string.IsNullOrWhiteSpace(filled.HealthCheckUrl))
                 filled = filled with { HealthCheckUrl = $"https://{domain}/api/health" };
+        }
+        else
+        {
+            // No domain yet: the build compose serves the app over plain HTTP on 8080, reached by the address itself.
+            var host = (filled.Host ?? string.Empty).Trim();
+            if (host.Length > 0)
+            {
+                Add("SHIPRIGHT__PUBLIC_URL", $"http://{host}:8080");
+                Add("SHIPRIGHT__CORS_ORIGINS", $"http://{host}:8080");
+            }
+            if (string.IsNullOrWhiteSpace(filled.HealthCheckUrl))
+                filled = filled with { HealthCheckUrl = "http://localhost:5200/api/health" };
         }
 
         Add("SHIPRIGHT__SMTP_PORT", "587");

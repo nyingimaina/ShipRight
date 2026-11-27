@@ -165,6 +165,28 @@ public class BootstrapApplierTests
     }
 
     [TestMethod]
+    public async Task Apply_WithOnlyAnAddress_SavesTheServerWithoutMakingAKey()
+    {
+        var (applier, projects, servers, jit, keys) = Create();
+        var plan = BootstrapPlanner.Plan(ShipRightSelfTemplate.Create(
+            host: "203.0.113.10",
+            username: "",
+            remoteWorkingDir: "",
+            domain: ""));
+
+        var result = await applier.ApplyAsync(plan);
+
+        Assert.IsTrue(result.Ok, string.Join(" | ", result.Problems));
+        Assert.AreEqual(0, keys.Calls);
+        var saved = servers.Items[result.ServerId!];
+        Assert.AreEqual("203.0.113.10", saved.Host);
+        Assert.AreEqual("", saved.Username);
+        Assert.AreEqual("", saved.SshKeyPath);
+        Assert.IsTrue(projects.Items.ContainsKey(result.ProjectId!));
+        Assert.IsTrue(jit.Items.ContainsKey(result.ProjectId!));
+    }
+
+    [TestMethod]
     public async Task Apply_ReportsAnActionableErrorWhenTheKeyCannotBeMade()
     {
         var (applier, projects, servers, jit, _) = Create();

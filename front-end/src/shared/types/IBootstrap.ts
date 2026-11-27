@@ -45,6 +45,8 @@ export interface BootstrapPlan {
   jit: Record<string, unknown>;
   problems: string[];
   warnings: string[];
+  deployBlockers: string[];
+  deployReady: boolean;
   steps: BootstrapStep[];
   ok: boolean;
 }
