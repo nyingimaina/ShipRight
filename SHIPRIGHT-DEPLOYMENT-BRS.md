@@ -793,7 +793,7 @@ Every runtime adapter **MUST** pass a shared conformance suite:
 
 Implementation status at the time of writing:
 
-- `Hakiri.slnx` exists at `D:\work\nyingi\code\systems\hakiri`.
+- `Hakiri.slnx` exists at `D:\work\nyingi\code\systems\hakiri` and is published at `https://github.com/nyingimaina/hakiri` (branch `master`).
 - `Hakiri.Abstractions`, `Hakiri.Scripted`, `Hakiri.Provider.OpenAiCompatible`, `Hakiri.Runtime.Process`, `Hakiri.Runtime.OpenCode`, `Hakiri.Runtime.ClaudeCode`, `Hakiri.Toolkit` and `Hakiri.Diagnostics` exist and compile.
 - The contract tests pass (25 at the current commit), and every package packs.
 - Initial commit: `b179362` on the local `hakiri` repository.
