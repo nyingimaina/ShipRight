@@ -225,6 +225,7 @@ This table resolves every open question from the design discussion. If a future 
 | 59 | AI layer location | **`D:\work\nyingi\code\systems\hakiri`**, its own solution (`Hakiri.slnx`) and its own version | Shared by ShipRight, Tinkerdeck and DevTeam without coupling |
 | 60 | AI package names | `Hakiri.*` | The layer is a product of its own, not a ShipRight submodule |
 | 61 | Zero-config AI setup | `Hakiri.Toolkit` detects known tools, returns install/sign-in steps, and never installs silently | A novice can start with one call; a host still asks before changing the machine |
+| 62 | Self-deploy target | The **production server stays on the legacy/manual path** until the new path is proven; all self-deploy testing happens on a **separate staging box** | A broken self-deploy must never take down the tool that fixes it |
 
 ---
 
@@ -1942,6 +1943,19 @@ Each criterion is written as Given/When/Then and **MUST** be covered by an autom
 ---
 
 ## 18. Phased delivery
+
+### Deploy targets (applies to every phase)
+
+ShipRight's own production server (`https://shipright.jaribio.biz`, currently 4.12.3) stays on the legacy/manual
+deploy path until the new path has been proven end to end.
+
+- All self-deploy experiments — building and deploying ShipRight with ShipRight — run against a **separate staging
+  box**, provided for that purpose, with its own domain, database and volumes.
+- The production server is never the canary for the new deploy path.
+- Even on the staging box, keep an out-of-band recovery (SSH + `docker compose` + the old installer) available and
+  rehearsed before the first self-deploy.
+- Promotion to the production server is a separate, explicit decision made only after the staging box has survived a
+  full deploy-and-rollback cycle.
 
 ### Phase 0 — Hakiri
 Extract the AI layer into `D:\work\nyingi\code\systems\hakiri`, publish packages, add conformance tests.
