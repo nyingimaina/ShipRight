@@ -34,13 +34,14 @@ public class JitLocalBranchGuardTests
 
     private static RecordingRunner Runner(
         string origin = Origin, string branch = "master", string status = "", string counts = "0 0", bool pushed = true,
-        bool fetchOk = true)
+        bool fetchOk = true, bool lineEndingsOnly = false)
     {
         var r = new RecordingRunner();
         r.When((_, a) => a.Contains("remote") && a.Contains("get-url"), 0, origin + "\n");
         r.When((_, a) => a.Contains("fetch"), fetchOk ? 0 : 1, "", fetchOk ? "" : "fatal: could not read from remote");
         r.When((_, a) => a.Contains("--abbrev-ref"), 0, branch + "\n");
         r.When((_, a) => a.Any(x => x.StartsWith("--porcelain", StringComparison.Ordinal)), 0, status);
+        r.When((_, a) => a.Contains("--ignore-cr-at-eol"), lineEndingsOnly ? 0 : 1, "");
         r.When((_, a) => a.Contains("--verify"), pushed ? 0 : 1, pushed ? Sha + "\n" : "", pushed ? "" : "fatal: no such ref");
         r.When((_, a) => a.Contains("rev-list"), 0, counts + "\n");
         return r;
@@ -67,6 +68,8 @@ public class JitLocalBranchGuardTests
         Assert.IsFalse(result.Clean);
         StringAssert.Contains(result.Problem!, "commit", StringComparison.OrdinalIgnoreCase);
         StringAssert.Contains(result.Problem!, "src/Program.cs");
+        StringAssert.Contains(result.Problem!, Sha[..7]);
+        StringAssert.Contains(result.Problem!, "Deploy this exact commit");
     }
 
     [TestMethod]
@@ -82,6 +85,18 @@ public class JitLocalBranchGuardTests
         StringAssert.Contains(warning, "scratch.sql");
         StringAssert.Contains(warning, "notes/todo.md");
         StringAssert.Contains(warning, "will not be on the server");
+    }
+
+    [TestMethod]
+    public async Task TrackedChangesThatAreOnlyLineEndings_DoNotBlock()
+    {
+        var guard = new JitLocalBranchGuard(Runner(status: "M  src/Program.cs\nM  README.md\n", lineEndingsOnly: true));
+
+        var result = await guard.CheckAsync(Project(), Config());
+
+        Assert.IsNull(result.Problem, "line-ending churn is not work the deploy would leave out");
+        Assert.IsTrue(result.Warnings.Any(w => w.Contains("only in line endings")),
+            "the person is told why those files are not real changes");
     }
 
     [TestMethod]
@@ -203,6 +218,7 @@ public class JitLocalBranchGuardTests
             .When((_, a) => a.Contains("--abbrev-ref"), 0, "master\n")
             .When((_, a) => a.Any(x => x.StartsWith("--porcelain", StringComparison.Ordinal)) && a.Contains(Repo2), 0, "M  old.cs\n")
             .When((_, a) => a.Any(x => x.StartsWith("--porcelain", StringComparison.Ordinal)), 0, "")
+            .When((_, a) => a.Contains("--ignore-cr-at-eol"), 1, "")
             .When((_, a) => a.Contains("--verify"), 0, Sha + "\n")
             .When((_, a) => a.Contains("rev-list"), 0, "0 0\n");
 

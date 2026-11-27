@@ -121,6 +121,7 @@ public class JitDeployServiceTests
             .When((_, a) => a.Contains("remote") && a.Contains("get-url"), 0, "git@github.com:o/r.git\n")
             .When((_, a) => a.Contains("--abbrev-ref"), 0, "master\n")
             .When((_, a) => a.Any(x => x.StartsWith("--porcelain", StringComparison.Ordinal)), 0, "M  Program.cs\n")
+            .When((_, a) => a.Contains("--ignore-cr-at-eol"), 1, "")
             .When((_, a) => a.Contains("--verify"), 0, FakeRemote.Sha1 + "\n")
             .When((_, a) => a.Contains("rev-list"), 0, "0 1\n");
         var rig = new Rig(localBranchGuard: new JitLocalBranchGuard(runner)).WithLocalRepo();
@@ -145,6 +146,7 @@ public class JitDeployServiceTests
             .When((_, a) => a.Contains("fetch"), 0, "")
             .When((_, a) => a.Contains("--abbrev-ref"), 0, "master\n")
             .When((_, a) => a.Any(x => x.StartsWith("--porcelain", StringComparison.Ordinal)), 0, "M  Program.cs\n")
+            .When((_, a) => a.Contains("--ignore-cr-at-eol"), 1, "")
             .When((_, a) => a.Contains("--verify"), 0, FakeRemote.Sha1 + "\n")
             .When((_, a) => a.Contains("rev-list"), 0, "0 0\n");
         var rig = new Rig(localBranchGuard: new JitLocalBranchGuard(runner), attempts: store).WithLocalRepo();

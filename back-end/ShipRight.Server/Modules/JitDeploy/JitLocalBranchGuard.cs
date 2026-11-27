@@ -182,8 +182,21 @@ public sealed class JitLocalBranchGuard(IProcessRunner runner)
             var sample = Sample(tracked);
             if (onDeployBranch)
             {
-                var dirty = $"Commit your local changes before deploying ({sample}). The server fetches committed code, so unsaved changes would be left out.";
-                problem = problem is null ? dirty : problem + " " + dirty;
+                // Windows checkouts often report every text file as changed when only its line endings differ. That is
+                // not work the deploy would leave out, so prove it: ask git for differences ignoring CR at end of line.
+                var content = await RunGitAsync(path, ["diff", "--ignore-cr-at-eol", "--quiet", "HEAD", "--"], ct);
+                if (content is { Success: true })
+                {
+                    warnings.Add($"{tracked.Count} file{(tracked.Count == 1 ? "" : "s")} in {path} differ from HEAD only in line endings. " +
+                                 "They are not real changes, so the deploy is not blocked.");
+                }
+                else
+                {
+                    var pushed = remoteRef is null ? "" :
+                        $" To deploy exactly the pushed commit instead, enter {Short(remoteRef)} in \"Deploy this exact commit\".";
+                    var dirty = $"Commit your local changes before deploying ({sample}). The server fetches committed code, so unsaved changes would be left out.{pushed}";
+                    problem = problem is null ? dirty : problem + " " + dirty;
+                }
             }
             else
                 warnings.Add($"The checkout at {path} has uncommitted changes on '{on}' ({sample}); they are not part of '{branch}', so the deploy does not include them.");
@@ -201,6 +214,8 @@ public sealed class JitLocalBranchGuard(IProcessRunner runner)
         var name = string.Join(", ", paths.Take(3));
         return paths.Count > 3 ? $"{name} and {paths.Count - 3} more" : name;
     }
+
+    private static string Short(string sha) => sha.Length <= 7 ? sha : sha[..7];
 
     private async Task<string?> VerifyAsync(string path, string reference, CancellationToken ct)
     {

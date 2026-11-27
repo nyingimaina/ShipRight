@@ -62,13 +62,14 @@ public class JitDryRunTests
 
     private static JitDeployConfig Config() => new() { Enabled = true, RepoUrl = Origin, Branch = "master" };
 
-    private static RecordingRunner LocalRunner(string status = "", string branch = "master", string counts = "0 0")
+    private static RecordingRunner LocalRunner(string status = "", string branch = "master", string counts = "0 0", bool lineEndingsOnly = false)
     {
         var r = new RecordingRunner();
         r.When((_, a) => a.Contains("remote") && a.Contains("get-url"), 0, Origin + "\n");
         r.When((_, a) => a.Contains("fetch"), 0, "");
         r.When((_, a) => a.Contains("--abbrev-ref"), 0, branch + "\n");
         r.When((_, a) => a.Any(x => x.StartsWith("--porcelain", StringComparison.Ordinal)), 0, status);
+        r.When((_, a) => a.Contains("--ignore-cr-at-eol"), lineEndingsOnly ? 0 : 1, "");
         r.When((_, a) => a.Contains("--verify"), 0, Sha + "\n");
         r.When((_, a) => a.Contains("rev-list"), 0, counts + "\n");
         return r;
