@@ -102,6 +102,18 @@ public class BackupDecryptorTests
     }
 
     [TestMethod]
+    public async Task OpenAsync_KeepsTheOriginalUploadedNameForTheDownload()
+    {
+        var meta = await WriteAsync(Dump(), 12, false);
+
+        var (stream, name) = await BackupDecryptor.OpenAsync(
+            _storage.ArtifactPath("p1", meta.FileName), null, default, "dailies_2026-11-27_02-00-04_schedule.sql.zst");
+        await stream.DisposeAsync();
+
+        Assert.AreEqual("dailies_2026-11-27_02-00-04_schedule.sql", name);
+    }
+
+    [TestMethod]
     public async Task PlainFile_PassesThroughUnchanged()
     {
         var path = Path.Combine(_dir, "plain.sql");

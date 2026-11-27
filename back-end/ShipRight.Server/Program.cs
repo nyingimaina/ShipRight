@@ -83,6 +83,10 @@ try
 {
     var builder = WebApplication.CreateBuilder(args);
 
+    // Kestrel's 30 MB default is smaller than the files ShipRight legitimately handles: project bundles (50 MB) and
+    // server-file uploads (200 MB). Routes that accept backups raise this further per request (see BackupToolRouter).
+    builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = 256L * 1024 * 1024);
+
     if (cloudMode)
     {
         builder.WebHost.UseUrls($"http://0.0.0.0:{profile.Port}");

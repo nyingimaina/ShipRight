@@ -13,7 +13,7 @@ public static class BackupDecryptor
     private static readonly byte[] ZstdMagic = [0x28, 0xB5, 0x2F, 0xFD];
 
     public static async Task<(Stream Stream, string FileName)> OpenAsync(
-        string artifactPath, string? recoveryJson, CancellationToken ct = default)
+        string artifactPath, string? recoveryJson, CancellationToken ct = default, string? originalName = null)
     {
         var recovery = string.IsNullOrWhiteSpace(recoveryJson) ? null : ParseRecovery(recoveryJson);
         var file = File.Open(artifactPath, new FileStreamOptions
@@ -49,7 +49,7 @@ public static class BackupDecryptor
                 plain = new DecompressionStream(plain, leaveOpen: false);
 
             var chain = ReferenceEquals(plain, file) ? new StreamChain(file) : new StreamChain(file, plain);
-            return (chain, DecryptedName(Path.GetFileName(artifactPath)));
+            return (chain, DecryptedName(originalName ?? Path.GetFileName(artifactPath)));
         }
         catch
         {

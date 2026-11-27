@@ -1,7 +1,7 @@
 /* ShipRight's installable shell.
    Static assets are cache-first; pages are network-first so a deploy is picked up immediately, with the last copy and a
    calm offline page as the fallback. API calls are never cached. */
-const VERSION = 'shipright-v4.13.2';
+const VERSION = 'shipright-v4.13.3';
 const CORE = [
   '/offline.html',
   '/manifest.webmanifest',

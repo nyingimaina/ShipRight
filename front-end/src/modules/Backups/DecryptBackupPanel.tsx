@@ -36,7 +36,10 @@ export default function DecryptBackupPanel() {
       anchor.click();
       anchor.remove();
     } catch (failure) {
-      setError((failure as { message?: string })?.message ?? 'Could not decrypt that file.');
+      const message = (failure as { message?: string })?.message;
+      setError(message === 'HTTP 413'
+        ? 'That backup file is larger than this ShipRight server can accept. Update ShipRight and try again.'
+        : message ?? 'Could not decrypt that file.');
     } finally {
       setBusy(false);
     }
@@ -47,8 +50,8 @@ export default function DecryptBackupPanel() {
       <p className={styles.note}>
         Have a backup file but not a working ShipRight? Choose the file and the recovery JSON you exported from
         the Backups page. Encrypted <code>.sql.zst.enc</code> files are decrypted and decompressed; plain
-        <code> .sql</code> or <code>.bak</code> files pass straight through. The upload is temporary and deleted
-        when the download finishes.
+        <code> .sql.zst</code> files are decompressed, and plain <code>.sql</code> or <code>.bak</code> files pass
+        straight through. The upload is temporary and deleted when the download finishes.
       </p>
 
       <div className={styles.fields}>

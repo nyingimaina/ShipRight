@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.WebUtilities;
 using Serilog;
 
@@ -11,6 +12,7 @@ public static class BackupToolRouter
 {
     private const long MaxArtifactBytes = 4L * 1024 * 1024 * 1024;
     private const long MaxRecoveryBytes = 1024 * 1024;
+    private const string NameFile = "name";
     private static readonly TimeSpan Lifetime = TimeSpan.FromHours(1);
 
     private static string Root => Path.Combine(Path.GetTempPath(), "shipright-decrypt");
@@ -21,6 +23,10 @@ public static class BackupToolRouter
         {
             if (!request.HasFormContentType)
                 return BadRequest("Choose the backup file and (for an encrypted backup) the recovery JSON file.");
+
+            // Kestrel's default request-body limit is 30 MB, which is smaller than many real backups. The endpoint's
+            // own 4 GB limit is what should apply, so raise the transport limit before the multipart reader starts.
+            RaiseUploadLimit(request);
 
             var boundary = BoundaryFrom(request.ContentType);
             if (string.IsNullOrEmpty(boundary))
@@ -36,17 +42,21 @@ public static class BackupToolRouter
             {
                 var reader = new MultipartReader(boundary, request.Body);
                 string? artifactPath = null;
+                string? artifactName = null;
                 string? recoveryPath = null;
 
                 MultipartSection? section;
                 while ((section = await reader.ReadNextSectionAsync(ct)) is not null)
                 {
-                    var name = section.GetContentDispositionHeader()?.Name.Value?.Trim('"');
+                    var disposition = section.GetContentDispositionHeader();
+                    var name = disposition?.Name.Value?.Trim('"');
                     if (name is not ("artifact" or "recovery")) continue;
 
                     var limit = name == "artifact" ? MaxArtifactBytes : MaxRecoveryBytes;
                     var path = Path.Combine(directory, name);
                     long total = 0;
+
+                    if (name == "artifact") artifactName = SafeFileName(disposition?.FileNameStar.Value ?? disposition?.FileName.Value);
 
                     await using (var output = File.Create(path))
                     {
@@ -70,11 +80,14 @@ public static class BackupToolRouter
                 if (artifactPath is null || new FileInfo(artifactPath).Length == 0)
                     return BadRequest("Choose the backup file to decrypt.");
 
+                if (!string.IsNullOrWhiteSpace(artifactName))
+                    await File.WriteAllTextAsync(Path.Combine(directory, NameFile), artifactName, ct);
+
                 var recoveryJson = recoveryPath is null ? null : await File.ReadAllTextAsync(recoveryPath, ct);
                 string fileName;
                 try
                 {
-                    var (probe, name) = await BackupDecryptor.OpenAsync(artifactPath, recoveryJson, ct);
+                    var (probe, name) = await BackupDecryptor.OpenAsync(artifactPath, recoveryJson, ct, artifactName);
                     await probe.DisposeAsync();
                     fileName = name;
                 }
@@ -120,12 +133,14 @@ public static class BackupToolRouter
 
             var recoveryPath = Path.Combine(directory, "recovery");
             var recoveryJson = File.Exists(recoveryPath) ? await File.ReadAllTextAsync(recoveryPath, ct) : null;
+            var namePath = Path.Combine(directory, NameFile);
+            var originalName = File.Exists(namePath) ? await File.ReadAllTextAsync(namePath, ct) : null;
 
             Stream stream;
             string fileName;
             try
             {
-                (stream, fileName) = await BackupDecryptor.OpenAsync(artifact, recoveryJson, ct);
+                (stream, fileName) = await BackupDecryptor.OpenAsync(artifact, recoveryJson, ct, originalName);
             }
             catch (InvalidOperationException ex)
             {
@@ -153,6 +168,17 @@ public static class BackupToolRouter
     private static IResult BadRequest(string message) =>
         Results.Json(new { isError = true, message }, statusCode: 400);
 
+    /// <summary>
+    /// Lets one request carry the largest backup this tool accepts. Kestrel fixes its default at 30 MB, so without
+    /// this a perfectly good 88 MB backup is rejected before the endpoint can read it. A host that has already fixed
+    /// its own limit keeps it; the endpoint's own 4 GB check still applies either way.
+    /// </summary>
+    internal static void RaiseUploadLimit(HttpRequest request)
+    {
+        if (request.HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } feature)
+            feature.MaxRequestBodySize = MaxArtifactBytes + MaxRecoveryBytes + 1024 * 1024;
+    }
+
     private static string? BoundaryFrom(string? contentType)
     {
         if (string.IsNullOrWhiteSpace(contentType)) return null;
@@ -162,6 +188,16 @@ public static class BackupToolRouter
                 return part["boundary=".Length..].Trim('"');
         }
         return null;
+    }
+
+    /// <summary>The uploaded name, with any folder part removed, used only for the download's filename.</summary>
+    internal static string SafeFileName(string? raw)
+    {
+        var name = (raw ?? string.Empty).Trim().Trim('"');
+        var slash = name.LastIndexOfAny(['/', '\\']);
+        if (slash >= 0) name = name[(slash + 1)..];
+        name = new string(name.Where(c => !char.IsControl(c)).ToArray()).Trim();
+        return name is "" or "." or ".." ? string.Empty : name;
     }
 
     private static IResult TooLarge(string message) =>
