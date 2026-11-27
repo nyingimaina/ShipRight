@@ -228,6 +228,8 @@ This table resolves every open question from the design discussion. If a future 
 | 62 | Self-deploy target | The **production server stays on the legacy/manual path** until the new path is proven; all self-deploy testing happens on a **separate staging box** | A broken self-deploy must never take down the tool that fixes it |
 | 63 | Bootstrap from scratch | The desktop app writes a complete **server + project + deploy configuration** from a reviewed plan; it previews before writing and never deploys | Proves the from-scratch path without hand-edited config and without production risk |
 | 64 | Minimum to start a deployment | A **public address alone** is enough; the user, SSH key, folder and domain are optional and added later | Progressive disclosure; a server can be recorded before it is fully prepared |
+| 65 | Compatibility spine is additive and dark | Every new contract is introduced beside the old path; flags default off and no existing route or behaviour changes | Old and new coexist until a wave proves itself |
+| 66 | Shadow advice never acts | The shadow advisor records proposals only, is flag-gated, and works with AI switched off | Proves value with zero write risk |
 
 ---
 
@@ -1983,6 +1985,20 @@ deploy path until the new path has been proven end to end.
   rehearsed before the first self-deploy.
 - Promotion to the production server is a separate, explicit decision made only after the staging box has survived a
   full deploy-and-rollback cycle.
+
+### D1 — Dark spine (built, not deployed)
+
+The additive foundation every later wave sits on:
+
+- `ProjectSource` + `ISourceTree` (local folders now; repository metadata for the provider work).
+- `IDeploymentMethod` + registry (`jit`, `legacy`), where the JIT adapter calls the same mapper the deploy uses.
+- `IRuleEngine` + `RuleEngine` with scopes, monotonic tightening, locks, waivers and a small check catalog.
+- `IFeatureFlagStore` with global → tenant → company → project → user precedence; everything defaults off.
+- `IDeploymentAdvisor` + a deterministic advisor + a flag-gated shadow advisor that records proposals and never writes.
+- The bootstrap plan carries rule results, so the spine is exercised by a real screen.
+- A read-only `GET /api/platform/status`.
+
+Still owed before D1 is fully closed: persist flags and proposals, wire the AI advisor, and add the rules screen.
 
 ### Phase 0 — Hakiri
 Extract the AI layer into `D:\work\nyingi\code\systems\hakiri`, publish packages, add conformance tests.

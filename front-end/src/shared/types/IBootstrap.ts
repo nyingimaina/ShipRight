@@ -47,6 +47,15 @@ export interface BootstrapPlan {
   warnings: string[];
   deployBlockers: string[];
   deployReady: boolean;
+  rules?: {
+    ruleId: string;
+    title: string;
+    scope: string;
+    severity: string;
+    status: string;
+    message: string;
+    remediation?: string | null;
+  }[];
   steps: BootstrapStep[];
   ok: boolean;
 }

@@ -1,3 +1,5 @@
+using ShipRight.Modules.Platform;
+
 namespace ShipRight.Modules.Projects;
 
 public record DetectRequest(string RootPath);
@@ -203,6 +205,11 @@ public record ProjectConfig
     public int Version { get; init; } = 2;
     public string ServerId { get; init; } = string.Empty;
     public ProjectType Type { get; init; } = ProjectType.Pipeline;
+    /// <summary>
+    /// Where the files come from. Null keeps the legacy fields (GitRepos / Wsl) authoritative, so an existing project
+    /// behaves exactly as before.
+    /// </summary>
+    public ProjectSource? Source { get; init; }
     public FreeformFeatures Features { get; init; } = new();
     public List<ServiceConfig> Services { get; init; } = new();
     public List<GitConfig> GitRepos { get; init; } = new();

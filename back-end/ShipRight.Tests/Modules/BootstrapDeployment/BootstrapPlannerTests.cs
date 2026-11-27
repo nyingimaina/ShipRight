@@ -1,5 +1,6 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using ShipRight.Modules.BootstrapDeployment;
+using ShipRight.Modules.Platform;
 
 namespace ShipRight.Tests.Modules.BootstrapDeployment;
 
@@ -160,6 +161,24 @@ public class BootstrapPlannerTests
 
         Assert.IsTrue(plan.Ok, All(plan));
         Assert.AreEqual("A=1\nB=2", plan.Jit.EnvText);
+    }
+
+    [TestMethod]
+    public void Plan_IncludesTheSpineRuleResults()
+    {
+        var plan = BootstrapPlanner.Plan(Request());
+
+        Assert.IsTrue(plan.Rules.Any(r => r.RuleId == "server.ssh" && r.Status == RuleStatus.Pass));
+        Assert.IsTrue(plan.Rules.Any(r => r.RuleId == "compose.file" && r.Status == RuleStatus.Pass));
+    }
+
+    [TestMethod]
+    public void Plan_WithOnlyAnAddress_ShowsTheRuleThatIsWaitingForSsh()
+    {
+        var plan = BootstrapPlanner.Plan(ShipRightSelfTemplate.Create(
+            host: "203.0.113.10", username: "", remoteWorkingDir: "", domain: ""));
+
+        Assert.IsTrue(plan.Rules.Any(r => r.RuleId == "server.ssh" && r.Status == RuleStatus.Fail));
     }
 
     [TestMethod]

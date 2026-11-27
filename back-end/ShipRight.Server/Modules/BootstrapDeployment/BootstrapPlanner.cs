@@ -126,6 +126,7 @@ public static class BootstrapPlanner
             Problems = problems,
             Warnings = warnings,
             DeployBlockers = deployBlockers,
+            Rules = BootstrapRules.Evaluate(request, project, jit, server),
             Steps = BuildSteps(
                 makeKey: managedKey && username.Length > 0,
                 needsSsh: username.Length == 0,

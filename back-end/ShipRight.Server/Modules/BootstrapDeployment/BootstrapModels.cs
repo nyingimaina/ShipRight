@@ -1,4 +1,5 @@
 using ShipRight.Modules.JitDeploy;
+using ShipRight.Modules.Platform;
 using ShipRight.Modules.Projects;
 
 namespace ShipRight.Modules.BootstrapDeployment;
@@ -70,6 +71,8 @@ public sealed record BootstrapPlan
     public IReadOnlyList<string> Warnings { get; init; } = [];
     public IReadOnlyList<string> DeployBlockers { get; init; } = [];
     public IReadOnlyList<BootstrapStep> Steps { get; init; } = [];
+    /// <summary>The spine's rule results for this plan. Informational only; they never stop the write.</summary>
+    public IReadOnlyList<RuleResult> Rules { get; init; } = [];
     public bool Ok => Problems.Count == 0;
     public bool DeployReady => DeployBlockers.Count == 0;
 }

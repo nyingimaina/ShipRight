@@ -16,6 +16,7 @@ using ShipRight.Database.Models;
 using ShipRight.Modules.Auth.Services;
 using ShipRight.Modules.BootstrapDeployment;
 using ShipRight.Modules.Builds;
+using ShipRight.Modules.Platform;
 using ShipRight.Shared;
 using ShipRight.Modules.ComposeRepo;
 using ShipRight.Modules.Database;
@@ -225,6 +226,7 @@ try
     app.MapFsRoutes();
     app.MapFsRemoteMkdirRoute();
     app.MapProjectRoutes();
+    app.MapPlatformRoutes();
     app.MapProjectPathRefreshRoutes();
     app.MapSetupRoutes();
     app.MapAdoptionRoutes();
@@ -384,6 +386,8 @@ static void RegisterDesktopServices(IServiceCollection services, string dataDir)
     // Bootstrap deployments: a reviewed plan writes a server, project and build-on-server settings from scratch.
     services.AddSingleton<IBootstrapKeyProvisioner, SshKeyBootstrapProvisioner>();
     services.AddSingleton<BootstrapApplier>();
+    // Platform spine: flags, methods, rules and shadow proposals. Dark until a flag says otherwise.
+    services.AddPlatformSpine();
     services.AddSingleton<MariaDbProvider>();
     services.AddSingleton<SqlServerProvider>();
     services.AddSingleton<IDbProviderResolver>(sp => new DbProviderResolver(
