@@ -797,8 +797,8 @@ Implementation status at the time of writing:
 
 - `Hakiri.slnx` exists at `D:\work\nyingi\code\systems\hakiri` and is published at `https://github.com/nyingimaina/hakiri` (branch `master`).
 - `Hakiri.Abstractions`, `Hakiri.Scripted`, `Hakiri.Provider.OpenAiCompatible`, `Hakiri.Runtime.Process`, `Hakiri.Runtime.OpenCode`, `Hakiri.Runtime.ClaudeCode`, `Hakiri.Runtime.Codex`, `Hakiri.Runtime.Gemini`, `Hakiri.Toolkit` and `Hakiri.Diagnostics` exist and compile.
-- The contract tests pass (30 at the current commit), and every package packs.
-- The OpenAI-compatible provider streams SSE deltas and the final usage chunk; CLI adapters return the final result.
+- The contract tests pass (37 at the current commit), and every package packs.
+- The OpenAI-compatible provider streams SSE deltas and the final usage chunk; CLI adapters stream line-level text, reasoning and tool events.
 - Initial commit: `b179362` on the local `hakiri` repository; published at `https://github.com/nyingimaina/hakiri`.
 - The Toolkit detects Claude Code, opencode, Codex, Gemini, OpenAI-compatible APIs and Ollama; it returns install/sign-in steps and never installs silently.
 - The OpenCode and Claude Code adapters default to plan/read-only behaviour; a consumer must opt into editing explicitly.
