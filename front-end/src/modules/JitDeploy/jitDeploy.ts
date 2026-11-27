@@ -223,6 +223,11 @@ export function shortSha(sha?: string | null): string {
   return (sha ?? '').slice(0, 7);
 }
 
+/** A diagnostics link that still works when the UI and API are served from different origins in development. */
+export function diagnosticsHref(path: string): string {
+  return `${process.env.NEXT_PUBLIC_API_URL ?? ''}${path}`;
+}
+
 export type Tone = 'ok' | 'warn' | 'bad';
 
 export function phaseSummary(phase: string): { label: string; tone: Tone } {

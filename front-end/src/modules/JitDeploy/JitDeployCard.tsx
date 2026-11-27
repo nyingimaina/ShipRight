@@ -7,7 +7,7 @@ import StreamLog from '@/shared/components/StreamLog/StreamLog';
 import { api, sseUrl } from '@/shared/ApiService';
 import {
   DEFAULT_JIT_CONFIG, JitConfig, JitConfigResponse, JitDependents, JitDryRun, JitReleases, JitServiceHint,
-  describeAge, phaseSummary, setDependentChoice, shortSha, validateJitConfig,
+  describeAge, diagnosticsHref, phaseSummary, setDependentChoice, shortSha, validateJitConfig,
 } from './jitDeploy';
 import JitGitAccess from './JitGitAccess';
 import JitCredentialPicker, { isHttps } from './JitCredentialPicker';
@@ -548,7 +548,7 @@ export default function JitDeployCard({ projectId }: Props) {
               <div>{attempt.message}</div>
               {attempt.url && !dryRun && (
                 <p className={styles.mt8}>
-                  <a className={styles.diagnosticLink} href={attempt.url} download>Download diagnostics</a>
+                  <a className={styles.diagnosticLink} href={diagnosticsHref(attempt.url)} download>Download diagnostics</a>
                 </p>
               )}
             </div>
@@ -590,7 +590,7 @@ export default function JitDeployCard({ projectId }: Props) {
                 </details>
               )}
               <div className={styles.planActions}>
-                {dryRun.diagnosticsUrl && <a className={styles.diagnosticLink} href={dryRun.diagnosticsUrl} download>Download diagnostics</a>}
+                {dryRun.diagnosticsUrl && <a className={styles.diagnosticLink} href={diagnosticsHref(dryRun.diagnosticsUrl)} download>Download diagnostics</a>}
                 <ZestButton onClick={() => setDryRun(null)} zest={{ ...NOBUSY, semanticType: 'close', buttonStyle: 'text' }}>Hide</ZestButton>
               </div>
             </div>
@@ -616,7 +616,7 @@ export default function JitDeployCard({ projectId }: Props) {
               {op.status === 'error' && <p role="alert" className={`${styles.message} ${styles.bad}`}>{op.message}</p>}
               {diagnosticsUrl && (
                 <p className={styles.muted}>
-                  <a className={styles.diagnosticLink} href={diagnosticsUrl} download>Download deploy diagnostics</a>
+                  <a className={styles.diagnosticLink} href={diagnosticsHref(diagnosticsUrl)} download>Download deploy diagnostics</a>
                 </p>
               )}
             </div>
