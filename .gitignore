@@ -57,3 +57,6 @@ back-end/ShipRight.Server/wwwroot/*
 TestResults/
 .nyc_output/
 *.cobertura.xml
+
+# Staging scratch folder (never commit)
+.scratch/

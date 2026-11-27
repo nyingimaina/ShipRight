@@ -16,6 +16,7 @@ using ShipRight.Database.Models;
 using ShipRight.Modules.Auth.Services;
 using ShipRight.Modules.BootstrapDeployment;
 using ShipRight.Modules.Builds;
+using ShipRight.Modules.Git;
 using ShipRight.Modules.Platform;
 using ShipRight.Shared;
 using ShipRight.Modules.ComposeRepo;
@@ -227,6 +228,7 @@ try
     app.MapFsRemoteMkdirRoute();
     app.MapProjectRoutes();
     app.MapPlatformRoutes();
+    app.MapGitRoutes();
     app.MapProjectPathRefreshRoutes();
     app.MapSetupRoutes();
     app.MapAdoptionRoutes();
@@ -388,6 +390,8 @@ static void RegisterDesktopServices(IServiceCollection services, string dataDir)
     services.AddSingleton<BootstrapApplier>();
     // Platform spine: flags, methods, rules and shadow proposals. Dark until a flag says otherwise.
     services.AddPlatformSpine();
+    // GitHub repository inspection: read-only metadata for the onboarding step.
+    services.AddGitProviders();
     services.AddSingleton<MariaDbProvider>();
     services.AddSingleton<SqlServerProvider>();
     services.AddSingleton<IDbProviderResolver>(sp => new DbProviderResolver(

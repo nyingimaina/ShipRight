@@ -8,6 +8,7 @@ import {
   BootstrapApplyResult,
   BootstrapPlan,
   BootstrapRequest,
+  GitInspection,
 } from '@/shared/types/IBootstrap';
 import styles from './BootstrapDeployment.module.css';
 
@@ -62,6 +63,9 @@ export default function BootstrapDeployment({ cloud }: Props) {
   const [composeProject, setComposeProject] = useState('');
   const [services, setServices] = useState<ServiceRow[]>([emptyService()]);
   const [envText, setEnvText] = useState('');
+  const [gitInfo, setGitInfo] = useState<GitInspection | null>(null);
+  const [gitBusy, setGitBusy] = useState(false);
+  const [gitError, setGitError] = useState<string | null>(null);
 
   const [advanced, setAdvanced] = useState(false);
   const [plan, setPlan] = useState<BootstrapPlan | null>(null);
@@ -158,9 +162,24 @@ export default function BootstrapDeployment({ cloud }: Props) {
     }
   };
 
+  const inspectRepo = async () => {
+    setGitBusy(true);
+    setGitError(null);
+    try {
+      const info = await api.post<GitInspection>('/api/git/inspect', { url: repoUrl.trim() });
+      setGitInfo(info);
+      if (!branch.trim() || branch === 'master') setBranch(info.defaultBranch);
+      if (info.suggestedComposeFile) setComposeFile(info.suggestedComposeFile);
+      clear();
+    } catch (e: any) {
+      setGitError(e?.message ?? 'ShipRight could not read that repository.');
+    } finally {
+      setGitBusy(false);
+    }
+  };
+
   if (cloud) {
-    return (
-      <section className={styles.card}>
+    return (      <section className={styles.card}>
         <h1 className={styles.title}>Bootstrap runs in the desktop app</h1>
         <p className={styles.lead}>
           Writing a deployment from scratch changes this computer and a server over SSH. Open the ShipRight
@@ -411,6 +430,44 @@ export default function BootstrapDeployment({ cloud }: Props) {
                 />
               </label>
             </div>
+
+            <div className={styles.inlineActions}>
+              <ZestButton
+                onClick={inspectRepo}
+                disabled={gitBusy || !repoUrl.trim()}
+                zest={{ buttonStyle: 'outline', semanticType: 'submit', visualOptions: { size: 'sm' } }}
+              >
+                {gitBusy ? 'Checking…' : 'Check repository'}
+              </ZestButton>
+              <span className={styles.hint}>Reads the branch, compose file and Dockerfiles from GitHub.</span>
+            </div>
+
+            {gitError && (
+              <div className={styles.problem} role="alert">
+                <strong>Could not read it.</strong> {gitError}
+              </div>
+            )}
+
+            {gitInfo && (
+              <div className={styles.deferred}>
+                <span className={styles.label}>
+                  {gitInfo.owner}/{gitInfo.name}{gitInfo.private ? ' · private' : ''}
+                </span>
+                <span className={styles.hint}>
+                  Default branch: {gitInfo.defaultBranch} · {gitInfo.branches.length}{' '}
+                  branch{gitInfo.branches.length === 1 ? '' : 'es'}
+                </span>
+                {gitInfo.composeFiles.length > 0 && (
+                  <span className={styles.hint}>Compose files: {gitInfo.composeFiles.join(', ')}</span>
+                )}
+                {gitInfo.dockerfiles.length > 0 && (
+                  <span className={styles.hint}>Dockerfiles: {gitInfo.dockerfiles.join(', ')}</span>
+                )}
+                {gitInfo.notes.map((note) => (
+                  <span className={styles.hint} key={note}>{note}</span>
+                ))}
+              </div>
+            )}
 
             <div className={styles.services}>
               <span className={styles.label}>Services to build</span>

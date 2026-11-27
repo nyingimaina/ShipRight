@@ -73,3 +73,18 @@ export interface BootstrapApplyResponse {
   result: BootstrapApplyResult;
   plan: BootstrapPlan;
 }
+
+export interface GitInspection {
+  url: string;
+  provider: string;
+  owner: string;
+  name: string;
+  defaultBranch: string;
+  private: boolean;
+  repoId: number | null;
+  branches: string[];
+  composeFiles: string[];
+  dockerfiles: string[];
+  suggestedComposeFile: string | null;
+  notes: string[];
+}

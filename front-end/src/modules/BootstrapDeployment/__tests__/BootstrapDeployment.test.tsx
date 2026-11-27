@@ -106,6 +106,33 @@ describe('BootstrapDeployment', () => {
     })));
   });
 
+  it('reads a repository and fills the branch and compose file', async () => {
+    mockApi.post.mockResolvedValueOnce({
+      url: 'https://github.com/acme/shop',
+      provider: 'github',
+      owner: 'acme',
+      name: 'shop',
+      defaultBranch: 'main',
+      private: false,
+      repoId: 123,
+      branches: ['main', 'dev'],
+      composeFiles: ['deploy/docker-compose.yml'],
+      dockerfiles: ['Dockerfile'],
+      suggestedComposeFile: 'deploy/docker-compose.yml',
+      notes: [],
+    } as never);
+    render(<BootstrapDeployment cloud={false} />);
+
+    fireEvent.change(screen.getByLabelText(/what are you deploying/i), { target: { value: 'custom' } });
+    fireEvent.change(screen.getByLabelText(/^repository/i), { target: { value: 'https://github.com/acme/shop' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Check repository' }));
+
+    expect(await screen.findByText(/acme\/shop/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^branch/i)).toHaveValue('main');
+    expect(screen.getByLabelText(/^compose file/i)).toHaveValue('deploy/docker-compose.yml');
+    expect(mockApi.post).toHaveBeenCalledWith('/api/git/inspect', { url: 'https://github.com/acme/shop' });
+  });
+
   it('creates the deployment after a clean preview and shows the key and the next step', async () => {
     mockApi.post
       .mockResolvedValueOnce(plan() as never)

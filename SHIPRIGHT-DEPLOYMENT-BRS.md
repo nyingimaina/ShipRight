@@ -230,6 +230,7 @@ This table resolves every open question from the design discussion. If a future 
 | 64 | Minimum to start a deployment | A **public address alone** is enough; the user, SSH key, folder and domain are optional and added later | Progressive disclosure; a server can be recorded before it is fully prepared |
 | 65 | Compatibility spine is additive and dark | Every new contract is introduced beside the old path; flags default off and no existing route or behaviour changes | Old and new coexist until a wave proves itself |
 | 66 | Shadow advice never acts | The shadow advisor records proposals only, is flag-gated, and works with AI switched off | Proves value with zero write risk |
+| 67 | Repository inspection | Read-only GitHub metadata (default branch, branches, compose files, Dockerfiles) **without cloning**; token optional for private repos | Fast onboarding with no source copy |
 
 ---
 
@@ -1999,6 +2000,12 @@ The additive foundation every later wave sits on:
 - A read-only `GET /api/platform/status`.
 
 Still owed before D1 is fully closed: persist flags and proposals, wire the AI advisor, and add the rules screen.
+
+### D2 — Onboarding slice (in progress)
+
+- **GitHub repository inspection**: read-only metadata, default branch, branches, compose files and Dockerfiles, without cloning. A token is optional for private repositories.
+- The bootstrap screen can fill the branch and compose file from a repository address.
+- Still to do: attach the inspected repository to a project, the full deployment screen, the guided wizard and the option catalog.
 
 ### Phase 0 — Hakiri
 Extract the AI layer into `D:\work\nyingi\code\systems\hakiri`, publish packages, add conformance tests.
