@@ -307,8 +307,8 @@ export default function JitDeployCard({ projectId }: Props) {
   const logLines = useMemo(() => op.logs.map((text, id) => ({ id, text })), [op.logs]);
   const running = op.status === 'running';
   const needsAttention = releases?.needsAttention === true;
-  const canDeploy = saved.enabled && !dirty && !running && !needsAttention;
-  const canRestart = saved.enabled && !running && !needsAttention && !!releases?.currentTag;
+  const canDeploy = saved.enabled && !dirty && !running && !dryRunning && !needsAttention;
+  const canRestart = saved.enabled && !running && !dryRunning && !needsAttention && !!releases?.currentTag;
   const canDryRun = saved.enabled && !dirty && !running && !dryRunning;
   const effectiveRestart = (service: string, dependent: string, fallback: boolean) =>
     cfg.dependentChoices.find(c => c.service === service && c.dependent === dependent)?.restart ?? fallback;
@@ -533,12 +533,33 @@ export default function JitDeployCard({ projectId }: Props) {
           )}
 
           <div className={styles.actions}>
-            <ZestButton disabled={!canDeploy} zest={{ ...NOBUSY, semanticType: 'send' }} onClick={() =>
-              askDeploy(`${base}/deploy`, { force, commit: commit.trim() || null, allowWithoutRollback: false, rebuildAll })}>Deploy now</ZestButton>
-            <ZestButton disabled={!canDryRun} onClick={runDryRun}
-              zest={{ ...NOBUSY, semanticType: 'view', buttonStyle: 'outline' }}>Dry run</ZestButton>
-            <ZestButton disabled={!canRestart} onClick={() => { setConfirmTag(null); setConfirmRestart(true); }}
-              zest={{ ...NOBUSY, semanticType: 'refresh', buttonStyle: 'outline' }}>Restart all services</ZestButton>
+            <ZestButton
+              disabled={!canDeploy}
+              onClick={() => askDeploy(`${base}/deploy`, { force, commit: commit.trim() || null, allowWithoutRollback: false, rebuildAll })}
+              zest={{
+                ...NOBUSY,
+                semanticType: 'send',
+                dropdownAriaLabel: 'More deploy actions',
+                dropdownOptions: [
+                  {
+                    key: 'dry-run',
+                    label: 'Dry run',
+                    disabled: !canDryRun,
+                    busyOptions: { handleInternally: false },
+                    onClick: runDryRun,
+                  },
+                  {
+                    key: 'restart-all',
+                    label: 'Restart all services',
+                    disabled: !canRestart,
+                    busyOptions: { handleInternally: false },
+                    onClick: () => { setConfirmTag(null); setConfirmRestart(true); },
+                  },
+                ],
+              }}
+            >
+              Deploy now
+            </ZestButton>
             {dirty && <span className={styles.muted}>Save your settings before deploying.</span>}
             {dryRunning && <span className={styles.muted}>Checking what a deploy would do. Nothing on the server is being changed.</span>}
           </div>

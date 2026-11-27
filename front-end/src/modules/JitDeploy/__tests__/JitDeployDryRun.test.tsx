@@ -1,4 +1,5 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import toast from 'react-hot-toast';
 import JitDeployCard from '../JitDeployCard';
 import { api } from '@/shared/ApiService';
@@ -54,12 +55,32 @@ const plan = (over: Partial<JitDryRun> = {}): JitDryRun => ({
 describe('JitDeployCard dry run', () => {
   beforeEach(() => jest.resetAllMocks());
 
+  const openDeployMenu = async () => {
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'More deploy actions' }));
+  };
+  const dryRunItem = () => screen.findByRole('menuitem', { name: 'Dry run' });
+
+  it('keeps Deploy now as the primary action, with the other two in its menu', async () => {
+    setup();
+    await screen.findByLabelText('Git address');
+
+    expect(screen.getByRole('button', { name: 'Deploy now' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Dry run' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /restart all services/i })).not.toBeInTheDocument();
+
+    await openDeployMenu();
+    expect(await dryRunItem()).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /restart all services/i })).toBeInTheDocument();
+  });
+
   it('shows the plan and a diagnostics link, and changes nothing', async () => {
     setup();
     await screen.findByLabelText('Git address');
     mockApi.post.mockResolvedValueOnce(plan() as never);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Dry run' }));
+    await openDeployMenu();
+    fireEvent.click(await dryRunItem());
 
     const region = await screen.findByRole('region', { name: 'Dry run plan' });
     expect(region).toHaveTextContent('this deploy can start');
@@ -85,7 +106,8 @@ describe('JitDeployCard dry run', () => {
       commands: [],
     }) as never);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Dry run' }));
+    await openDeployMenu();
+    fireEvent.click(await dryRunItem());
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('Commit your local changes before deploying');
@@ -101,7 +123,8 @@ describe('JitDeployCard dry run', () => {
       diagnosticsUrl: '/api/jit/p1/deploy-attempts/a9/download',
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Dry run' }));
+    await openDeployMenu();
+    fireEvent.click(await dryRunItem());
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('Choose the server this project deploys to.');
@@ -115,6 +138,6 @@ describe('JitDeployCard dry run', () => {
     await screen.findByLabelText('Git address');
     fireEvent.change(screen.getByLabelText('Branch'), { target: { value: 'dev' } });
 
-    expect(screen.getByRole('button', { name: 'Dry run' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'More deploy actions' })).toBeDisabled();
   });
 });

@@ -1,4 +1,5 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import JitDeployCard from '../JitDeployCard';
 import { api } from '@/shared/ApiService';
 import { DEFAULT_JIT_CONFIG, JitConfig } from '../jitDeploy';
@@ -43,7 +44,12 @@ function setup(releases: unknown = releasesResp()) {
   return render(<JitDeployCard projectId="p1" />);
 }
 
-const restartButton = () => screen.getByRole('button', { name: /restart all services/i });
+const openRestartMenu = async () => {
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('button', { name: 'More deploy actions' }));
+};
+const restartItem = () => screen.findByRole('menuitem', { name: /restart all services/i });
+const deployMenuTrigger = () => screen.getByRole('button', { name: 'More deploy actions' });
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -55,7 +61,8 @@ describe('restart all services', () => {
   it('is offered once a release is running, and asks before doing anything', async () => {
     setup();
     await screen.findByLabelText('Git address');
-    fireEvent.click(await screen.findByRole('button', { name: /restart all services/i }));
+    await openRestartMenu();
+    fireEvent.click(await restartItem());
     expect(screen.getByText(/restart every service/i)).toBeInTheDocument();
     expect(screen.getByText(/data volumes are kept/i)).toBeInTheDocument();
     expect(mockApi.post).not.toHaveBeenCalled();
@@ -65,7 +72,8 @@ describe('restart all services', () => {
     setup();
     await screen.findByLabelText('Git address');
     mockApi.post.mockResolvedValueOnce({ buildId: 'b9' } as never);
-    fireEvent.click(await screen.findByRole('button', { name: /restart all services/i }));
+    await openRestartMenu();
+    fireEvent.click(await restartItem());
     fireEvent.click(screen.getByRole('button', { name: /yes, restart everything/i }));
 
     await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
@@ -79,7 +87,8 @@ describe('restart all services', () => {
   it('can be called off', async () => {
     setup();
     await screen.findByLabelText('Git address');
-    fireEvent.click(await screen.findByRole('button', { name: /restart all services/i }));
+    await openRestartMenu();
+    fireEvent.click(await restartItem());
     fireEvent.click(screen.getByRole('button', { name: /no, leave them running/i }));
     expect(screen.queryByText(/restart every service/i)).not.toBeInTheDocument();
     expect(mockApi.post).not.toHaveBeenCalled();
@@ -89,7 +98,8 @@ describe('restart all services', () => {
     setup(releasesResp({ currentTag: null, releases: [] }));
     await screen.findByLabelText('Git address');
     await waitFor(() => expect(mockApi.get).toHaveBeenCalledWith('/api/jit/p1/releases'));
-    expect(restartButton()).toBeDisabled();
+    await openRestartMenu();
+    expect(await restartItem()).toHaveAttribute('aria-disabled', 'true');
   });
 
   it('is disabled while a deploy is running', async () => {
@@ -98,7 +108,7 @@ describe('restart all services', () => {
     mockApi.post.mockResolvedValueOnce({ buildId: 'b1' } as never);
     fireEvent.click(screen.getByRole('button', { name: 'Deploy now' }));
     await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
-    expect(restartButton()).toBeDisabled();
+    expect(deployMenuTrigger()).toBeDisabled();
   });
 
   it('after a successful deploy it offers a fresh start right where the result is shown', async () => {
@@ -126,7 +136,8 @@ describe('restart all services', () => {
     render(<JitDeployCard projectId="p1" />);
     await screen.findByLabelText('Git address');
     mockApi.post.mockResolvedValueOnce({ buildId: 'b2' } as never);
-    fireEvent.click(await screen.findByRole('button', { name: /restart all services/i }));
+    await openRestartMenu();
+    fireEvent.click(await restartItem());
     fireEvent.click(screen.getByRole('button', { name: /yes, restart everything/i }));
     await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
     FakeEventSource.instances[0].emit('DeployCompleted', { status: 'DeployFailed' });
