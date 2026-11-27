@@ -793,7 +793,8 @@ Implementation status at the time of writing:
 
 - `Hakiri.slnx` exists at `D:\work\nyingi\code\systems\hakiri`.
 - `Hakiri.Abstractions`, `Hakiri.Scripted`, `Hakiri.Provider.OpenAiCompatible`, `Hakiri.Runtime.Process`, `Hakiri.Runtime.OpenCode`, `Hakiri.Runtime.ClaudeCode` and `Hakiri.Diagnostics` exist and compile.
-- The contract tests pass.
+- The contract tests pass (13 at the initial commit), and every package packs.
+- Initial commit: `b179362` on the local `hakiri` repository.
 - The OpenCode and Claude Code adapters default to plan/read-only behaviour; a consumer must opt into editing explicitly.
 
 ---
