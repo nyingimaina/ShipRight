@@ -589,6 +589,7 @@ Hakiri.Provider.OpenAiCompatible
 Hakiri.Provider.Ollama          (later)
 Hakiri.Scripted                 (tests and demos)
 Hakiri.Toolkit                  (catalog, detection, install/auth guidance)
+Hakiri.Sidecar                  (JSON-RPC 2.0 sidecar for non-.NET hosts)
 Hakiri.Diagnostics              (transcripts, redaction, usage)
 ```
 
@@ -796,8 +797,10 @@ Every runtime adapter **MUST** pass a shared conformance suite:
 Implementation status at the time of writing:
 
 - `Hakiri.slnx` exists at `D:\work\nyingi\code\systems\hakiri` and is published at `https://github.com/nyingimaina/hakiri` (branch `master`).
-- `Hakiri.Abstractions`, `Hakiri.Scripted`, `Hakiri.Provider.OpenAiCompatible`, `Hakiri.Runtime.Process`, `Hakiri.Runtime.OpenCode`, `Hakiri.Runtime.ClaudeCode`, `Hakiri.Runtime.Codex`, `Hakiri.Runtime.Gemini`, `Hakiri.Toolkit` and `Hakiri.Diagnostics` exist and compile.
-- The contract tests pass (37 at the current commit), and every package packs.
+- `Hakiri.Abstractions`, `Hakiri.Scripted`, `Hakiri.Provider.OpenAiCompatible`, `Hakiri.Runtime.Process`, `Hakiri.Runtime.OpenCode`, `Hakiri.Runtime.ClaudeCode`, `Hakiri.Runtime.Codex`, `Hakiri.Runtime.Gemini`, `Hakiri.Toolkit`, `Hakiri.Sidecar` and `Hakiri.Diagnostics` exist and compile.
+- The contract tests pass (44 at the current commit), and every package packs.
+- The `hakiri --stdio` sidecar speaks JSON-RPC 2.0 over stdin/stdout; its protocol is documented and tested against the code.
+- A Rust example consumes the sidecar.
 - The OpenAI-compatible provider streams SSE deltas and the final usage chunk; CLI adapters stream line-level text, reasoning and tool events.
 - Initial commit: `b179362` on the local `hakiri` repository; published at `https://github.com/nyingimaina/hakiri`.
 - The Toolkit detects Claude Code, opencode, Codex, Gemini, OpenAI-compatible APIs and Ollama; it returns install/sign-in steps and never installs silently.
@@ -842,6 +845,18 @@ Summary: No AI tool was found. Install one of: Claude Code, opencode, Codex.
 ```
 
 A host that wants to install runs `HakiriInstaller.RunAsync(step)` only after the person says yes.
+
+### 8.16 Non-.NET hosts
+
+`Hakiri.Sidecar` is a `hakiri` executable that exposes the toolkit over JSON-RPC 2.0 on stdin/stdout.
+
+- stdout is protocol only; stderr is logs.
+- Methods: `hello`, `setup`, `refresh`, `ask`, `cancel`, `install`, `shutdown`, `ping`.
+- Events: `started`, `text`, `thinking`, `tool-started`, `tool-finished`, `usage`, `completed`, `failed`.
+- The protocol document and the code constants are checked by a test.
+- A Rust example shows a persistent client.
+
+This keeps non-.NET hosts free of a .NET dependency while reusing the same Hakiri implementation.
 
 ---
 
