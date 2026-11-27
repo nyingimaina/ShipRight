@@ -226,6 +226,7 @@ This table resolves every open question from the design discussion. If a future 
 | 60 | AI package names | `Hakiri.*` | The layer is a product of its own, not a ShipRight submodule |
 | 61 | Zero-config AI setup | `Hakiri.Toolkit` detects known tools, returns install/sign-in steps, and never installs silently | A novice can start with one call; a host still asks before changing the machine |
 | 62 | Self-deploy target | The **production server stays on the legacy/manual path** until the new path is proven; all self-deploy testing happens on a **separate staging box** | A broken self-deploy must never take down the tool that fixes it |
+| 63 | Bootstrap from scratch | The desktop app writes a complete **server + project + deploy configuration** from a reviewed plan; it previews before writing and never deploys | Proves the from-scratch path without hand-edited config and without production risk |
 
 ---
 
@@ -555,6 +556,26 @@ The old deployment pages **MUST** remain reachable through a **Legacy** switch:
 - **Do not** show a raw log as the primary deployment experience.
 - **Do not** let “Legacy” become permanent. Instrument it and set a date.
 - **Do not** make method selection a technology quiz. Use outcome labels.
+
+### 7.6 Bootstrap from the desktop
+
+The desktop app can create a complete deployment configuration from nothing: no existing project, no hand-written
+compose file and no hand-written `.env` on the server.
+
+- A **pure planner** turns a small request into a `BootstrapPlan` — a `ServerConfig`, a `ProjectConfig` and a
+  `JitDeployConfig` — plus problems, warnings and ordered steps. It writes nothing, so the result can be reviewed.
+- **Preview** shows what will be written and what still needs attention.
+- **Apply** writes the server, project and build-on-server settings through the existing stores. A plan with
+  problems writes nothing.
+- An existing server with the same address, and an existing project with the same id or name, are updated instead of
+  duplicated.
+- When no SSH key is supplied, ShipRight makes a managed key and returns the public key. Authorizing it stays a
+  deliberate, visible step.
+- The **ShipRight self preset** fills the repository, the `app` service, the compose file and a complete
+  environment, including generated database secrets, so the first staging deploy does not start from a hand-edited
+  file.
+- It is mounted only in desktop mode, beside build-on-server. It never deploys; deploy stays a separate, confirmed
+  action.
 
 ---
 

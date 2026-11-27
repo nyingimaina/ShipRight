@@ -8,6 +8,7 @@ import {
   RiServerLine,
   RiCalendarCheckLine,
   RiGitBranchLine,
+  RiPlayCircleLine,
   RiHeartPulseLine,
   RiBox3Line,
   RiListCheck,
@@ -93,6 +94,7 @@ export default function AppShell({ children }: Props) {
         { id: "pipelines", label: "Pipelines", icon: <RiListCheck size={17} />, searchTerms: "pipelines build deploy scripts", onClick: go("/pipelines") },
         { id: "backups", label: "Backups", icon: <RiCalendarCheckLine size={17} />, searchTerms: "backups schedules databases", onClick: go("/backups") },
         { id: "watch-branch", label: "Watch Branch", icon: <RiGitBranchLine size={17} />, searchTerms: "watch branch auto build ci", onClick: go("/watch-branch") },
+        { id: "bootstrap", label: "Bootstrap", icon: <RiPlayCircleLine size={17} />, searchTerms: "bootstrap self deploy staging first deployment from scratch", onClick: go("/bootstrap") },
         { id: "history", label: "History", icon: <RiTimeLine size={17} />, searchTerms: "history builds deploys", onClick: go("/history") },
       ],
     },
@@ -140,6 +142,8 @@ export default function AppShell({ children }: Props) {
     if (!isAdmin && (id === "team" || id === "tailnets")) return false;
     // The Utilities page manages the Windows build machine (WSL, diskpart); it has no meaning in cloud mode.
     if (mode === "cloud" && id === "utilities") return false;
+    // Bootstrap writes a server and a project over SSH from this machine; it only exists in desktop mode.
+    if (mode === "cloud" && id === "bootstrap") return false;
     // Settings holds a person's sign-in preferences; desktop mode has no signed-in person.
     if (mode === "desktop" && id === "settings") return false;
     return true;

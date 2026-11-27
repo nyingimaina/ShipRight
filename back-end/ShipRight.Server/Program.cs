@@ -14,6 +14,7 @@ using Serilog.Formatting.Json;
 using ShipRight.Database;
 using ShipRight.Database.Models;
 using ShipRight.Modules.Auth.Services;
+using ShipRight.Modules.BootstrapDeployment;
 using ShipRight.Modules.Builds;
 using ShipRight.Shared;
 using ShipRight.Modules.ComposeRepo;
@@ -240,6 +241,8 @@ try
         app.MapJitCredentialRoutes();
         app.MapJitComposeFileRoutes();
         app.MapJitDockerfileRoutes();
+        // Write a complete deployment configuration from scratch, then hand it to the build-on-server paths above.
+        app.MapBootstrapDeploymentRoutes();
     }
     app.MapProjectBundleRoutes();
     app.MapProjectSummaryRoutes();
@@ -378,6 +381,9 @@ static void RegisterDesktopServices(IServiceCollection services, string dataDir)
     services.AddSingleton<JitDeployAttemptStore>(_ => new JitDeployAttemptStore(dataDir));
     services.AddSingleton<JitDeployService>();
     services.AddSingleton<JitDryRunService>();
+    // Bootstrap deployments: a reviewed plan writes a server, project and build-on-server settings from scratch.
+    services.AddSingleton<IBootstrapKeyProvisioner, SshKeyBootstrapProvisioner>();
+    services.AddSingleton<BootstrapApplier>();
     services.AddSingleton<MariaDbProvider>();
     services.AddSingleton<SqlServerProvider>();
     services.AddSingleton<IDbProviderResolver>(sp => new DbProviderResolver(
