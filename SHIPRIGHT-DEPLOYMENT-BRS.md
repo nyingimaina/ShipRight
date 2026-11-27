@@ -795,7 +795,7 @@ Implementation status at the time of writing:
 
 - `Hakiri.slnx` exists at `D:\work\nyingi\code\systems\hakiri`.
 - `Hakiri.Abstractions`, `Hakiri.Scripted`, `Hakiri.Provider.OpenAiCompatible`, `Hakiri.Runtime.Process`, `Hakiri.Runtime.OpenCode`, `Hakiri.Runtime.ClaudeCode`, `Hakiri.Toolkit` and `Hakiri.Diagnostics` exist and compile.
-- The contract tests pass (22 at the current commit), and every package packs.
+- The contract tests pass (25 at the current commit), and every package packs.
 - Initial commit: `b179362` on the local `hakiri` repository.
 - The Toolkit detects Claude Code, opencode, Codex, Gemini, OpenAI-compatible APIs and Ollama; it returns install/sign-in steps and never installs silently.
 - The OpenCode and Claude Code adapters default to plan/read-only behaviour; a consumer must opt into editing explicitly.
@@ -814,6 +814,7 @@ It **MUST**:
 - prefer a local model when asked;
 - support an optional `hakiri.json` for preferred tools, command overrides and priorities;
 - work with one call: `await HakiriBootstrap.SetupAsync()`;
+- offer a full detect → confirm → install → detect flow through `SetupWithInstallAsync`;
 - never install, sign in or change the machine silently.
 
 It **MUST NOT**:
