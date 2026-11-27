@@ -224,6 +224,7 @@ This table resolves every open question from the design discussion. If a future 
 | 58 | Testing | TDD; contract tests for providers; scripted AI; fixture-based rules; visual regression | Correctness and regression safety |
 | 59 | AI layer location | **`D:\work\nyingi\code\systems\hakiri`**, its own solution (`Hakiri.slnx`) and its own version | Shared by ShipRight, Tinkerdeck and DevTeam without coupling |
 | 60 | AI package names | `Hakiri.*` | The layer is a product of its own, not a ShipRight submodule |
+| 61 | Zero-config AI setup | `Hakiri.Toolkit` detects known tools, returns install/sign-in steps, and never installs silently | A novice can start with one call; a host still asks before changing the machine |
 
 ---
 
@@ -585,6 +586,7 @@ Hakiri.Runtime.ClaudeCode
 Hakiri.Provider.OpenAiCompatible
 Hakiri.Provider.Ollama          (later)
 Hakiri.Scripted                 (tests and demos)
+Hakiri.Toolkit                  (catalog, detection, install/auth guidance)
 Hakiri.Diagnostics              (transcripts, redaction, usage)
 ```
 
@@ -792,10 +794,50 @@ Every runtime adapter **MUST** pass a shared conformance suite:
 Implementation status at the time of writing:
 
 - `Hakiri.slnx` exists at `D:\work\nyingi\code\systems\hakiri`.
-- `Hakiri.Abstractions`, `Hakiri.Scripted`, `Hakiri.Provider.OpenAiCompatible`, `Hakiri.Runtime.Process`, `Hakiri.Runtime.OpenCode`, `Hakiri.Runtime.ClaudeCode` and `Hakiri.Diagnostics` exist and compile.
-- The contract tests pass (13 at the initial commit), and every package packs.
+- `Hakiri.Abstractions`, `Hakiri.Scripted`, `Hakiri.Provider.OpenAiCompatible`, `Hakiri.Runtime.Process`, `Hakiri.Runtime.OpenCode`, `Hakiri.Runtime.ClaudeCode`, `Hakiri.Toolkit` and `Hakiri.Diagnostics` exist and compile.
+- The contract tests pass (22 at the current commit), and every package packs.
 - Initial commit: `b179362` on the local `hakiri` repository.
+- The Toolkit detects Claude Code, opencode, Codex, Gemini, OpenAI-compatible APIs and Ollama; it returns install/sign-in steps and never installs silently.
 - The OpenCode and Claude Code adapters default to plan/read-only behaviour; a consumer must opt into editing explicitly.
+
+### 8.15 The zero-config toolkit
+
+`Hakiri.Toolkit` is the “make it almost invisible” layer.
+
+It **MUST**:
+
+- provide a catalog of known tools: Claude Code, opencode, OpenAI Codex CLI, Gemini CLI, OpenAI-compatible APIs and Ollama;
+- detect installed commands and versions;
+- probe sign-in state where the CLI documents a safe status command;
+- return exact install and sign-in steps, including the provider URL;
+- select the highest-priority ready tool automatically;
+- prefer a local model when asked;
+- support an optional `hakiri.json` for preferred tools, command overrides and priorities;
+- work with one call: `await HakiriBootstrap.SetupAsync()`;
+- never install, sign in or change the machine silently.
+
+It **MUST NOT**:
+
+- automate credential entry;
+- scrape a browser session;
+- run an interactive sign-in;
+- hide the command it is about to run;
+- run an install step that is not marked `CanRun`;
+- require a specific vendor.
+
+The setup result **MUST** be usable by a CLI, a desktop app or a web UI:
+
+```text
+Summary: No AI tool was found. Install one of: Claude Code, opencode, Codex.
+
+1. Install Claude Code
+   npm install -g @anthropic-ai/claude-code
+2. Sign in to Claude
+   claude auth login
+   https://docs.claude.com/en/docs/claude-code/authentication
+```
+
+A host that wants to install runs `HakiriInstaller.RunAsync(step)` only after the person says yes.
 
 ---
 
