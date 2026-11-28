@@ -208,6 +208,37 @@ public class BootstrapPlannerTests
     }
 
     [TestMethod]
+    public void Plan_ResolvesServicePathsRelativeToTheComposeFile()
+    {
+        var plan = BootstrapPlanner.Plan(Request() with
+        {
+            ComposeFile = "samples/hello/docker-compose.yml",
+            PathPrefix = "samples/hello",
+            Services = [new BootstrapService { Name = "web", Image = "shipright/hello", Dockerfile = "Dockerfile", Context = "." }],
+        });
+
+        Assert.IsTrue(plan.Ok, All(plan));
+        var service = plan.Jit.ComposeServices.Single();
+        Assert.AreEqual("samples/hello", service.Context);
+        Assert.AreEqual("samples/hello/Dockerfile", service.Dockerfile);
+    }
+
+    [TestMethod]
+    public void Plan_ResolvesANestedContextAndDockerfile()
+    {
+        var plan = BootstrapPlanner.Plan(Request() with
+        {
+            ComposeFile = "apps/shop/docker-compose.yml",
+            Services = [new BootstrapService { Name = "api", Image = "acme/shop-api", Dockerfile = "Dockerfile.api", Context = "./api" }],
+        });
+
+        Assert.IsTrue(plan.Ok, All(plan));
+        var service = plan.Jit.ComposeServices.Single();
+        Assert.AreEqual("apps/shop/api", service.Context);
+        Assert.AreEqual("apps/shop/api/Dockerfile.api", service.Dockerfile);
+    }
+
+    [TestMethod]
     public void Plan_IsStableForTheSameInput()
     {
         var request = Request();

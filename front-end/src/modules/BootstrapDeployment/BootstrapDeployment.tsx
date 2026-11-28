@@ -13,8 +13,7 @@ import {
 } from '@/shared/types/IBootstrap';
 import styles from './BootstrapDeployment.module.css';
 
-type Preset = 'self' | 'custom';
-type Step = 1 | 2 | 3 | 4;
+type Step = 1 | 2 | 3;
 
 interface ServiceRow {
   name: string;
@@ -41,10 +40,9 @@ const parseEnv = (text: string): Record<string, string> => {
 };
 
 const STEPS: { id: Step; label: string }[] = [
-  { id: 1, label: 'What' },
-  { id: 2, label: 'Source' },
-  { id: 3, label: 'Server' },
-  { id: 4, label: 'Review' },
+  { id: 1, label: 'Source' },
+  { id: 2, label: 'Server' },
+  { id: 3, label: 'Review' },
 ];
 
 interface Props {
@@ -53,14 +51,13 @@ interface Props {
 }
 
 /**
- * Writes a deployment in four short steps: what, source, server, review. The address is the only required target
- * fact; everything else can be added later. It previews before writing and never deploys.
+ * Writes a deployment in three short steps: source, server, review. The address is the only required target fact;
+ * everything else can be added later. It previews before writing and never deploys.
  */
 export default function BootstrapDeployment({ cloud }: Props) {
   const router = useRouter();
 
   const [step, setStep] = useState<Step>(1);
-  const [preset, setPreset] = useState<Preset>('self');
 
   const [host, setHost] = useState('');
   const [username, setUsername] = useState('');
@@ -89,7 +86,7 @@ export default function BootstrapDeployment({ cloud }: Props) {
   const [dryBusy, setDryBusy] = useState(false);
 
   const suggestedFolder = useMemo(
-    () => (username.trim() ? `/home/${username.trim()}/${slug(projectName || 'shipright')}` : ''),
+    () => (username.trim() ? `/home/${username.trim()}/${slug(projectName || 'app')}` : ''),
     [username, projectName],
   );
 
@@ -109,59 +106,42 @@ export default function BootstrapDeployment({ cloud }: Props) {
     clear();
   };
 
-  const sourceReady = preset === 'self' ||
-    (projectName.trim().length > 0 &&
-      repoUrl.trim().length > 0 &&
-      composeFile.trim().length > 0 &&
-      services.some((row) => row.name.trim() && row.image.trim() && row.dockerfile.trim()));
+  const sourceReady =
+    projectName.trim().length > 0 &&
+    repoUrl.trim().length > 0 &&
+    composeFile.trim().length > 0 &&
+    services.some((row) => row.name.trim() && row.image.trim() && row.dockerfile.trim());
 
   const canLeave = step === 1
-    ? true
+    ? sourceReady
     : step === 2
-      ? sourceReady
-      : step === 3
-        ? host.trim().length > 0
-        : plan?.ok === true;
+      ? host.trim().length > 0
+      : plan?.ok === true;
 
-  const buildRequest = (): BootstrapRequest => {
-    const target = {
-      host: host.trim(),
-      username: username.trim(),
-      remoteWorkingDir: folder.trim(),
-      domain: domain.trim(),
-      sshKeyPath: sshKeyPath.trim(),
-    };
-
-    if (preset === 'self') {
-      return {
-        ...target,
-        preset: 'ShipRightSelf',
-        repoUrl: repoUrl.trim() || undefined,
-        branch: branch.trim() || 'master',
-      };
-    }
-
-    return {
-      ...target,
-      preset: 'None',
-      projectName: projectName.trim(),
-      repoUrl: repoUrl.trim(),
-      branch: branch.trim() || 'master',
-      composeFile: composeFile.trim() || 'docker-compose.yml',
-      composeProject: composeProject.trim() || undefined,
-      providerRepoId: gitInfo?.repoId ? String(gitInfo.repoId) : undefined,
-      pathPrefix: pathPrefix.trim() || undefined,
-      services: services
-        .filter((row) => row.name.trim() || row.image.trim())
-        .map((row) => ({
-          name: row.name.trim(),
-          image: row.image.trim(),
-          dockerfile: row.dockerfile.trim(),
-          context: row.context.trim() || '.',
-        })),
-      env: parseEnv(envText),
-    };
-  };
+  const buildRequest = (): BootstrapRequest => ({
+    preset: 'None',
+    host: host.trim(),
+    username: username.trim(),
+    remoteWorkingDir: folder.trim(),
+    domain: domain.trim(),
+    sshKeyPath: sshKeyPath.trim(),
+    projectName: projectName.trim(),
+    repoUrl: repoUrl.trim(),
+    branch: branch.trim() || 'master',
+    composeFile: composeFile.trim() || 'docker-compose.yml',
+    composeProject: composeProject.trim() || undefined,
+    providerRepoId: gitInfo?.repoId ? String(gitInfo.repoId) : undefined,
+    pathPrefix: pathPrefix.trim() || undefined,
+    services: services
+      .filter((row) => row.name.trim() || row.image.trim())
+      .map((row) => ({
+        name: row.name.trim(),
+        image: row.image.trim(),
+        dockerfile: row.dockerfile.trim(),
+        context: row.context.trim() || '.',
+      })),
+    env: parseEnv(envText),
+  });
 
   const preview = async () => {
     setBusy('preview');
@@ -193,7 +173,8 @@ export default function BootstrapDeployment({ cloud }: Props) {
     }
   };
 
-  const inspectRepo = async () => {    setGitBusy(true);
+  const inspectRepo = async () => {
+    setGitBusy(true);
     setGitError(null);
     try {
       const info = await api.post<GitInspection>('/api/git/inspect', { url: repoUrl.trim() });
@@ -225,12 +206,12 @@ export default function BootstrapDeployment({ cloud }: Props) {
 
   const goNext = () => {
     if (!canLeave) return;
-    if (step === 3) {
-      setStep(4);
+    if (step === 2) {
+      setStep(3);
       void preview();
       return;
     }
-    setStep((current) => Math.min(4, current + 1) as Step);
+    setStep((current) => Math.min(3, current + 1) as Step);
   };
 
   const checkServer = async () => {
@@ -362,7 +343,8 @@ export default function BootstrapDeployment({ cloud }: Props) {
       <header className={styles.header}>
         <h1 className={styles.title}>Set up a deployment</h1>
         <p className={styles.lead}>
-          A few short steps. Only the public address is required; the user, key and domain can be added later.
+          Deploy an app from its repository to a server. Only the address is required; the user, key and domain can
+          be added later.
         </p>
       </header>
 
@@ -381,56 +363,6 @@ export default function BootstrapDeployment({ cloud }: Props) {
 
       <div className={styles.card}>
         {step === 1 && (
-          <div className={styles.stepBody}>
-            <h2 className={styles.subtitle}>What are you deploying?</h2>
-            <p className={styles.lead}>Choose this product or another app. You can change this later.</p>
-            <label className={styles.field}>
-              <span className={styles.label}>Deployment</span>
-              <select
-                className={styles.input}
-                value={preset}
-                onChange={(e) => { setPreset(e.target.value as Preset); clear(); }}
-              >
-                <option value="self">ShipRight (this product)</option>
-                <option value="custom">Another app</option>
-              </select>
-            </label>
-          </div>
-        )}
-
-        {step === 2 && preset === 'self' && (
-          <div className={styles.stepBody}>
-            <h2 className={styles.subtitle}>Where is ShipRight built from?</h2>
-            <p className={styles.lead}>
-              The ShipRight repository, compose file and app service are filled in. Leave these empty unless you
-              deploy a fork.
-            </p>
-            <div className={styles.grid}>
-              <label className={styles.field}>
-                <span className={styles.label}>Repository (optional)</span>
-                <input
-                  className={styles.input}
-                  value={repoUrl}
-                  onChange={onChange(setRepoUrl)}
-                  placeholder="the ShipRight repository"
-                  autoComplete="off"
-                />
-              </label>
-              <label className={styles.field}>
-                <span className={styles.label}>Branch (optional)</span>
-                <input
-                  className={styles.input}
-                  value={branch}
-                  onChange={onChange(setBranch)}
-                  placeholder="master"
-                  autoComplete="off"
-                />
-              </label>
-            </div>
-          </div>
-        )}
-
-        {step === 2 && preset === 'custom' && (
           <div className={styles.stepBody}>
             <h2 className={styles.subtitle}>Where is the app built from?</h2>
             <p className={styles.lead}>Point at a repository, then check it to fill the branch and services.</p>
@@ -598,6 +530,7 @@ export default function BootstrapDeployment({ cloud }: Props) {
               >
                 Add service
               </button>
+              <span className={styles.hint}>Dockerfile and context are relative to the compose file.</span>
             </div>
 
             <label className={styles.field}>
@@ -614,7 +547,7 @@ export default function BootstrapDeployment({ cloud }: Props) {
           </div>
         )}
 
-        {step === 3 && (
+        {step === 2 && (
           <div className={styles.stepBody}>
             <h2 className={styles.subtitle}>Where should it run?</h2>
             <p className={styles.lead}>The public address is enough. The rest can be added later.</p>
@@ -640,7 +573,7 @@ export default function BootstrapDeployment({ cloud }: Props) {
                   onChange={(e) => {
                     const value = e.target.value;
                     setUsername(value);
-                    if (!folder.trim() && value.trim()) setFolder(suggestedFolder || `/home/${value.trim()}/shipright`);
+                    if (!folder.trim() && value.trim()) setFolder(`/home/${value.trim()}/${slug(projectName || 'app')}`);
                     clear();
                   }}
                   placeholder="add it later"
@@ -688,20 +621,16 @@ export default function BootstrapDeployment({ cloud }: Props) {
           </div>
         )}
 
-        {step === 4 && (
+        {step === 3 && (
           <div className={styles.stepBody}>
             <h2 className={styles.subtitle}>Review</h2>
             <p className={styles.lead}>Check the shape, then create. Nothing runs on the server yet.</p>
 
             <div className={styles.summary}>
-              <span className={styles.label}>{preset === 'self' ? 'ShipRight' : projectName || 'Another app'}</span>
+              <span className={styles.label}>{projectName || 'App'}</span>
+              <span className={styles.hint}>{repoUrl || 'no repository yet'} · {branch}</span>
               <span className={styles.hint}>
-                {repoUrl || (preset === 'self' ? 'the ShipRight repository' : 'no repository yet')} · {branch}
-              </span>
-              <span className={styles.hint}>
-                {preset === 'self'
-                  ? 'app (ShipRight preset)'
-                  : services.filter((s) => s.name.trim()).map((s) => s.name).join(', ') || 'no services yet'}
+                {services.filter((s) => s.name.trim()).map((s) => s.name).join(', ') || 'no services yet'}
               </span>
               <span className={styles.hint}>
                 {host || 'no address yet'}{domain ? ` · ${domain}` : ' · address only'}
@@ -760,7 +689,7 @@ export default function BootstrapDeployment({ cloud }: Props) {
               Back
             </ZestButton>
           )}
-          {step < 4 && (
+          {step < 3 && (
             <ZestButton
               onClick={goNext}
               disabled={!canLeave}
@@ -769,7 +698,7 @@ export default function BootstrapDeployment({ cloud }: Props) {
               Continue
             </ZestButton>
           )}
-          {step === 4 && (
+          {step === 3 && (
             <>
               <ZestButton
                 onClick={preview}
@@ -789,14 +718,13 @@ export default function BootstrapDeployment({ cloud }: Props) {
           )}
         </div>
 
-        {step < 4 && !canLeave && (
+        {step === 1 && !canLeave && (
           <span className={styles.hint}>
-            {step === 2
-              ? 'Add a project name, a repository and at least one service with an image.'
-              : 'Enter the server address to continue.'}
+            Add a project name, a repository and at least one service with an image.
           </span>
         )}
-        {step === 4 && !plan?.ok && (
+        {step === 2 && !canLeave && <span className={styles.hint}>Enter the server address to continue.</span>}
+        {step === 3 && !plan?.ok && (
           <span className={styles.hint}>ShipRight writes nothing until the preview is clean.</span>
         )}
       </div>

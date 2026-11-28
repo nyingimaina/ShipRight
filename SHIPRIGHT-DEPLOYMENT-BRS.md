@@ -231,7 +231,8 @@ This table resolves every open question from the design discussion. If a future 
 | 65 | Compatibility spine is additive and dark | Every new contract is introduced beside the old path; flags default off and no existing route or behaviour changes | Old and new coexist until a wave proves itself |
 | 66 | Shadow advice never acts | The shadow advisor records proposals only, is flag-gated, and works with AI switched off | Proves value with zero write risk |
 | 67 | Repository inspection | Read-only GitHub metadata (default branch, branches, compose files, Dockerfiles) **without cloning**; token optional for private repos | Fast onboarding with no source copy |
-| 68 | Deployment setup shape | A short wizard — **What → Source → Server → Review** — not one long form; related fields share a step | Lower cognitive load; each step has one job |
+| 68 | Deployment setup shape | A short wizard — **Source → Server → Review** — not one long form; related fields share a step | Lower cognitive load; each step has one job |
+| 69 | No product preset | The user-facing deployment wizard deploys the user's **own repository**; self-deployment stays an internal API capability, never a visible preset | Random users must not deploy this product without permission |
 
 ---
 
@@ -580,9 +581,8 @@ ShipRight preset.
   duplicated, so adding a domain or a key later is another reviewed apply.
 - When a user is present and no SSH key is supplied, ShipRight makes a managed key and returns the public key.
   Authorizing it stays a deliberate, visible step.
-- The **ShipRight self preset** fills the repository, the `app` service, the compose file and a complete
-  environment, including generated database secrets. Without a domain it serves over HTTP on the address and sets
-  the public/CORS URLs to match.
+- **Self-deployment is internal.** It remains available through the API for our own staging, but it is **not** a
+  preset in the user-facing wizard: a person deploys their own repository.
 - A **custom app** supplies its own name, repository, compose file, services and optional environment.
 - It is mounted only in desktop mode, beside build-on-server. It never deploys; deploy stays a separate, confirmed
   action.
@@ -2009,7 +2009,8 @@ Still owed before D1 is fully closed: persist flags and proposals, wire the AI a
 - **Repository identity**: the project stores the provider repo id and an optional monorepo path prefix, so a rename or transfer does not break it later.
 - **Sensible defaults**: inspecting a repository fills the project name, compose project, branch, compose file and services; the server folder fills from the user. Every value stays editable.
 - **Server check**: the result offers a read-only dry run that reports what the server still needs.
-- **Four-step wizard**: What → Source → Server → Review. Related fields share a step, only the address is required, and the review runs the plan before anything is written.
+- **Three-step wizard**: Source → Server → Review. Related fields share a step, only the address is required, and the review runs the plan before anything is written.
+- **No product preset**: the wizard deploys the user's own repository; self-deployment stays an internal API capability, never a visible option.
 - The bootstrap screen can fill the branch, compose file and services from a repository address.
 - Still to do: attach the inspected repository to a project, the full deployment screen, the guided wizard and the option catalog.
 

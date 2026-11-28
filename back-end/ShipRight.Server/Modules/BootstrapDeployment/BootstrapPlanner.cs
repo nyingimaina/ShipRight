@@ -40,7 +40,7 @@ public static class BootstrapPlanner
             (pathPrefix.Split('/').Contains("..") || pathPrefix.Any(char.IsControl)))
             problems.Add("The path prefix must stay inside the repository, without '..'.");
 
-        var services = PlanServices(request.Services, problems);
+        var services = PlanServices(request.Services, composeFile, problems);
         if (services.Count == 0) problems.Add("Add at least one service to build.");
 
         var host = (request.Host ?? string.Empty).Trim();
@@ -149,10 +149,11 @@ public static class BootstrapPlanner
     }
 
     private static List<JitConfiguredService> PlanServices(
-        IReadOnlyList<BootstrapService>? requested, List<string> problems)
+        IReadOnlyList<BootstrapService>? requested, string composeFile, List<string> problems)
     {
         var services = new List<JitConfiguredService>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var composeDir = DirOf(composeFile);
 
         foreach (var service in requested ?? [])
         {
@@ -175,12 +176,28 @@ public static class BootstrapPlanner
             if (image.Length == 0) problems.Add($"Service '{name}' needs an image name.");
             else Try(problems, $"service '{name}' image", () => JitNames.ImageRef(image));
 
-            var dockerfile = (service.Dockerfile ?? string.Empty).Trim();
-            if (dockerfile.Length == 0) problems.Add($"Pick the Dockerfile for '{name}'.");
-            else if (dockerfile.StartsWith('/') || dockerfile.Split('/').Contains(".."))
-                problems.Add($"The Dockerfile for '{name}' must be a path inside the repository.");
+            var dockerfileInput = (service.Dockerfile ?? string.Empty).Trim();
+            if (dockerfileInput.Length == 0)
+            {
+                problems.Add($"Pick the Dockerfile for '{name}'.");
+                continue;
+            }
 
-            var context = string.IsNullOrWhiteSpace(service.Context) ? "." : service.Context.Trim();
+            string context;
+            string dockerfile;
+            try
+            {
+                // The compose file and the person's build settings are relative to the compose file. The deploy
+                // engine wants both paths relative to the repository root, so resolve them here once.
+                context = ResolvePath(composeDir, string.IsNullOrWhiteSpace(service.Context) ? "." : service.Context);
+                dockerfile = ResolvePath(context, dockerfileInput);
+            }
+            catch (ArgumentException)
+            {
+                problems.Add($"The Dockerfile and build folder for '{name}' must stay inside the repository.");
+                continue;
+            }
+
             services.Add(new JitConfiguredService(
                 name,
                 image,
@@ -194,6 +211,28 @@ public static class BootstrapPlanner
         }
 
         return services;
+    }
+
+    private static string DirOf(string repoFile)
+    {
+        var index = (repoFile ?? string.Empty).LastIndexOf('/');
+        return index < 0 ? string.Empty : repoFile![..index];
+    }
+
+    private static string ResolvePath(string baseDir, string relative)
+    {
+        var value = (relative ?? string.Empty).Trim().Replace('\\', '/');
+        if (value.StartsWith('/') || value.Split('/').Contains(".."))
+            throw new ArgumentException("The path must stay inside the repository.");
+
+        var parts = new List<string>();
+        foreach (var segment in (baseDir + "/" + value).Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (segment == ".") continue;
+            parts.Add(segment);
+        }
+
+        return parts.Count == 0 ? "." : string.Join('/', parts);
     }
 
     private static string RenderEnv(IReadOnlyDictionary<string, string>? env, List<string> warnings)
