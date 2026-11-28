@@ -14,6 +14,7 @@ using ShipRight.Modules.Database;
 using ShipRight.Modules.Identity;
 using ShipRight.Modules.JitDeploy;
 using ShipRight.Modules.Git;
+using ShipRight.Modules.Notifications;
 using ShipRight.Modules.Platform;
 using ShipRight.Modules.Database.Providers;
 using ShipRight.Modules.Projects;
@@ -136,6 +137,7 @@ public static class CloudDiRegistrar
         // The spine is shared by both modes; it adds no endpoints and no behaviour on its own.
         services.AddPlatformSpine();
         services.AddGitProviders();
+        services.AddSingleton<TelegramCliNotifier>();
         services.AddSingleton<IAwsCredentialsReader>(sp => new AwsCredentialsReader(
             sp.GetService<IProcessRunner>()));
         services.AddSingleton<AwsProfileValidator>();

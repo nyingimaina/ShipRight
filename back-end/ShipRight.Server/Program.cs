@@ -17,6 +17,7 @@ using ShipRight.Modules.Auth.Services;
 using ShipRight.Modules.BootstrapDeployment;
 using ShipRight.Modules.Builds;
 using ShipRight.Modules.Git;
+using ShipRight.Modules.Notifications;
 using ShipRight.Modules.Platform;
 using ShipRight.Shared;
 using ShipRight.Modules.ComposeRepo;
@@ -229,6 +230,7 @@ try
     app.MapProjectRoutes();
     app.MapPlatformRoutes();
     app.MapGitRoutes();
+    app.MapNotificationRoutes();
     app.MapProjectPathRefreshRoutes();
     app.MapSetupRoutes();
     app.MapAdoptionRoutes();
@@ -392,6 +394,8 @@ static void RegisterDesktopServices(IServiceCollection services, string dataDir)
     services.AddPlatformSpine();
     // GitHub repository inspection: read-only metadata for the onboarding step.
     services.AddGitProviders();
+    // Notifications: in-app + Telegram through the standalone telegram-notify CLI. Email notifications are skipped.
+    services.AddSingleton<TelegramCliNotifier>();
     services.AddSingleton<MariaDbProvider>();
     services.AddSingleton<SqlServerProvider>();
     services.AddSingleton<IDbProviderResolver>(sp => new DbProviderResolver(

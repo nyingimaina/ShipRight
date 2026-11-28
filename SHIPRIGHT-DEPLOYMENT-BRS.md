@@ -210,7 +210,7 @@ This table resolves every open question from the design discussion. If a future 
 | 44 | Scanner | **Trivy** behind a provider; Grype optional | Broad, proven, SBOM-aware |
 | 45 | Scan cadence | Daily + on deploy + on KEV/vendor critical + on demand | Daily is a floor, not a ceiling |
 | 46 | Inventory dedupe | Shared server inventory + per-deployment inventory | Avoid five copies of the same OS finding |
-| 47 | Notification channels v1 | In-app + email; webhook/desktop later | Enough signal without a new integration project |
+| 47 | Notification channels v1 | In-app + **Telegram**; email notifications are skipped; webhook/desktop later | One channel we control, identical on cloud and desktop |
 | 48 | Digest time | Daily at **08:00** in the user’s time zone; urgent findings immediately | Predictable, not noisy |
 | 49 | Auto-remediation default | Detect + notify + open PR/rebuild + dry run; **no production deploy** without approval | Safety first |
 | 50 | Staging automation | Opt-in patch-only auto-deploy after rules, health and rollback checks | Earn trust in a safe environment |
@@ -233,6 +233,7 @@ This table resolves every open question from the design discussion. If a future 
 | 67 | Repository inspection | Read-only GitHub metadata (default branch, branches, compose files, Dockerfiles) **without cloning**; token optional for private repos | Fast onboarding with no source copy |
 | 68 | Deployment setup shape | A short wizard — **Source → Server → Review** — not one long form; related fields share a step | Lower cognitive load; each step has one job |
 | 69 | No product preset | The user-facing deployment wizard deploys the user's **own repository**; self-deployment stays an internal API capability, never a visible preset | Random users must not deploy this product without permission |
+| 70 | Notification transport | **`telegram-notify`** (standalone library + CLI, `https://github.com/nyingimaina/telegram-notify`); email notifications are out of scope | One channel, testable from any host, no SMTP dependency |
 
 ---
 
@@ -1600,7 +1601,10 @@ Priority order:
 - Urgent alerts only for KEV, critical exposed findings, or a new fix for a critical finding.
 - Diff-based: new, worsened, fixed, unchanged.
 - One action per finding.
-- Channels v1: in-app and email. Webhook/desktop later.
+- Channels v1: **in-app and Telegram**. Email notifications are skipped; account email (sign-in, password reset) is a separate concern and stays.
+- Telegram is sent through the standalone **`telegram-notify`** library/CLI (`https://github.com/nyingimaina/telegram-notify`). The host passes the token and chat id by environment; the CLI never prints them.
+- A failed notification never blocks a deploy or a scan; it is logged and retried by the sender.
+- Webhook/desktop later.
 - Deduplicate across projects and servers.
 - Quiet hours and escalation preferences.
 - Technical View for raw IDs and evidence.
@@ -2039,7 +2043,7 @@ Inventory, SBOM, Trivy, OSV/distro/GitHub/vendor/KEV/EPSS, daily job, findings, 
 **Exit:** a real image with a known vulnerable package produces a prioritised finding and a fix.
 
 ### Phase 6 — Notifications and safe automation
-Email/in-app digest, urgent alerts, PR/rebuild/dry-run automation, staging auto-deploy policy.
+Telegram/in-app digest, urgent alerts, PR/rebuild/dry-run automation, staging auto-deploy policy.
 **Exit:** a critical finding notifies the right person and can be fixed with one approved action.
 
 ### Phase 7 — Azure DevOps, webhooks and worker builds
